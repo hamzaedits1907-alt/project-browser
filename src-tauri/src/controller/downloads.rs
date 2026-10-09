@@ -65,6 +65,9 @@ impl Controller {
             self.toast(format!("Downloading {}", d.filename));
         }
         self.persist_download(&d, true);
+        if let Some(t) = tab {
+            self.download_tabs.insert(d.id, t);
+        }
         self.downloads.insert(0, d);
         self.mark_downloads();
         // A link that turned into a download leaves the tab on its previous page.
@@ -110,6 +113,9 @@ impl Controller {
             }
         }
         let snapshot = d.clone();
+        if !snapshot.state.is_active() {
+            self.download_tabs.remove(&id);
+        }
         if snapshot.state == DownloadState::Completed {
             self.toast(format!("{} downloaded", snapshot.filename));
         }

@@ -18,6 +18,8 @@ static FIRST_SAMPLE_LOGGED: std::sync::atomic::AtomicBool = std::sync::atomic::A
 const SUBSCRIBED_INTERVAL: Duration = Duration::from_secs(2);
 const GAMING_INTERVAL: Duration = Duration::from_secs(5);
 const HEAVY_CPU_PERCENT: f64 = 25.0;
+/// With a memory limit set (and nothing else needing samples) the browser looks this often.
+const PRESSURE_INTERVAL: Duration = Duration::from_secs(10);
 
 pub struct PerfState {
     pub(crate) subscribers: HashSet<String>,
@@ -84,6 +86,8 @@ impl Controller {
             Some(SUBSCRIBED_INTERVAL)
         } else if self.settings.gaming_mode {
             Some(GAMING_INTERVAL)
+        } else if self.settings.memory_limit_mb > 0 {
+            Some(PRESSURE_INTERVAL)
         } else {
             None
         }
@@ -224,6 +228,7 @@ impl Controller {
             self.emit("pb:perf", &sample);
         }
         self.perf.last = Some(sample);
+        self.apply_memory_pressure(total_memory);
         self.perf.next_at = self.perf_wanted_interval().map(|i| now + i);
     }
 }

@@ -127,6 +127,9 @@ impl Controller {
     pub(crate) fn after_activation(&mut self) {
         self.close_find();
         let Some(tab) = self.tabs.active().cloned() else { return };
+        // Any suspend still in flight for this tab is now out of date.
+        *self.epochs.entry(tab.id).or_insert(0) += 1;
+        self.dirty_until.remove(&tab.id);
         if tab.lifecycle == Lifecycle::Sleeping {
             // WebView2 resumes a suspended webview automatically when it becomes visible.
             if let Some(t) = self.tabs.get_mut(tab.id) {
@@ -393,6 +396,7 @@ impl Controller {
     }
 
     pub(crate) fn destroy_view(&mut self, id: TabId) {
+        self.epochs.remove(&id);
         if let Some(view) = self.views.remove(&id) {
             log::info!("tab {id}: webview destroyed");
             let _ = self.app.run_on_main_thread(move || native::remove_tab(id));

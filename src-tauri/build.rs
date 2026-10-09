@@ -67,7 +67,33 @@ const COMMANDS: &[&str] = &[
     "update_install",
 ];
 
+/// Test executables link the whole Tauri runtime when they use its mock app, and that runtime needs Common
+/// Controls v6 (otherwise Windows refuses to start them with STATUS_ENTRYPOINT_NOT_FOUND). The real app gets
+/// its manifest from tauri-build; this only adds one to test targets.
+fn embed_test_manifest() {
+    let msvc_windows =
+        std::env::var("CARGO_CFG_TARGET_OS").is_ok_and(|v| v == "windows") && std::env::var("CARGO_CFG_TARGET_ENV").is_ok_and(|v| v == "msvc");
+    if !msvc_windows {
+        return;
+    }
+    let out = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
+    let path = out.join("test.manifest");
+    let xml = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <dependency>
+    <dependentAssembly>
+      <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls" version="6.0.0.0" processorArchitecture="*" publicKeyToken="6595b64144ccf1df" language="*"/>
+    </dependentAssembly>
+  </dependency>
+</assembly>
+"#;
+    std::fs::write(&path, xml).expect("write test manifest");
+    println!("cargo:rustc-link-arg-tests=/MANIFEST:EMBED");
+    println!("cargo:rustc-link-arg-tests=/MANIFESTINPUT:{}", path.display());
+}
+
 fn main() {
+    embed_test_manifest();
     let manifest = tauri_build::AppManifest::new().commands(COMMANDS);
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(manifest)).expect("failed to run tauri-build");
 }

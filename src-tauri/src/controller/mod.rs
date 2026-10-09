@@ -17,6 +17,7 @@ mod downloads;
 mod events;
 mod gaming;
 mod perf;
+mod sleep_policy;
 mod tabs;
 
 use std::collections::HashMap;
@@ -35,6 +36,7 @@ use crate::tabs::{Tab, TabId, TabStrip};
 
 pub use downloads::DownloadCommand;
 pub use perf::PerfSample;
+pub use sleep_policy::Reason;
 pub use tabs::ZoomMode;
 
 type Job = Box<dyn FnOnce(&mut Controller) + Send>;
@@ -244,6 +246,12 @@ pub struct Controller {
     pub(crate) startup: StartupMetrics,
     pub(crate) first_run: bool,
     pub(crate) shell_ready: bool,
+    /// Download id -> the tab that started it (a running download blocks sleeping/unloading that tab).
+    pub(crate) download_tabs: HashMap<i64, TabId>,
+    /// Bumped each time a tab becomes active; a suspend answer from an older epoch is ignored.
+    pub(crate) epochs: HashMap<TabId, u64>,
+    /// Tabs found to hold typed-in data, and until when they are not asked again.
+    pub(crate) dirty_until: HashMap<TabId, i64>,
     pending_urls: Vec<String>,
     dirty: Dirty,
     session_save_at: Option<Instant>,
@@ -305,6 +313,9 @@ impl Controller {
             startup: StartupMetrics { process_start: init.process_start, ..Default::default() },
             first_run: init.first_run,
             shell_ready: false,
+            download_tabs: HashMap::new(),
+            epochs: HashMap::new(),
+            dirty_until: HashMap::new(),
             pending_urls: init.startup_urls,
             dirty: Dirty::default(),
             session_save_at: None,
@@ -600,6 +611,10 @@ impl Controller {
         }
         if prev.gaming_mode != next.gaming_mode {
             self.apply_gaming(next.gaming_mode);
+        }
+        if prev.memory_limit_mb != next.memory_limit_mb {
+            // Turning the limit on starts the (slow) sampler; turning it off stops it.
+            self.perf_reschedule();
         }
         if prev.search_engine != next.search_engine || prev.custom_search_template != next.custom_search_template {
             // nothing to do eagerly; used on next navigation

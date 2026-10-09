@@ -706,21 +706,21 @@ pub fn set_muted(id: TabId, muted: bool) {
 }
 
 /// Suspends a hidden tab's renderer (WebView2 requires the webview to be hidden).
-pub fn try_suspend(id: TabId, ctl: ControllerHandle) {
+pub fn try_suspend(id: TabId, ctl: ControllerHandle, epoch: u64) {
     let Some(wv3) = tab_com(id).and_then(|t| t.webview.cast::<ICoreWebView2_3>().ok()) else {
-        ctl.post(move |c| c.on_suspended(id, false));
+        ctl.post(move |c| c.on_suspended(id, false, epoch));
         return;
     };
     let c = ctl.clone();
     let r = unsafe {
         wv3.TrySuspend(&TrySuspendCompletedHandler::create(Box::new(move |res, ok| {
             let ok = res.is_ok() && ok;
-            c.post(move |ctl| ctl.on_suspended(id, ok));
+            c.post(move |ctl| ctl.on_suspended(id, ok, epoch));
             Ok(())
         })))
     };
     if r.is_err() {
-        ctl.post(move |c| c.on_suspended(id, false));
+        ctl.post(move |c| c.on_suspended(id, false, epoch));
     }
 }
 
@@ -895,6 +895,34 @@ pub fn page_text(id: TabId, reply: tokio::sync::oneshot::Sender<Option<String>>)
             })),
         );
         // A synchronous failure drops the handler (and `reply`); the caller treats that as "no text".
+    }
+}
+
+/// Script that answers whether the page holds data the user typed and has not submitted: a changed text
+/// field, textarea, checkbox, radio button or select, or a rich-text box with content. When in doubt it
+/// says yes (any error counts as "has input").
+const UNSAVED_INPUT_JS: &str = "(() => { try { for (const el of document.querySelectorAll('input, textarea, select, [contenteditable]')) { if (el.matches('[contenteditable=\"false\"]')) continue; const tag = el.tagName; if (tag === 'INPUT') { const t = (el.type || '').toLowerCase(); if (['hidden','button','submit','reset','image','file'].includes(t)) continue; if (t === 'checkbox' || t === 'radio') { if (el.checked !== el.defaultChecked) return true; continue; } if (el.value !== el.defaultValue) return true; } else if (tag === 'TEXTAREA') { if (el.value !== el.defaultValue) return true; } else if (tag === 'SELECT') { for (const o of el.options) { if (o.selected !== o.defaultSelected) return true; } } else if (el.isContentEditable && (el.textContent || '').trim().length > 0) return true; } return false; } catch (e) { return true; } })()";
+
+/// Asks a tab whether it holds unsaved typed-in data before its webview is destroyed.
+/// Replies `Some(true/false)`, or `None` when the page could not be asked (the caller treats that as "yes").
+pub fn page_has_unsaved_input(id: TabId, reply: tokio::sync::oneshot::Sender<Option<bool>>) {
+    let Some(t) = tab_com(id) else {
+        let _ = reply.send(None);
+        return;
+    };
+    unsafe {
+        let _ = t.webview.ExecuteScript(
+            &HSTRING::from(UNSAVED_INPUT_JS),
+            &ExecuteScriptCompletedHandler::create(Box::new(move |res, json| {
+                let _ = reply.send(res.ok().and_then(|_| match json.trim() {
+                    "true" => Some(true),
+                    "false" => Some(false),
+                    _ => None,
+                }));
+                Ok(())
+            })),
+        );
+        // A synchronous failure drops the handler (and `reply`); the caller treats that as "has input".
     }
 }
 

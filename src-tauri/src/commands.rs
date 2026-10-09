@@ -130,7 +130,7 @@ pub async fn tab_mute(s: State<'_, AppState>, id: TabId, muted: bool) -> Result<
 #[tauri::command]
 pub async fn tab_sleep(s: State<'_, AppState>, id: TabId, unload: Option<bool>) -> Result<()> {
     let action = if unload.unwrap_or(false) { BackgroundTabAction::Unload } else { BackgroundTabAction::Sleep };
-    s.ctl.call(move |c| c.put_to_sleep(id, action)).await
+    s.ctl.call(move |c| c.put_to_sleep(id, action, crate::controller::Reason::Manual)).await
 }
 
 #[tauri::command]

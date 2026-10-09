@@ -13,6 +13,8 @@ use crate::native::metrics::{read_process, CpuTracker, GpuSampler};
 use crate::native::{self, ProcSnapshot};
 use crate::tabs::{Lifecycle, TabId};
 
+static FIRST_SAMPLE_LOGGED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 const SUBSCRIBED_INTERVAL: Duration = Duration::from_secs(2);
 const GAMING_INTERVAL: Duration = Duration::from_secs(5);
 const HEAVY_CPU_PERCENT: f64 = 25.0;
@@ -70,6 +72,8 @@ pub struct PerfSample {
     pub live_tabs: usize,
     pub sleeping_tabs: usize,
     pub unloaded_tabs: usize,
+    /// Whether renderer processes could be attributed to tabs (per-tab memory is unavailable when false).
+    pub tab_attribution: bool,
     pub startup: super::StartupMetrics,
     pub gaming: bool,
 }
@@ -109,6 +113,9 @@ impl Controller {
             return;
         }
         self.perf.in_flight = true;
+        if !FIRST_SAMPLE_LOGGED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            log::info!("perf: first process sample requested ({} subscribers, gaming={})", self.perf.subscribers.len(), self.settings.gaming_mode);
+        }
         let ctl = self.handle.clone();
         if self.app.run_on_main_thread(move || native::collect_processes(ctl)).is_err() {
             self.perf.in_flight = false;
@@ -117,6 +124,10 @@ impl Controller {
 
     pub fn on_process_snapshot(&mut self, snap: ProcSnapshot) {
         self.perf.in_flight = false;
+        if self.perf.last.is_none() {
+            log::info!("perf: first process sample complete ({} renderer entries)", snap.renderer_frames.len());
+        }
+        let snap_frames_unavailable = snap.frames_unavailable;
         let now = Instant::now();
         let host_pid = std::process::id();
 
@@ -205,6 +216,7 @@ impl Controller {
             live_tabs: tabs.iter().filter(|t| t.lifecycle == Lifecycle::Live).count(),
             sleeping_tabs: tabs.iter().filter(|t| t.lifecycle == Lifecycle::Sleeping).count(),
             unloaded_tabs: tabs.iter().filter(|t| t.lifecycle == Lifecycle::Unloaded).count(),
+            tab_attribution: !snap_frames_unavailable,
             startup: self.startup.clone(),
             gaming: self.settings.gaming_mode,
         };

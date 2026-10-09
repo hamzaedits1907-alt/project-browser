@@ -76,7 +76,7 @@ export function installMockBackend(): void {
         { pid: 4500, kind: "renderer", label: "Tab: GitHub", memory: 160_000_000, cpu: 0.2, tabIds: [1] },
       ],
       tabs: [{ id: 2, memory: 610_000_000, cpu: 3, shared: false, heavy: true }, { id: 1, memory: 160_000_000, cpu: 0.2, shared: false, heavy: false }],
-      tabCount: state.tabs.length, liveTabs: state.tabs.filter((t) => t.lifecycle === "live").length, sleepingTabs: state.tabs.filter((t) => t.lifecycle === "sleeping").length, unloadedTabs: state.tabs.filter((t) => t.lifecycle === "unloaded").length,
+      tabCount: state.tabs.length, liveTabs: state.tabs.filter((t) => t.lifecycle === "live").length, sleepingTabs: state.tabs.filter((t) => t.lifecycle === "sleeping").length, unloadedTabs: state.tabs.filter((t) => t.lifecycle === "unloaded").length, tabAttribution: params.get("noattr") !== "1",
       startup: { processStart: now - 5000, shellReadyMs: 412, firstPageMs: 1380 }, gaming: settings.gamingMode,
     };
   };
@@ -232,9 +232,23 @@ export function installMockBackend(): void {
           return null;
         }
         case "app_info":
-          return { version: "0.1.0", identifier: "com.projectbrowser.desktop", dataDir: "C:\\Users\\me\\AppData\\Local\\com.projectbrowser.desktop", profileDir: "C:\\Users\\me\\AppData\\Local\\com.projectbrowser.desktop\\profiles\\default", profileName: "Hamza", webview2Version: "131.0.2903.86", updateConfigured: false };
-        case "update_check":
-          return { status: "notConfigured" };
+          return { version: "0.1.1", identifier: "com.projectbrowser.desktop", dataDir: "C:\\Users\\me\\AppData\\Local\\com.projectbrowser.desktop", profileDir: "C:\\Users\\me\\AppData\\Local\\com.projectbrowser.desktop\\profiles\\default", profileName: "Hamza", webview2Version: "131.0.2903.86", updateConfigured: true };
+        case "update_check": {
+          const mode = params.get("update");
+          if (mode === "error") throw "Couldn't reach the update server. Check your internet connection and try again.";
+          if (mode === "available") return { status: "available", current: "0.1.1", version: "0.1.2", notes: "- Faster startup\n- Fixes for sleeping tabs", date: null };
+          return { status: "upToDate", current: "0.1.1" };
+        }
+        case "update_install": {
+          const total = 40_000_000;
+          let sent = 0;
+          const timer = setInterval(() => {
+            sent += 4_000_000;
+            void emit("pb:update", sent >= total ? { kind: "installing" } : { kind: "downloading", downloaded: sent, total });
+            if (sent >= total) clearInterval(timer);
+          }, 250);
+          return null;
+        }
         default:
           return null;
       }

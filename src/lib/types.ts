@@ -66,6 +66,9 @@ export interface Settings {
   savePasswords: boolean;
   autofill: boolean;
   heavyTabMemoryMb: number;
+  protectPinnedTabs: boolean;
+  memoryLimitMb: number;
+  checkUpdates: boolean;
 }
 
 export interface ProfileMeta {
@@ -221,6 +224,8 @@ export interface PerfSample {
   liveTabs: number;
   sleepingTabs: number;
   unloadedTabs: number;
+  /** False when renderer processes could not be attributed to tabs; per-tab memory is then unavailable. */
+  tabAttribution: boolean;
   startup: StartupMetrics;
   gaming: boolean;
 }
@@ -273,6 +278,9 @@ export type UpdateStatus =
   | { status: "notConfigured" }
   | { status: "upToDate"; current: string }
   | { status: "available"; current: string; version: string; notes: string | null; date: string | null };
+
+/** Progress of an update that is being installed (`pb:update`). */
+export type UpdateEvent = { kind: "downloading"; downloaded: number; total: number | null } | { kind: "installing" };
 
 export type AiProvider = "openAiCompatible" | "anthropic";
 

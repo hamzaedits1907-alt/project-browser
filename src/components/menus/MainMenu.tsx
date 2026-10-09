@@ -4,6 +4,8 @@ import { api } from "../../lib/ipc";
 import { attempt, activeTab, useStore } from "../../lib/store";
 import type { BrowserCommand } from "../../lib/types";
 import { toggleAi } from "../../features/ai/aiStore";
+import { update } from "../../features/update/updateStore";
+import { writeLocal } from "../../lib/storage";
 import { closeWindow } from "../../lib/window";
 import { IconButton } from "../ui/controls";
 import { MenuHeading, MenuItem, MenuSeparator, Popover } from "../ui/Popover";
@@ -16,10 +18,24 @@ export function MainMenu({ open, onClose, anchor, onImport }: { open: boolean; o
   const showBar = useStore((s) => s.settings.showBookmarksBar);
   const gaming = useStore((s) => s.settings.gamingMode);
   const web = !!tab && !tab.url.startsWith("browser://");
+  const updateVersion = update.use((u) => (u.phase === "available" ? u.version : null));
 
   return (
     <Popover open={open} onClose={onClose} anchor={anchor} align="end" width={300} label="Main menu" className="menu">
       <div role="menu">
+        {updateVersion && (
+          <>
+            <MenuItem
+              icon="download"
+              label={`Update available: ${updateVersion}`}
+              onSelect={() => {
+                writeLocal("settings.section", "about");
+                run({ type: "openSettings" });
+              }}
+            />
+            <MenuSeparator />
+          </>
+        )}
         <MenuItem icon="plus" label="New tab" hint="Ctrl+T" onSelect={() => run({ type: "newTab" })} />
         <MenuItem icon="incognito" label="New private tab" hint="Ctrl+Shift+N" onSelect={() => run({ type: "newPrivateTab" })} />
         <MenuItem icon="history" label="Reopen closed tab" hint="Ctrl+Shift+T" disabled={closedCount === 0} onSelect={() => run({ type: "reopenTab" })} />

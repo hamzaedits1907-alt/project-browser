@@ -112,6 +112,23 @@ jobs:
       - name: Build Windows installer
         run: npx tauri build
 
+      # Launches the real exe on the runner against a throwaway data folder and checks it survives the first
+      # process-memory sample (the step that crashed 0.1.0), logged the startup stages and left no crash event.
+      # Hosted runners may not be able to draw WebView2: until that is shown to work this reports but does not block.
+      - name: Startup smoke test (informational until proven on hosted runners)
+        shell: pwsh
+        run: ./scripts/smoke-startup.ps1 -Exe src-tauri/target/release/project-browser.exe -Seconds 30 -ReportDir smoke-report
+        continue-on-error: true
+
+      - name: Upload smoke-test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: startup-smoke-report
+          path: smoke-report
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: List build output
         shell: pwsh
         run: Get-ChildItem -Recurse src-tauri/target/release/bundle | Where-Object { -not $_.PSIsContainer } | Select-Object FullName, Length

@@ -1,4 +1,5 @@
 /* ---- Generic internal page ---------------------------------------------------------- */
+.update-notes { max-height: 160px; overflow: auto; white-space: pre-wrap; margin: 8px 0; padding: 8px 10px; border-radius: 6px; background: var(--bg-3, rgba(255,255,255,0.05)); font: inherit; font-size: 12.5px; user-select: text; }
 .page { max-width: 1040px; margin: 0 auto; padding: 28px 32px 56px; }
 .page-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
 .page-title { display: flex; align-items: center; gap: 14px; }

@@ -507,6 +507,7 @@ impl Controller {
             self.shell_ready = true;
             if let Some(start) = self.startup.process_start {
                 self.startup.shell_ready_ms = Some(now_ms() - start);
+                log::info!("startup: shell UI ready {} ms after process start", now_ms() - start);
             }
             if let Some(w) = self.app.get_webview_window("main") {
                 let _ = w.show();
@@ -526,6 +527,9 @@ impl Controller {
     }
 
     pub fn set_layout(&mut self, content: ContentRect, viewport: Viewport) {
+        if self.layout.content.is_none() {
+            log::info!("startup: first page-area layout received ({}x{})", content.width, content.height);
+        }
         self.layout.content = Some(content);
         self.layout.viewport = viewport;
         self.relayout();

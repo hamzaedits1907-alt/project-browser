@@ -390,7 +390,8 @@ impl AiState {
     }
 }
 
-fn ensure_crypto_provider() {
+/// reqwest (assistant and updater) needs a process-wide TLS crypto provider; install ring's once.
+pub(crate) fn ensure_crypto_provider() {
     if rustls::crypto::CryptoProvider::get_default().is_none() {
         let _ = rustls::crypto::ring::default_provider().install_default();
     }

@@ -56,6 +56,15 @@ pub struct Settings {
     pub autofill: bool,
 
     pub heavy_tab_memory_mb: u32,
+
+    /// Pinned tabs are never put to sleep or unloaded automatically.
+    pub protect_pinned_tabs: bool,
+    /// When the browser's total memory exceeds this many MB, the least recently used background tabs are put to
+    /// sleep (then unloaded) until it is below the limit. 0 turns the limit off.
+    pub memory_limit_mb: u32,
+
+    /// Look for a new version once after startup (it is never installed without asking).
+    pub check_updates: bool,
 }
 
 impl Default for Settings {
@@ -81,6 +90,9 @@ impl Default for Settings {
             save_passwords: true,
             autofill: true,
             heavy_tab_memory_mb: 500,
+            protect_pinned_tabs: true,
+            memory_limit_mb: 0,
+            check_updates: true,
         }
     }
 }
@@ -97,6 +109,10 @@ impl Settings {
     pub fn sanitized(mut self) -> Settings {
         self.sleep_after_minutes = self.sleep_after_minutes.clamp(1, 24 * 60);
         self.heavy_tab_memory_mb = self.heavy_tab_memory_mb.clamp(100, 16_384);
+        // 0 = off; otherwise keep the limit in a range that cannot starve the browser itself.
+        if self.memory_limit_mb != 0 {
+            self.memory_limit_mb = self.memory_limit_mb.clamp(512, 65_536);
+        }
         self.never_sleep_hosts = self
             .never_sleep_hosts
             .into_iter()

@@ -31,6 +31,7 @@ import type {
   Suggestion,
   TabId,
   UiEvent,
+  UpdateEvent,
   UpdateStatus,
   Viewport,
 } from "./types";
@@ -200,6 +201,7 @@ export interface EventMap {
   "pb:perf": PerfSample;
   "pb:ui": UiEvent;
   "pb:ai": AiEvent;
+  "pb:update": UpdateEvent;
 }
 
 export type EventName = keyof EventMap;

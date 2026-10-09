@@ -242,7 +242,7 @@ describe("settings defaults", () => {
 
 describe("events, commands and pages", () => {
   it("every event the core emits is declared on the frontend", () => {
-    const sources = ["controller/mod.rs", "controller/perf.rs", "ai.rs"].map((f) => read(`src-tauri/src/${f}`)).join("\n");
+    const sources = ["controller/mod.rs", "controller/perf.rs", "ai.rs", "updates.rs"].map((f) => read(`src-tauri/src/${f}`)).join("\n");
     const emitted = new Set([...sources.matchAll(/"(pb:[a-z]+)"/g)].map((m) => m[1] as string));
     const declared = new Set([...ipcTs.slice(ipcTs.indexOf("interface EventMap")).matchAll(/"(pb:[a-z]+)":/g)].map((m) => m[1] as string));
     expect(sorted([...declared])).toEqual(sorted([...emitted]));

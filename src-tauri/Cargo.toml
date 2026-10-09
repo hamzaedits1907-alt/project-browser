@@ -1,6 +1,6 @@
 [package]
 name = "project-browser"
-version = "0.1.0"
+version = "0.1.1"
 description = "Project Browser - a gaming-first desktop web browser"
 edition = "2021"
 rust-version = "1.85"
@@ -27,6 +27,10 @@ base64 = "0.22"
 tokio = { version = "1", features = ["sync", "time"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "rustls-no-provider", "system-proxy"] }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
+
+[dev-dependencies]
+# `tauri::test::mock_app` drives the real updater plugin in the updater tests.
+tauri = { version = "2.12", features = ["test"] }
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.39"

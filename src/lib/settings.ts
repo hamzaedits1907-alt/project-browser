@@ -22,6 +22,9 @@ export const DEFAULT_SETTINGS: Settings = {
   savePasswords: true,
   autofill: true,
   heavyTabMemoryMb: 500,
+  protectPinnedTabs: true,
+  memoryLimitMb: 0,
+  checkUpdates: true,
 };
 
 export const SEARCH_ENGINES: { id: SearchEngine; label: string; host: string }[] = [

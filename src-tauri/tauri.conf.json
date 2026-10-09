@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Project Browser",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "com.projectbrowser.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -33,7 +33,7 @@
     "category": "Utility",
     "copyright": "",
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
-    "createUpdaterArtifacts": false,
+    "createUpdaterArtifacts": true,
     "windows": {
       "webviewInstallMode": { "type": "downloadBootstrapper", "silent": true },
       "nsis": {
@@ -47,7 +47,7 @@
   "plugins": {
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDRBQjc0MTRDQkZCMzcwNzYKUldSMmNMTy9URUczU3VFMUlNL2VCd3Z5QzJUVXlqNjNZeTdHM1dpbGtQV2p1aEtCRTFwa21Za20K",
-      "endpoints": [],
+      "endpoints": ["https://github.com/hamzaedits1907-alt/project-browser/releases/latest/download/latest.json"],
       "windows": { "installMode": "passive" }
     }
   }

@@ -11,6 +11,7 @@ import { Button } from "./components/ui/controls";
 import { ClearDataDialog } from "./features/clear/ClearDataDialog";
 import { AiPanel } from "./features/ai/AiPanel";
 import { ai } from "./features/ai/aiStore";
+import { checkForUpdates } from "./features/update/updateStore";
 import { FirstRun } from "./features/firstrun/FirstRun";
 import { ImportWizard } from "./features/import/ImportWizard";
 import { accentOrDefault, motionReduced } from "./lib/settings";
@@ -28,6 +29,16 @@ export function App() {
   useEffect(() => {
     void init();
   }, []);
+
+  // One quiet look for a new version shortly after startup (announced with a toast, never installed unasked).
+  const checkUpdates = settings.checkUpdates;
+  useEffect(() => {
+    if (!ready || !checkUpdates) return;
+    const timer = setTimeout(() => void checkForUpdates(true), 20_000);
+    return () => clearTimeout(timer);
+    // Only the first ready state matters: toggling the setting later does not re-run the startup check.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
 
   // Theme attributes live on <html> so every portal-free popup inherits them.
   useEffect(() => {

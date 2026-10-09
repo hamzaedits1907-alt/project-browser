@@ -1,7 +1,7 @@
 import { MetricCard } from "../components/perf/Gauges";
 import { Badge, Button } from "../components/ui/controls";
 import { Icon } from "../components/ui/Icon";
-import { Card, EmptyState, PageHeader } from "../components/ui/Section";
+import { Card, EmptyState, Notice, PageHeader } from "../components/ui/Section";
 import { formatBytes, formatDuration, formatPercent } from "../lib/format";
 import { api } from "../lib/ipc";
 import { usePerf } from "../lib/perf";
@@ -82,6 +82,12 @@ export default function Performance() {
               })}
             </tbody>
           </table>
+        )}
+        {sample && !sample.tabAttribution && (
+          <Notice tone="warn">
+            Per-tab memory is unavailable: this computer's WebView2 runtime crashed while matching processes to tabs, so that lookup is switched off. The
+            totals and the process list below are still real measurements.
+          </Notice>
         )}
         <p className="dim small">* Shared process: figure includes other tabs and frames in the same process.</p>
       </Card>

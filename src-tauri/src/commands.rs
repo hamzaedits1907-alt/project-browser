@@ -705,20 +705,20 @@ pub async fn app_info(app: AppHandle, s: State<'_, AppState>) -> Result<AppInfo>
         profile_dir,
         profile_name,
         webview2_version: crate::updates::webview2_version(),
-        update_configured: crate::updates::endpoint().is_some(),
+        update_configured: crate::updates::configured(&app),
     })
 }
 
 #[tauri::command]
-pub async fn update_check(app: AppHandle) -> Result<crate::updates::UpdateStatus> {
-    crate::updates::check(&app).await
+pub async fn update_check(app: AppHandle, updates: State<'_, crate::updates::UpdateState>) -> Result<crate::updates::UpdateStatus> {
+    crate::updates::check(&app, &updates).await
 }
 
+/// Downloads the update the user confirmed, verifies its signature and runs the installer. On Windows
+/// the app exits (after saving the session) and the installer reopens it, so success never returns.
 #[tauri::command]
-pub async fn update_install(app: AppHandle, s: State<'_, AppState>) -> Result<()> {
-    crate::updates::install(&app).await?;
-    let _ = s.ctl.call(|c| c.prepare_exit()).await;
-    app.restart();
+pub async fn update_install(app: AppHandle, updates: State<'_, crate::updates::UpdateState>) -> Result<()> {
+    crate::updates::install(&app, &updates).await
 }
 
 /// Every command, for the invoke handler and the ACL manifest in build.rs.

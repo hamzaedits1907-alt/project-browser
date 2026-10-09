@@ -35,6 +35,7 @@ fn urls_from_args(args: &[String]) -> Vec<String> {
 }
 
 pub fn run() {
+    ai::ensure_crypto_provider();
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             if let Some(state) = app.try_state::<AppState>() {
@@ -52,20 +53,31 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let handle = app.handle().clone();
-            let data_root = app.path().app_local_data_dir()?;
+            // `PROJECT_BROWSER_DATA_DIR` points the whole profile store somewhere else (used by the startup smoke test and
+            // for trying things without touching the real profile).
+            let data_root = match std::env::var_os("PROJECT_BROWSER_DATA_DIR").filter(|v| !v.is_empty()) {
+                Some(dir) => std::path::PathBuf::from(dir),
+                None => app.path().app_local_data_dir()?,
+            };
             let local_app_data = app.path().local_data_dir()?;
             let scratch = app.path().app_cache_dir()?;
             let process_start = native::metrics::process_start_unix_ms();
             logging::init(&data_root.join("logs"));
+            // Each stage below is logged as it completes: after a crash the last line says how far startup got.
+            let runtime = updates::webview2_version().unwrap_or_else(|| "unknown".into());
+            log::info!("startup: WebView2 runtime {runtime}");
+            native::init_frame_guard(&data_root, &runtime, std::env::var(native::FRAME_INFO_ENV).ok().as_deref());
 
             let profiles = ProfileStore::new(&data_root);
             let (profile, created) = profiles.open_launch_profile(None)?;
             let db = Db::open(&profile.db_path())?;
+            log::info!("startup: profile '{}' and database ready", profile.meta.id);
             let settings: Settings = db.kv_get("settings")?.unwrap_or_default();
             let onboarded: bool = db.kv_get("onboarded")?.unwrap_or(false);
             let geometry: Option<WindowGeometry> = db.kv_get("window")?;
 
             let shell = window::build_shell_window(&handle, &profile, geometry)?;
+            log::info!("startup: shell window and WebView2 controller created (window hidden)");
 
             let ctl = Controller::spawn(ControllerInit {
                 app: handle.clone(),
@@ -78,6 +90,7 @@ pub fn run() {
                 startup_urls: urls_from_args(&std::env::args().collect::<Vec<_>>()),
             });
 
+            log::info!("startup: controller thread started");
             let shell_ctl = ctl.clone();
             let devtools = cfg!(debug_assertions);
             shell.with_webview(move |pw| native::install_shell(pw, shell_ctl, devtools))?;
@@ -91,6 +104,8 @@ pub fn run() {
 
             app.manage(AppState { ctl, local_app_data, scratch, data_root });
             app.manage(ai::AiState::new(secrets::os_store()));
+            app.manage(updates::UpdateState::default());
+            log::info!("startup: setup finished, waiting for the shell UI");
             Ok(())
         })
         .on_window_event(|window, event| {

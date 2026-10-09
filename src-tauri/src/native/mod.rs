@@ -9,7 +9,7 @@ pub mod metrics;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -50,6 +50,100 @@ thread_local! {
 static NEXT_PERMISSION: AtomicU64 = AtomicU64::new(1);
 static NEXT_DOWNLOAD: AtomicI64 = AtomicI64::new(0);
 static DOWNLOAD_DIR: Mutex<Option<PathBuf>> = Mutex::new(None);
+
+// ---- frame-info guard -------------------------------------------------------------------
+//
+// Mapping renderer processes to tabs uses `ICoreWebView2ProcessExtendedInfo::AssociatedFrameInfos`.
+// On WebView2 runtime 154.0.4258.62 a call into that iterator crashed the whole process (an access
+// violation inside EmbeddedBrowserWebView.dll, found with a debugger and symbolised in docs/CRASH-0.1.0.md).
+// The code now keeps every COM object of that chain alive for the whole walk, but a native fault cannot
+// be caught, so the first walk of each run leaves a marker file behind. If the app dies mid-walk the
+// marker is still there on the next start and the API stays off for that runtime version (per-tab memory
+// is then reported as unavailable instead of crashing). A different runtime version tries again.
+
+static FRAME_INFO_ENABLED: AtomicBool = AtomicBool::new(true);
+static FRAME_INFO_VERIFIED: AtomicBool = AtomicBool::new(false);
+static FRAME_GUARD: Mutex<Option<(PathBuf, String)>> = Mutex::new(None);
+
+const FRAME_GUARD_FILE: &str = "frame-info-guard.txt";
+
+/// Environment switch: `off` never reads frame infos, `on` ignores a stored crash marker.
+pub const FRAME_INFO_ENV: &str = "PROJECT_BROWSER_FRAME_INFO";
+
+/// What to do at startup given the marker left by the previous run (pure, unit-tested).
+/// Returns whether frame infos may be read and the marker to leave on disk (`None` = delete it).
+pub fn guard_decision(marker: Option<&str>, runtime: &str) -> (bool, Option<String>) {
+    match marker.map(str::trim) {
+        Some(m) => match m.split_once(':') {
+            // The previous run started a walk and never finished it: it crashed inside it.
+            Some(("pending", v)) | Some(("disabled", v)) if v == runtime => (false, Some(format!("disabled:{runtime}"))),
+            _ => (true, None),
+        },
+        None => (true, None),
+    }
+}
+
+/// Reads the marker, decides, and remembers where to write the next one. Call once at startup.
+pub fn init_frame_guard(dir: &std::path::Path, runtime: &str, env: Option<&str>) {
+    let path = dir.join(FRAME_GUARD_FILE);
+    let stored = std::fs::read_to_string(&path).ok();
+    let (mut enabled, marker) = guard_decision(stored.as_deref(), runtime);
+    match env.map(str::trim) {
+        Some("off") => {
+            enabled = false;
+            log::warn!("frame info reading switched off by {FRAME_INFO_ENV}");
+        }
+        Some("on") if !enabled => {
+            enabled = true;
+            log::warn!("frame info reading forced on by {FRAME_INFO_ENV} despite an earlier crash");
+        }
+        _ => {}
+    }
+    match (&marker, enabled) {
+        (Some(m), false) => {
+            let _ = std::fs::write(&path, m);
+            log::warn!("frame infos disabled for WebView2 {runtime}: the previous run crashed while reading them");
+        }
+        _ => {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+    FRAME_INFO_ENABLED.store(enabled, Ordering::SeqCst);
+    if let Ok(mut g) = FRAME_GUARD.lock() {
+        *g = Some((path, runtime.to_string()));
+    }
+    log::info!("frame info reading: {}", if enabled { "enabled" } else { "disabled" });
+}
+
+pub fn frame_info_enabled() -> bool {
+    FRAME_INFO_ENABLED.load(Ordering::SeqCst)
+}
+
+/// Leaves the "walk in progress" marker (first walk of this run only).
+fn frame_guard_begin() {
+    if FRAME_INFO_VERIFIED.load(Ordering::SeqCst) {
+        return;
+    }
+    if let Ok(g) = FRAME_GUARD.lock() {
+        if let Some((path, runtime)) = g.as_ref() {
+            let _ = std::fs::write(path, format!("pending:{runtime}"));
+            log::info!("frame info walk starting (first of this run)");
+        }
+    }
+}
+
+/// The walk finished without crashing: remove the marker.
+fn frame_guard_success() {
+    if FRAME_INFO_VERIFIED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    if let Ok(g) = FRAME_GUARD.lock() {
+        if let Some((path, _)) = g.as_ref() {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+    log::info!("frame info walk finished");
+}
 
 /// Sets the folder new downloads are saved to (`None` = WebView2's default, the user's Downloads folder).
 pub fn set_download_dir(dir: Option<PathBuf>) {
@@ -351,8 +445,9 @@ pub fn install_shell(pw: PlatformWebview, ctl: ControllerHandle, devtools: bool)
             Ok(())
         })()
     };
-    if let Err(e) = result {
-        log::error!("failed to configure shell webview: {e}");
+    match result {
+        Ok(()) => log::info!("startup: shell webview configured"),
+        Err(e) => log::error!("failed to configure shell webview: {e}"),
     }
 }
 
@@ -859,6 +954,8 @@ pub struct ProcSnapshot {
     pub renderer_frames: Vec<(u32, Vec<u32>)>,
     pub tab_frames: Vec<(TabId, u32)>,
     pub shell_frame: Option<u32>,
+    /// Frame infos were not read (guard or switch), so processes cannot be attributed to tabs.
+    pub frames_unavailable: bool,
 }
 
 fn process_kind(kind: COREWEBVIEW2_PROCESS_KIND) -> &'static str {
@@ -886,6 +983,7 @@ pub fn collect_processes(ctl: ControllerHandle) {
         return;
     };
     let mut snap = ProcSnapshot {
+        frames_unavailable: !frame_info_enabled(),
         shell_frame: main_frame_id(&shell.webview),
         tab_frames: TABS.with(|t| t.borrow().iter().filter_map(|(id, tc)| main_frame_id(&tc.webview).map(|f| (*id, f))).collect()),
         ..Default::default()
@@ -912,6 +1010,10 @@ pub fn collect_processes(ctl: ControllerHandle) {
         let started = env13.GetProcessExtendedInfos(&GetProcessExtendedInfosCompletedHandler::create(Box::new(move |res, coll| {
             let mut snap = snap;
             if let (Ok(()), Some(coll)) = (res, coll) {
+                let frames_enabled = frame_info_enabled();
+                if frames_enabled {
+                    frame_guard_begin();
+                }
                 let mut n = 0u32;
                 let _ = coll.Count(&mut n);
                 for i in 0..n {
@@ -922,20 +1024,34 @@ pub fn collect_processes(ctl: ControllerHandle) {
                         continue;
                     }
                     let mut frames = Vec::new();
-                    if let Ok(iter) = ext.AssociatedFrameInfos().and_then(|f| f.GetIterator()) {
-                        while read_bool(|b| iter.HasCurrent(b)) {
-                            if let Ok(fi) = iter.GetCurrent().and_then(|f| f.cast::<ICoreWebView2FrameInfo2>()) {
-                                let mut fid = 0u32;
-                                if fi.FrameId(&mut fid).is_ok() {
-                                    frames.push(fid);
+                    if frames_enabled {
+                        // The collection must outlive its iterator, and every object stays referenced until the walk
+                        // is over: dropping the collection right after `GetIterator` left the iterator pointing at
+                        // freed memory (the crash fixed in 0.1.1).
+                        if let Ok(collection) = ext.AssociatedFrameInfos() {
+                            if let Ok(iter) = collection.GetIterator() {
+                                while read_bool(|b| iter.HasCurrent(b)) {
+                                    if let Ok(current) = iter.GetCurrent() {
+                                        if let Ok(fi) = current.cast::<ICoreWebView2FrameInfo2>() {
+                                            let mut fid = 0u32;
+                                            if fi.FrameId(&mut fid).is_ok() {
+                                                frames.push(fid);
+                                            }
+                                        }
+                                    }
+                                    if !read_bool(|b| iter.MoveNext(b)) {
+                                        break;
+                                    }
                                 }
+                                drop(iter);
                             }
-                            if !read_bool(|b| iter.MoveNext(b)) {
-                                break;
-                            }
+                            drop(collection);
                         }
                     }
                     snap.renderer_frames.push((pid as u32, frames));
+                }
+                if frames_enabled {
+                    frame_guard_success();
                 }
             }
             c.post(move |ctl| ctl.on_process_snapshot(snap));
@@ -944,5 +1060,61 @@ pub fn collect_processes(ctl: ControllerHandle) {
         if started.is_err() {
             ctl.post(move |c| c.on_process_snapshot(fallback));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_clean_start_keeps_frame_infos_on() {
+        assert_eq!(guard_decision(None, "154.0.1"), (true, None));
+        assert_eq!(guard_decision(Some("garbage"), "154.0.1"), (true, None));
+    }
+
+    #[test]
+    fn a_walk_that_never_finished_disables_frame_infos_for_that_runtime_only() {
+        // The previous run wrote "pending" and then died inside the walk.
+        assert_eq!(guard_decision(Some("pending:154.0.1"), "154.0.1"), (false, Some("disabled:154.0.1".into())));
+        // The decision sticks on later runs of the same runtime...
+        assert_eq!(guard_decision(Some("disabled:154.0.1"), "154.0.1"), (false, Some("disabled:154.0.1".into())));
+        // ...but a different runtime version gets another chance and the marker is cleared.
+        assert_eq!(guard_decision(Some("disabled:154.0.1"), "155.0.0"), (true, None));
+        assert_eq!(guard_decision(Some("pending:154.0.1"), "155.0.0"), (true, None));
+    }
+
+    #[test]
+    fn marker_file_lifecycle_across_simulated_runs() {
+        let dir = std::env::temp_dir().join(format!("pb-guard-{}-{}", std::process::id(), crate::error::now_ms()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let marker = dir.join(FRAME_GUARD_FILE);
+
+        // Run 1: starts clean, begins the walk (marker appears) and finishes it (marker removed).
+        init_frame_guard(&dir, "154.0.1", None);
+        assert!(frame_info_enabled());
+        frame_guard_begin();
+        assert_eq!(std::fs::read_to_string(&marker).unwrap(), "pending:154.0.1");
+        frame_guard_success();
+        assert!(!marker.exists(), "a completed walk leaves no marker");
+
+        // Run 2: the process died mid-walk, so the pending marker is still there at the next start.
+        std::fs::write(&marker, "pending:154.0.1").unwrap();
+        FRAME_INFO_VERIFIED.store(false, Ordering::SeqCst);
+        init_frame_guard(&dir, "154.0.1", None);
+        assert!(!frame_info_enabled(), "crash during the walk disables it");
+        assert_eq!(std::fs::read_to_string(&marker).unwrap(), "disabled:154.0.1");
+
+        // Explicit switches win in both directions.
+        init_frame_guard(&dir, "154.0.1", Some("on"));
+        assert!(frame_info_enabled());
+        init_frame_guard(&dir, "154.0.1", Some("off"));
+        assert!(!frame_info_enabled());
+
+        // A new runtime version retries.
+        init_frame_guard(&dir, "155.0.0", None);
+        assert!(frame_info_enabled());
+        assert!(!marker.exists());
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

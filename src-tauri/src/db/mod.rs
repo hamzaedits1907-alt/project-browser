@@ -105,11 +105,12 @@ impl Db {
     }
 
     fn migrate(&mut self) -> Result<()> {
-        let version: usize = self.conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
-        for (i, sql) in MIGRATIONS.iter().enumerate().skip(version) {
+        // rusqlite has no integer impls for usize: the schema version is read and written as i64.
+        let version: i64 = self.conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
+        for (i, sql) in MIGRATIONS.iter().enumerate().skip(usize::try_from(version).unwrap_or(0)) {
             let tx = self.conn.transaction()?;
             tx.execute_batch(sql)?;
-            tx.pragma_update(None, "user_version", i + 1)?;
+            tx.pragma_update(None, "user_version", (i + 1) as i64)?;
             tx.commit()?;
             log::info!("database migrated to schema v{}", i + 1);
         }
@@ -144,8 +145,8 @@ mod tests {
     #[test]
     fn migrations_are_idempotent_and_kv_roundtrips() {
         let db = Db::open_in_memory().unwrap();
-        let v: usize = db.conn.pragma_query_value(None, "user_version", |r| r.get(0)).unwrap();
-        assert_eq!(v, MIGRATIONS.len());
+        let v: i64 = db.conn.pragma_query_value(None, "user_version", |r| r.get(0)).unwrap();
+        assert_eq!(v as usize, MIGRATIONS.len());
         db.kv_set("k", &vec![1, 2, 3]).unwrap();
         assert_eq!(db.kv_get::<Vec<i32>>("k").unwrap(), Some(vec![1, 2, 3]));
         db.kv_set("k", &vec![4]).unwrap();

@@ -20,7 +20,7 @@ use crate::import::{DetectedProfile, ImportReport, SourceBrowser};
 use crate::native::{self, NavAction};
 use crate::navigation::{is_internal, resolve_input, search_url, Resolved, SearchEngine};
 use crate::profile::ProfileMeta;
-use crate::secrets::{Secret, SecretStore};
+use crate::secrets::Secret;
 use crate::settings::{BackgroundTabAction, Settings};
 use crate::shortcuts::Command;
 use crate::tabs::TabId;

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#161B26"/>
+      <stop offset="1" stop-color="#07090D"/>
+    </linearGradient>
+    <linearGradient id="ion" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#9FF0FF"/>
+      <stop offset="1" stop-color="#3BB8FF"/>
+    </linearGradient>
+  </defs>
+  <rect x="48" y="48" width="928" height="928" rx="208" fill="url(#bg)"/>
+  <rect x="49.5" y="49.5" width="925" height="925" rx="206.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="3"/>
+  <!-- twin forward chevrons: speed + navigation -->
+  <path d="M300 268 L548 512 L300 756 L388 756 L636 512 L388 268 Z" fill="url(#ion)"/>
+  <path d="M492 268 L740 512 L492 756 L560 756 L808 512 L560 268 Z" fill="#6AE3FF" fill-opacity="0.38"/>
+</svg>

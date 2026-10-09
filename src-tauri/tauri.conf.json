@@ -1,0 +1,54 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Project Browser",
+  "version": "0.1.0",
+  "identifier": "com.projectbrowser.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [],
+    "security": {
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self'",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' data: blob: https: http:",
+        "font-src": "'self' data:",
+        "connect-src": "ipc: http://ipc.localhost"
+      },
+      "capabilities": ["shell"]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "publisher": "Project Browser",
+    "shortDescription": "Gaming-first web browser",
+    "longDescription": "A fast, memory-conscious desktop web browser built for gamers.",
+    "category": "Utility",
+    "copyright": "",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
+    "createUpdaterArtifacts": false,
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper", "silent": true },
+      "nsis": {
+        "installMode": "currentUser",
+        "installerIcon": "icons/icon.ico",
+        "displayLanguageSelector": false,
+        "startMenuFolder": "Project Browser"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDRBQjc0MTRDQkZCMzcwNzYKUldSMmNMTy9URUczU3VFMUlNL2VCd3Z5QzJUVXlqNjNZeTdHM1dpbGtQV2p1aEtCRTFwa21Za20K",
+      "endpoints": [],
+      "windows": { "installMode": "passive" }
+    }
+  }
+}

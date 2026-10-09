@@ -1,0 +1,67 @@
+/* Design tokens. Dark-first; accent colour is switched with [data-accent]. */
+:root {
+  color-scheme: dark;
+
+  --ah: 197;
+  --as: 100%;
+  --al: 62%;
+  --accent: hsl(var(--ah) var(--as) var(--al));
+  --accent-hi: hsl(var(--ah) var(--as) calc(var(--al) + 12%));
+  --accent-lo: hsl(var(--ah) 85% 44%);
+  --accent-soft: hsl(var(--ah) var(--as) var(--al) / 0.13);
+  --accent-mid: hsl(var(--ah) var(--as) var(--al) / 0.28);
+  --accent-line: hsl(var(--ah) var(--as) var(--al) / 0.55);
+  --on-accent: #03121b;
+
+  --bg-0: #0b0d12; /* window / page background (matches the native window colour) */
+  --bg-1: #0f1218; /* chrome */
+  --bg-2: #141821; /* toolbar, cards */
+  --bg-3: #1a1f2b; /* raised controls */
+  --bg-4: #232938; /* hover */
+  --bg-5: #2c3345; /* pressed */
+
+  --line-1: rgb(255 255 255 / 0.05);
+  --line-2: rgb(255 255 255 / 0.09);
+  --line-3: rgb(255 255 255 / 0.16);
+
+  --text-1: #eceef4;
+  --text-2: #a4acbf;
+  --text-3: #6c7589;
+  --text-4: #4a5266;
+
+  --good: #4ade80;
+  --warn: #fbbf24;
+  --bad: #ff5d73;
+  --info: #60a5fa;
+
+  --r-xs: 6px;
+  --r-sm: 8px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 20px;
+
+  --shadow-pop: 0 18px 50px rgb(0 0 0 / 0.55), 0 2px 8px rgb(0 0 0 / 0.4);
+  --shadow-card: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 8px 24px rgb(0 0 0 / 0.25);
+
+  --font-ui: "Inter Variable", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Space Grotesk Variable", "Inter Variable", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Cascadia Code", "Cascadia Mono", Consolas, ui-monospace, monospace;
+
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --t-fast: 120ms;
+  --t-med: 200ms;
+
+  --titlebar-h: 40px;
+  --toolbar-h: 46px;
+  --bookmarks-h: 32px;
+}
+
+:root[data-accent="violet"] { --ah: 258; --as: 100%; --al: 72%; --on-accent: #0d0724; }
+:root[data-accent="magenta"] { --ah: 322; --as: 100%; --al: 68%; --on-accent: #240615; }
+:root[data-accent="lime"] { --ah: 96; --as: 78%; --al: 56%; --on-accent: #0c1a02; }
+:root[data-accent="amber"] { --ah: 38; --as: 100%; --al: 58%; --on-accent: #231500; }
+:root[data-accent="crimson"] { --ah: 352; --as: 100%; --al: 66%; --on-accent: #26040a; }
+
+/* Gaming Mode shifts the whole shell a step hotter. */
+:root[data-gaming="true"] { --accent-line: hsl(var(--ah) var(--as) var(--al) / 0.75); }

@@ -155,7 +155,18 @@ fn looks_like_host(text: &str) -> bool {
     }
     let valid_chars = host.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '.');
     let tld = host.rsplit('.').next().unwrap_or("");
-    valid_chars && tld.len() >= 2 && tld.chars().all(|c| c.is_alphabetic())
+    valid_chars && tld.len() >= 2 && tld.chars().all(|c| c.is_alphabetic()) && !is_file_extension(tld)
+}
+
+/// Common file extensions that are not top-level domains: `notes.txt` is a search, not a website.
+/// Extensions that are real TLDs (`.rs`, `.md`, `.sh`, `.py`...) are deliberately not listed.
+fn is_file_extension(tld: &str) -> bool {
+    const EXTENSIONS: &[&str] = &[
+        "txt", "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "rtf", "csv", "json", "xml", "yaml", "yml", "toml", "ini", "cfg", "log", "png",
+        "jpg", "jpeg", "gif", "bmp", "svg", "webp", "ico", "zip", "rar", "tar", "gz", "exe", "msi", "dll", "bat", "cmd", "iso", "mp3", "mp4",
+        "mkv", "avi", "wav", "html", "htm", "css", "js", "mjs", "jsx", "tsx", "cpp", "java",
+    ];
+    EXTENSIONS.iter().any(|e| e.eq_ignore_ascii_case(tld))
 }
 
 /// Lowercase host of a web URL (used for per-site exceptions and permissions).
@@ -223,6 +234,8 @@ mod tests {
         assert_eq!(web("rust lang"), "https://www.google.com/search?q=rust+lang");
         assert_eq!(web("hello"), "https://www.google.com/search?q=hello");
         assert_eq!(web("file.txt"), "https://www.google.com/search?q=file.txt");
+        assert_eq!(web("report.PDF"), "https://www.google.com/search?q=report.PDF");
+        assert_eq!(web("docs.rs"), "https://docs.rs/", "real TLDs that look like extensions stay websites");
         assert_eq!(web("?example.com"), "https://www.google.com/search?q=example.com");
         assert_eq!(web("c++ & rust"), "https://www.google.com/search?q=c%2B%2B+%26+rust");
     }

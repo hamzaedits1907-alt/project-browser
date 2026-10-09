@@ -76,7 +76,7 @@ mod tests {
 
     #[test]
     fn friendly_titles() {
-        assert!(render("https://a.b/", "INTERNET_DISCONNECTED", "x").contains("You're offline"));
+        assert!(render("https://a.b/", "INTERNET_DISCONNECTED", "x").contains("You&#39;re offline"), "apostrophes are HTML-escaped");
         assert!(render("https://a.b/", "NAME_NOT_RESOLVED", "x").contains("a.b"));
     }
 }

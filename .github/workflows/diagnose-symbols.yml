@@ -32,7 +32,6 @@ jobs:
           workspaces: src-tauri
           key: symbols
       - run: npm ci
-      - run: npm run build
       - name: Build with symbols (same optimisation settings as the release profile)
         shell: pwsh
         env:
@@ -40,7 +39,8 @@ jobs:
           CARGO_PROFILE_RELEASE_DEBUG: "line-tables-only"
         run: |
           rustc --version
-          cargo build --release --locked --manifest-path src-tauri/Cargo.toml
+          # Same pipeline as the installer build (enables tauri/custom-protocol), minus bundling.
+          npx tauri build --no-bundle
           Get-ChildItem src-tauri/target/release/*.exe, src-tauri/target/release/*.pdb | Select-Object Name, Length
       - uses: actions/upload-artifact@v4
         with:

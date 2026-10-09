@@ -163,8 +163,8 @@ fn looks_like_host(text: &str) -> bool {
 fn is_file_extension(tld: &str) -> bool {
     const EXTENSIONS: &[&str] = &[
         "txt", "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "rtf", "csv", "json", "xml", "yaml", "yml", "toml", "ini", "cfg", "log", "png",
-        "jpg", "jpeg", "gif", "bmp", "svg", "webp", "ico", "zip", "rar", "tar", "gz", "exe", "msi", "dll", "bat", "cmd", "iso", "mp3", "mp4",
-        "mkv", "avi", "wav", "html", "htm", "css", "js", "mjs", "jsx", "tsx", "cpp", "java",
+        "jpg", "jpeg", "gif", "bmp", "svg", "webp", "ico", "zip", "rar", "tar", "gz", "exe", "msi", "dll", "bat", "cmd", "iso", "mp3", "mp4", "mkv",
+        "avi", "wav", "html", "htm", "css", "js", "mjs", "jsx", "tsx", "cpp", "java",
     ];
     EXTENSIONS.iter().any(|e| e.eq_ignore_ascii_case(tld))
 }

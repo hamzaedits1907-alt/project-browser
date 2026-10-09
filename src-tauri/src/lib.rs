@@ -34,6 +34,18 @@ fn urls_from_args(args: &[String]) -> Vec<String> {
     args.iter().skip(1).filter(|a| !a.starts_with('-')).cloned().collect()
 }
 
+/// `--gaming`: start with Gaming Mode on for this session (benchmarking sleeping tabs without touching the UI).
+/// It is a start-up switch, not a saved preference: a profile used normally never gets it by accident.
+fn gaming_from_args(args: &[String]) -> bool {
+    args.iter().skip(1).any(|a| a == "--gaming")
+}
+
+/// `--load-all`: load every URL given on the command line right away (hidden), instead of only the last one.
+/// Used by the memory benchmark (scripts/benchmark.ps1) so that N tabs really are N loaded pages.
+fn load_all_from_args(args: &[String]) -> bool {
+    args.iter().skip(1).any(|a| a == "--load-all")
+}
+
 pub fn run() {
     ai::ensure_crypto_provider();
     tauri::Builder::default()
@@ -72,7 +84,11 @@ pub fn run() {
             let (profile, created) = profiles.open_launch_profile(None)?;
             let db = Db::open(&profile.db_path())?;
             log::info!("startup: profile '{}' and database ready", profile.meta.id);
-            let settings: Settings = db.kv_get("settings")?.unwrap_or_default();
+            let mut settings: Settings = db.kv_get("settings")?.unwrap_or_default();
+            if gaming_from_args(&std::env::args().collect::<Vec<_>>()) {
+                log::info!("startup: --gaming given, Gaming Mode is on for this session");
+                settings.gaming_mode = true;
+            }
             let onboarded: bool = db.kv_get("onboarded")?.unwrap_or(false);
             let geometry: Option<WindowGeometry> = db.kv_get("window")?;
 
@@ -88,6 +104,7 @@ pub fn run() {
                 first_run: created || !onboarded,
                 process_start,
                 startup_urls: urls_from_args(&std::env::args().collect::<Vec<_>>()),
+                load_all: load_all_from_args(&std::env::args().collect::<Vec<_>>()),
             });
 
             log::info!("startup: controller thread started");

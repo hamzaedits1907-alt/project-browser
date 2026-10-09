@@ -1,0 +1,164 @@
+name: Release
+
+# Publishes a GitHub Release with the Windows installer, the signed updater package and latest.json, which is
+# what the in-app updater reads (plugins.updater.endpoints in tauri.conf.json).
+#
+# Deliberate triggers only:
+#   * push a version tag:  git tag v0.1.2 && git push origin v0.1.2
+#   * Actions -> Release -> Run workflow, choosing a tag (re-runs a release for an existing tag)
+#
+# Needs the repository secret TAURI_SIGNING_PRIVATE_KEY (the updater private key). The key has no password. The
+# workflow stops before building if the secret is missing, and never prints it.
+#
+# Two different signatures are involved and neither replaces the other:
+#   * the Tauri updater signature (minisign), made here with the secret, checked by the app before it installs;
+#   * Windows Authenticode code signing, which this project does not have yet (see docs/RELEASING.md).
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to release (for example v0.1.2)"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  checks:
+    name: Checks before publishing
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - name: The tag must match the version in the project
+        shell: pwsh
+        run: |
+          $conf = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $pkg = Get-Content package.json -Raw | ConvertFrom-Json
+          $cargo = (Select-String -Path src-tauri/Cargo.toml -Pattern '^version = "(.+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
+          Write-Host "tag=$env:TAG tauri.conf=$($conf.version) package.json=$($pkg.version) Cargo.toml=$cargo"
+          if ("v$($conf.version)" -ne $env:TAG -or $pkg.version -ne $conf.version -or $cargo -ne $conf.version) {
+            throw "Version mismatch: the tag must be v<version> and all three version fields must agree."
+          }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+      - name: Clippy
+        run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets
+        continue-on-error: true
+      - name: Rust tests (unit and updater end-to-end)
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+
+  publish:
+    name: Build, sign and publish
+    runs-on: windows-latest
+    needs: checks
+    timeout-minutes: 60
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      # The release key was generated without a password.
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+    steps:
+      - name: The signing secret must exist
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) {
+            Write-Host "::error title=Missing secret::TAURI_SIGNING_PRIVATE_KEY is not set. Add it under Settings -> Secrets and variables -> Actions. Nothing was built or published."
+            exit 1
+          }
+          Write-Host "signing key secret is present (value not shown)"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - name: Release notes for this version
+        id: notes
+        shell: pwsh
+        run: |
+          $file = "release-notes/$env:TAG.md"
+          if (-not (Test-Path $file)) { throw "Missing $file: write the release notes before tagging." }
+          $text = Get-Content $file -Raw
+          $delim = "EOF_" + [guid]::NewGuid().ToString("N")
+          "body<<$delim`n$text`n$delim" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+      - name: Build installer and updater package, publish release
+        uses: tauri-apps/tauri-action@v0.6.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ env.TAG }}
+          releaseName: "Project Browser ${{ env.TAG }}"
+          releaseBody: ${{ steps.notes.outputs.body }}
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: true
+          uploadPlainBinary: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Independently verify the published update (latest.json, installer, signature)
+        shell: pwsh
+        run: |
+          python -m pip install --quiet cryptography
+          python scripts/verify-release.py --selftest
+          # The release is public as soon as tauri-action finishes; give the CDN a moment.
+          $ok = $false
+          for ($i = 0; $i -lt 6 -and -not $ok; $i++) {
+            python scripts/verify-release.py --tag $env:TAG --out release-verification.json
+            if ($LASTEXITCODE -eq 0) { $ok = $true } else { Start-Sleep -Seconds 20 }
+          }
+          if (-not $ok) { throw "The published release did not verify. See the output above." }
+      - name: Install the published installer silently and start the app (smoke test)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $report = Get-Content release-verification.json -Raw | ConvertFrom-Json
+          $setup = Join-Path $env:RUNNER_TEMP "setup.exe"
+          Invoke-WebRequest -Uri $report.installer_url -OutFile $setup
+          Start-Process -FilePath $setup -ArgumentList "/S" -Wait
+          $exe = Join-Path $env:LOCALAPPDATA "Project Browser\project-browser.exe"
+          if (-not (Test-Path $exe)) { throw "the installer did not install $exe" }
+          ./scripts/smoke-startup.ps1 -Exe $exe -Seconds 30 -ReportDir installed-smoke-report
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-diagnostics
+          path: |
+            release-verification.json
+            installed-smoke-report
+          if-no-files-found: ignore
+          retention-days: 30

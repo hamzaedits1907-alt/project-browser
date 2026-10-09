@@ -109,8 +109,10 @@ jobs:
         run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets
         continue-on-error: true
 
+      # Test builds do not make the signed updater package (that needs the private key, which only the Release
+      # workflow has). The installer itself is identical.
       - name: Build Windows installer
-        run: npx tauri build
+        run: npx tauri build --config src-tauri/tauri.ci.conf.json
 
       # Launches the real exe on the runner against a throwaway data folder and checks it survives the first
       # process-memory sample (the step that crashed 0.1.0), logged the startup stages and left no crash event.

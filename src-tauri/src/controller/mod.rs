@@ -253,6 +253,7 @@ pub struct Controller {
     /// Tabs found to hold typed-in data, and until when they are not asked again.
     pub(crate) dirty_until: HashMap<TabId, i64>,
     pending_urls: Vec<String>,
+    load_all: bool,
     dirty: Dirty,
     session_save_at: Option<Instant>,
     sleep_check_at: Instant,
@@ -267,6 +268,8 @@ pub struct ControllerInit {
     pub first_run: bool,
     pub process_start: Option<i64>,
     pub startup_urls: Vec<String>,
+    /// Load every startup URL immediately instead of leaving all but the last unloaded (benchmarking).
+    pub load_all: bool,
 }
 
 const SESSION_SAVE_DELAY: Duration = Duration::from_millis(800);
@@ -317,6 +320,7 @@ impl Controller {
             epochs: HashMap::new(),
             dirty_until: HashMap::new(),
             pending_urls: init.startup_urls,
+            load_all: init.load_all,
             dirty: Dirty::default(),
             session_save_at: None,
             sleep_check_at: Instant::now() + Duration::from_secs(30),
@@ -500,8 +504,11 @@ impl Controller {
             self.tabs.activate(a, now);
         }
         let mut opened_from_args = 0;
+        let load_all = self.load_all;
         for url in std::mem::take(&mut self.pending_urls) {
-            self.open_url(url, true);
+            // Normally each URL becomes the active tab in turn (so only the last one is loaded). With --load-all the
+            // first stays active and the rest load hidden in the background.
+            self.open_url(url, !load_all || opened_from_args == 0);
             opened_from_args += 1;
         }
         let start_on_new_tab = self.settings.startup == crate::settings::StartupBehavior::NewTab && opened_from_args == 0;

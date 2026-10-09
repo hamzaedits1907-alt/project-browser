@@ -1,0 +1,53 @@
+name: Diagnose (symbols build)
+
+# Manual only. Rebuilds a given commit with symbols kept, so that crash addresses from an installed
+# release build can be mapped to function names. Not used for releases; the release profile in
+# Cargo.toml is untouched (the symbol settings are applied on the command line of this run only).
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Commit SHA or tag to rebuild with symbols"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  symbols:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: symbols
+      - run: npm ci
+      - run: npm run build
+      - name: Build with symbols (same optimisation settings as the release profile)
+        shell: pwsh
+        env:
+          CARGO_PROFILE_RELEASE_STRIP: "false"
+          CARGO_PROFILE_RELEASE_DEBUG: "line-tables-only"
+        run: |
+          rustc --version
+          cargo build --release --locked --manifest-path src-tauri/Cargo.toml
+          Get-ChildItem src-tauri/target/release/*.exe, src-tauri/target/release/*.pdb | Select-Object Name, Length
+      - uses: actions/upload-artifact@v4
+        with:
+          name: symbols-build
+          path: |
+            src-tauri/target/release/project-browser.exe
+            src-tauri/target/release/project_browser.pdb
+            src-tauri/target/release/project-browser.pdb
+          if-no-files-found: warn
+          retention-days: 7

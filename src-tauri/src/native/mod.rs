@@ -898,10 +898,8 @@ pub fn page_text(id: TabId, reply: tokio::sync::oneshot::Sender<Option<String>>)
     }
 }
 
-/// Script that answers whether the page holds data the user typed and has not submitted: a changed text
-/// field, textarea, checkbox, radio button or select, or a rich-text box with content. When in doubt it
-/// says yes (any error counts as "has input").
-const UNSAVED_INPUT_JS: &str = "(() => { try { for (const el of document.querySelectorAll('input, textarea, select, [contenteditable]')) { if (el.matches('[contenteditable=\"false\"]')) continue; const tag = el.tagName; if (tag === 'INPUT') { const t = (el.type || '').toLowerCase(); if (['hidden','button','submit','reset','image','file'].includes(t)) continue; if (t === 'checkbox' || t === 'radio') { if (el.checked !== el.defaultChecked) return true; continue; } if (el.value !== el.defaultValue) return true; } else if (tag === 'TEXTAREA') { if (el.value !== el.defaultValue) return true; } else if (tag === 'SELECT') { for (const o of el.options) { if (o.selected !== o.defaultSelected) return true; } } else if (el.isContentEditable && (el.textContent || '').trim().length > 0) return true; } return false; } catch (e) { return true; } })()";
+/// Script that answers whether the page holds data the user typed and has not submitted (see the file for the rules).
+const UNSAVED_INPUT_JS: &str = include_str!("unsaved_input.js");
 
 /// Asks a tab whether it holds unsaved typed-in data before its webview is destroyed.
 /// Replies `Some(true/false)`, or `None` when the page could not be asked (the caller treats that as "yes").

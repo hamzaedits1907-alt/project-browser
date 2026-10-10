@@ -63,3 +63,23 @@
 
 `PROJECT_BROWSER_UPDATE_ENDPOINT` (https, or http on loopback only) points a build at another feed for experiments.
 Signatures are verified regardless.
+
+## Record
+
+**v0.1.1, 2026-10-10** (<https://github.com/hamzaedits1907-alt/project-browser/releases/tag/v0.1.1>)
+
+* Published by the Release workflow: `Project.Browser_0.1.1_x64-setup.exe` (3,653,144 bytes, SHA-256
+  `4e786bc1a5955cc4448ee10608b9b51f42a1eda3f20e96f44f1e9b3139ee455f`), `Project.Browser_0.1.1_x64-setup.exe.sig`, `latest.json`.
+* `scripts/verify-release.py --tag v0.1.1`, run by the workflow and again by hand from another machine: `latest.json` announces
+  0.1.1, the installer downloads, and its signature verifies against the public key in `tauri.conf.json` (signed
+  comment `version:0.1.1`). Result: `verified`.
+* The published installer was installed silently on a hosted Windows runner and started: alive after 30 s, startup stages
+  logged, first process sample completed, no crash event.
+* The same feed URL answers `latest.json` with `windows-x86_64` and `windows-x86_64-nsis` entries pointing at that installer.
+
+**Not yet done: an update installed from inside a running older version.** That needs a second published release to
+update *to*, and a person (or UI automation) to press the buttons in the older, installed version. Everything it consists
+of is covered separately above (discovering a newer version, downloading, rejecting tampered or wrongly signed packages,
+version comparison, "up to date", the UI states), but the whole chain has not been run end to end.
+To do it: install 0.1.1; when a later version is published, open **Settings → About → Check now**, press **Download and
+install…** and confirm. The app should close, install and reopen on the new version with its tabs.

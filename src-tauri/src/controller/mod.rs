@@ -252,6 +252,8 @@ pub struct Controller {
     pub(crate) epochs: HashMap<TabId, u64>,
     /// Tabs found to hold typed-in data, and until when they are not asked again.
     pub(crate) dirty_until: HashMap<TabId, i64>,
+    /// Tabs WebView2 declined to suspend, and until when they are not asked again.
+    pub(crate) suspend_cooldown: HashMap<TabId, i64>,
     pending_urls: Vec<String>,
     load_all: bool,
     dirty: Dirty,
@@ -319,6 +321,7 @@ impl Controller {
             download_tabs: HashMap::new(),
             epochs: HashMap::new(),
             dirty_until: HashMap::new(),
+            suspend_cooldown: HashMap::new(),
             pending_urls: init.startup_urls,
             load_all: init.load_all,
             dirty: Dirty::default(),

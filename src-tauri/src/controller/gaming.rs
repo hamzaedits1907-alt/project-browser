@@ -15,6 +15,8 @@ use crate::tabs::{Lifecycle, TabId};
 const GAMING_BACKGROUND_GRACE_MS: i64 = 10_000;
 /// A page that had typed-in data is not asked again for this long.
 const DIRTY_RECHECK_MS: i64 = 5 * 60_000;
+/// A tab WebView2 refused to suspend is not asked again for this long.
+const SUSPEND_RETRY_MS: i64 = 60_000;
 /// How long to wait for the page to answer the unsaved-input question. No answer counts as "has input".
 const DIRTY_CHECK_TIMEOUT: Duration = Duration::from_millis(1500);
 
@@ -91,6 +93,9 @@ impl Controller {
 
     /// Asks WebView2 to suspend the (hidden) tab. The answer is matched against the tab's activation epoch.
     fn suspend(&mut self, id: TabId) {
+        if self.suspend_cooldown.get(&id).is_some_and(|until| *until > now_ms()) {
+            return;
+        }
         let epoch = self.epochs.get(&id).copied().unwrap_or(0);
         let ctl = self.handle.clone();
         let _ = self.app.run_on_main_thread(move || native::try_suspend(id, ctl, epoch));
@@ -100,12 +105,13 @@ impl Controller {
     /// answer in time) is put to sleep instead: nothing the user typed is thrown away.
     fn request_unload(&mut self, id: TabId, reason: Reason) {
         if self.dirty_until.get(&id).is_some_and(|until| *until > now_ms()) {
-            self.sleep_instead_of_unload(id, reason);
+            // Already known to hold typed-in data: no new question and no new log line.
+            self.sleep_instead_of_unload(id, reason, false);
             return;
         }
         let (tx, rx) = tokio::sync::oneshot::channel();
         if self.app.run_on_main_thread(move || native::page_has_unsaved_input(id, tx)).is_err() {
-            self.sleep_instead_of_unload(id, reason);
+            self.sleep_instead_of_unload(id, reason, true);
             return;
         }
         let ctl = self.handle.clone();
@@ -115,9 +121,11 @@ impl Controller {
         });
     }
 
-    fn sleep_instead_of_unload(&mut self, id: TabId, reason: Reason) {
-        log::info!("tab {id}: not unloaded (it may hold typed-in data); sleeping it instead");
-        if reason == Reason::Manual {
+    fn sleep_instead_of_unload(&mut self, id: TabId, reason: Reason, announce: bool) {
+        if announce {
+            log::info!("tab {id}: not unloaded (it may hold typed-in data); sleeping it instead");
+        }
+        if announce && reason == Reason::Manual {
             self.toast("This page has text you typed, so it was put to sleep instead of being unloaded.");
         }
         let Some(facts) = self.facts_for(id) else { return };
@@ -130,7 +138,7 @@ impl Controller {
     pub(crate) fn finish_unload(&mut self, id: TabId, dirty: bool, reason: Reason) {
         if dirty {
             self.dirty_until.insert(id, now_ms() + DIRTY_RECHECK_MS);
-            self.sleep_instead_of_unload(id, reason);
+            self.sleep_instead_of_unload(id, reason, true);
             return;
         }
         // Things may have changed while the page was being asked (a download started, the tab was selected...).
@@ -147,7 +155,12 @@ impl Controller {
     pub fn on_suspended(&mut self, id: TabId, ok: bool, epoch: u64) {
         let current = self.epochs.get(&id).copied().unwrap_or(0);
         let is_active = self.tabs.active_id() == Some(id);
+        if !ok && sleep_policy::suspend_still_valid(epoch, current, is_active) {
+            log::info!("tab {id}: WebView2 declined to suspend it; trying again in {} s", SUSPEND_RETRY_MS / 1000);
+            self.suspend_cooldown.insert(id, now_ms() + SUSPEND_RETRY_MS);
+        }
         if ok && sleep_policy::suspend_still_valid(epoch, current, is_active) {
+            self.suspend_cooldown.remove(&id);
             if let Some(t) = self.tabs.get_mut(id) {
                 if t.lifecycle == Lifecycle::Live {
                     t.lifecycle = Lifecycle::Sleeping;

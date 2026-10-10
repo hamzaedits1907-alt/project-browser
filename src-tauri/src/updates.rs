@@ -163,7 +163,11 @@ pub async fn check(app: &AppHandle, state: &UpdateState) -> Result<UpdateStatus>
     }
     let _busy = state.begin()?;
     let current = app.package_info().version.to_string();
-    let found = build_updater(app)?.check().await.map_err(|e| Error::msg(describe_error(&e)))?;
+    let found = build_updater(app)?.check().await.map_err(|e| {
+        log::warn!("update check failed: {e}");
+        Error::msg(describe_error(&e))
+    })?;
+    log::info!("update check: running {current}, newer version available: {}", found.as_ref().map_or("none".to_string(), |u| u.version.clone()));
     Ok(match found {
         Some(u) => {
             let status = UpdateStatus::Available {
@@ -191,6 +195,7 @@ fn emit(app: &AppHandle, ev: UpdateEvent) {
 pub async fn install(app: &AppHandle, state: &UpdateState) -> Result<()> {
     let _busy = state.begin()?;
     let update = state.take().ok_or_else(|| Error::msg("Check for updates first."))?;
+    log::info!("update install: downloading version {}", update.version);
     emit(app, UpdateEvent::Downloading { downloaded: 0, total: None });
     let mut downloaded = 0u64;
     let mut throttle = Throttle::new(Duration::from_millis(150));
@@ -206,7 +211,11 @@ pub async fn install(app: &AppHandle, state: &UpdateState) -> Result<()> {
             || {},
         )
         .await
-        .map_err(|e| Error::msg(describe_error(&e)))?;
+        .map_err(|e| {
+            log::warn!("update download failed: {e}");
+            Error::msg(describe_error(&e))
+        })?;
+    log::info!("update install: package downloaded and signature verified ({} bytes), starting the installer", bytes.len());
     emit(app, UpdateEvent::Installing);
     // The plugin's `on_before_exit` hook (see `build_updater`) is not attached to an `Update` obtained
     // earlier, so save the session here too; it is cheap and idempotent.

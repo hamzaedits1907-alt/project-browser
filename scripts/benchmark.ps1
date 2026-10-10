@@ -29,6 +29,9 @@ param(
   [int]$Idle = 60,
   [int]$SampleEvery = 5,
   [switch]$Gaming,
+  # Project Browser only: JSON merged into the fresh profile's settings before the measured launch, e.g.
+  # '{"gamingBackgroundAction":"unload"}' to measure unloading instead of sleeping. Needs python on PATH (sqlite3 module).
+  [string]$SeedSettings = "",
   [string]$Out = "bench-results"
 )
 $ErrorActionPreference = "Stop"
@@ -96,6 +99,20 @@ foreach ($n in $Tabs) {
   $launch = @()
   if ($isPb) {
     $env:PROJECT_BROWSER_DATA_DIR = $profile
+    if ($SeedSettings) {
+      # Start once so the app creates its database, stop it, then write the settings row.
+      $prime = Start-Process -FilePath $Exe -PassThru
+      Start-Sleep -Seconds 8
+      Stop-Process -Id $prime.Id -Force -ErrorAction SilentlyContinue
+      Start-Sleep -Seconds 2
+      $db = Join-Path $profile "profiles/default/browser.db"
+      # The JSON goes through a file: Windows PowerShell 5.1 drops the double quotes of arguments passed to native programs.
+      $jsonFile = Join-Path $profile "seed-settings.json"
+      [IO.File]::WriteAllText($jsonFile, $SeedSettings)
+      $py = "import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.execute('INSERT OR REPLACE INTO kv(key,value) VALUES(?,?)',('settings',open(sys.argv[2],encoding='utf-8').read())); c.commit()"
+      python -c $py $db $jsonFile
+      if ($LASTEXITCODE -ne 0) { throw "could not seed settings (is python on PATH?)" }
+    }
     $launch += "--load-all"
     if ($Gaming) { $launch += "--gaming" }
     $launch += $urls
@@ -103,7 +120,7 @@ foreach ($n in $Tabs) {
     $launch += "--user-data-dir=`"$profile`"", "--no-first-run", "--no-default-browser-check", "--disable-extensions", "--new-window"
     $launch += $urls
   }
-  Write-Host "== $Browser $version, $n tab(s)$(if ($Gaming) { ', Gaming Mode' })"
+  Write-Host "== $Browser $version, $n tab(s)$(if ($Gaming) { ', Gaming Mode' })$(if ($SeedSettings) { ", settings $SeedSettings" })"
   $p = Start-Process -FilePath $Exe -ArgumentList $launch -PassThru
   Start-Sleep -Seconds $LoadWait
   Start-Sleep -Seconds $Settle
@@ -128,7 +145,7 @@ foreach ($n in $Tabs) {
   Remove-Item -Recurse -Force $profile -ErrorAction SilentlyContinue
 
   $summaries += [pscustomobject]@{
-    browser = $Browser; version = $version; tabs = $n; gaming = [bool]$Gaming; samples = $rows.Count
+    browser = $Browser; version = $version; tabs = $n; gaming = [bool]$Gaming; seeded = $SeedSettings; samples = $rows.Count
     memoryMB_median = (Median ($rows | ForEach-Object { $_.MemoryMB })); memoryMB_max = ($rows | Measure-Object MemoryMB -Maximum).Maximum
     cpuPercent_median = (Median ($rows | ForEach-Object { $_.CpuPercent })); cpuPercent_mean = [math]::Round(($rows | Measure-Object CpuPercent -Average).Average, 2)
     processes_median = (Median ($rows | ForEach-Object { $_.Processes }))
@@ -141,7 +158,7 @@ $result = [pscustomobject]@{
   conditions = [pscustomobject]@{ loadWaitSec = $LoadWait; settleSec = $Settle; idleSec = $Idle; sampleEverySec = $SampleEvery; pages = @($Pages[0..(($Tabs | Measure-Object -Maximum).Maximum - 1)]) }
   results = $summaries
 }
-$jsonPath = Join-Path $Out "$stamp-$Browser$(if ($Gaming) { '-gaming' })-summary.json"
+$jsonPath = Join-Path $Out "$stamp-$Browser$(if ($Gaming) { '-gaming' })$(if ($SeedSettings) { '-seeded' })-summary.json"
 $result | ConvertTo-Json -Depth 6 | Set-Content $jsonPath -Encoding utf8
 Write-Host "`n---- summary ($jsonPath)"
 $summaries | Format-Table -AutoSize

@@ -397,6 +397,8 @@ impl Controller {
 
     pub(crate) fn destroy_view(&mut self, id: TabId) {
         self.epochs.remove(&id);
+        self.suspend_cooldown.remove(&id);
+        self.dirty_until.remove(&id);
         if let Some(view) = self.views.remove(&id) {
             log::info!("tab {id}: webview destroyed");
             let _ = self.app.run_on_main_thread(move || native::remove_tab(id));

@@ -103,11 +103,8 @@ jobs:
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml secrets -- --ignored
         continue-on-error: true
 
-      # Lint warnings are reported but do not block the installer yet: the code has never been
-      # linted. Once this step is clean, remove continue-on-error and add `-- -D warnings`.
-      - name: Clippy (informational)
-        run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets
-        continue-on-error: true
+      - name: Clippy (warnings are errors)
+        run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 
       # Test builds do not make the signed updater package (that needs the private key, which only the Release
       # workflow has). The installer itself is identical.

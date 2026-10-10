@@ -947,10 +947,10 @@ pub fn clear_browsing_data(kinds: ClearKinds, reply: tokio::sync::oneshot::Sende
         k = k | COREWEBVIEW2_BROWSING_DATA_KINDS_DISK_CACHE | COREWEBVIEW2_BROWSING_DATA_KINDS_CACHE_STORAGE;
     }
     if kinds.passwords {
-        k = k | COREWEBVIEW2_BROWSING_DATA_KINDS_PASSWORD_AUTOSAVE;
+        k |= COREWEBVIEW2_BROWSING_DATA_KINDS_PASSWORD_AUTOSAVE;
     }
     if kinds.autofill {
-        k = k | COREWEBVIEW2_BROWSING_DATA_KINDS_GENERAL_AUTOFILL;
+        k |= COREWEBVIEW2_BROWSING_DATA_KINDS_GENERAL_AUTOFILL;
     }
     if k.0 == 0 {
         let _ = reply.send(true);

@@ -11,9 +11,11 @@ on your PC is irrelevant.
 4. Unzip and double-click `Project Browser_0.1.0_x64-setup.exe`. It installs per-user (no administrator prompt),
    adds a Start menu entry and installs the WebView2 runtime if the PC lacks it.
 
-The workflow runs, in order: frontend typecheck, lint, tests and build → `cargo fmt --check` (enforced) → Rust unit
-tests (`--locked`; the first real compile) → (informational) Credential Manager round-trip and `clippy` → `tauri build`.
-It uploads the installer, the bare `project-browser.exe` and the Rust test log. A tag such as `v0.1.0` additionally
+The workflow runs, in order: frontend typecheck, lint, tests and build → `cargo fmt --check` → Rust unit tests and the
+updater end-to-end tests (`--locked`) → (informational) Credential Manager round-trip → `clippy -D warnings` → `tauri build`
+→ **startup smoke test** (launches the built exe on the runner, see below). It uploads the installer, the bare
+`project-browser.exe`, the Rust test log and the smoke-test report. Test builds do not make the signed updater package; only
+the Release workflow does (see [UPDATES.md](UPDATES.md)). A tag such as `v0.1.0` additionally
 attaches the installer to a draft GitHub Release.
 
 **A green run proves compilation, unit tests and packaging only.** It does not prove that WebView2 renders pages; follow
@@ -70,3 +72,18 @@ npm run check:web
 
 `npm run dev` and open `http://localhost:1420/` in any Chromium browser: the shell runs against a mock core.
 Use the query parameters listed in the README to reach specific states.
+
+## Startup smoke test
+
+`scripts/smoke-startup.ps1 -Exe <project-browser.exe>` starts the real executable against a throwaway data folder
+(`PROJECT_BROWSER_DATA_DIR`), waits, and checks: still alive, startup stages logged, the first process-memory sample
+completed (the step that crashed 0.1.0), no Windows crash event, no panic. It writes `smoke-summary.json` and the log.
+It proves the process starts and survives; it does not prove pages render (that was checked separately by screenshotting
+the app's own window, see [VERIFY-WINDOWS.md](VERIFY-WINDOWS.md)).
+
+## Diagnosing a crash
+
+* Log: `%LOCALAPPDATA%\com.projectbrowser.desktop\logs\project-browser.log` (each startup stage is a line).
+* **Diagnose (symbols build)** workflow: rebuilds a given commit through the same `tauri build` path with symbols and
+  uploads the exe and PDB, so addresses from a Windows crash event can be mapped to function names. How the 0.1.0 crash was
+  found this way: [CRASH-0.1.0.md](CRASH-0.1.0.md).

@@ -31,6 +31,8 @@
 * **secrets.rs** secret storage: `SecretStore` trait, Windows Credential Manager implementation, opaque `Secret` type.
 * **ai.rs** the assistant backend: provider abstraction (OpenAI-compatible, Anthropic), SSE streaming, page-context fencing.
 * **window.rs** builds the shell window and tab webviews.
+* **updates.rs** in-app updates (`tauri-plugin-updater`, GitHub Releases, signature-checked, user-confirmed): [UPDATES.md](UPDATES.md).
+* **controller/sleep_policy.rs** the pure rules for sleeping/unloading tabs; `controller/gaming.rs` applies them. `controller/consistency.rs` checks the tab model against the native views after every step.
 * **logging.rs** a small file logger (`<data>/logs/project-browser.log`) so native problems leave evidence.
 
 ## The shell (`src/`)
@@ -65,6 +67,20 @@ slot where the native webview would sit.
 3. Only the active tab's webview is shown (`relayout`); others are hidden, and may be suspended (sleeping) or destroyed
    (unloaded). Waking is just becoming visible again; an unloaded tab gets a new webview from its stored URL.
 4. Closing a tab destroys its webview and drops the native handles (`native::remove_tab`).
+
+### Sleeping, unloading and the memory limit
+
+* **Sleep** = WebView2 `TrySuspend` on a hidden tab: the page keeps all its state and wakes instantly when shown.
+* **Unload** = the webview is destroyed (nothing hidden is kept); the page reloads when opened and the site may lose
+  transient state. Before unloading, the page is asked whether it holds typed-in data (changed fields, rich-text boxes); if so,
+  or if it does not answer in 1.5 s, it is put to sleep instead.
+* Never slept automatically: the active tab, tabs playing audio, loading, waiting on a permission prompt, with a running
+  download, on the never-sleep list, and (setting, on by default) pinned tabs. A running download also blocks unloading.
+* Idle timer (default 30 min; 10 s in Gaming Mode), Gaming Mode (background tabs sleep or unload, downloads are held
+  and resumed afterwards) and an optional **memory limit** (one least-recently-used tab per sample, sleeping first, unloading
+  only when nothing is left to sleep) all use the same rules. Suspend answers carry the tab's activation epoch, so one that
+  arrives after the tab was switched to is ignored (rapid switching cannot mark a running page as asleep).
+* Restored tabs are created unloaded and only get a webview when first shown.
 
 ### Session restore
 

@@ -66,6 +66,12 @@ pub struct CpuTracker {
     cpus: f64,
 }
 
+impl Default for CpuTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CpuTracker {
     pub fn new() -> Self {
         CpuTracker { prev: HashMap::new(), cpus: logical_cpu_count() as f64 }

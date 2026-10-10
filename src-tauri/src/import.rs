@@ -422,7 +422,7 @@ pub fn map_search_engine(short_name: &str, url: &str) -> Option<ImportedSearch> 
     }
     let host = probe.host_str()?.to_ascii_lowercase();
     let labels: Vec<&str> = host.split('.').collect();
-    let has = |name: &str| labels.iter().any(|l| *l == name);
+    let has = |name: &str| labels.contains(&name);
     let engine = if has("google") {
         Some(SearchEngine::Google)
     } else if host == "www.bing.com" || host == "bing.com" {

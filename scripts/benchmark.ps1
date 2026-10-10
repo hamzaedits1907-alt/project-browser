@@ -66,22 +66,16 @@ function Get-Tree([int]$rootPid) {
 }
 
 # One reading: summed over the process tree, each process counted once (distinct PIDs).
+# Uses the WMI performance classes (English property names on every Windows language, unlike Get-Counter paths).
 function Sample-Tree([int]$rootPid) {
   $tree = Get-Tree $rootPid
-  $c = Get-Counter -Counter "\Process(*)\ID Process", "\Process(*)\Working Set - Private", "\Process(*)\% Processor Time" -SampleInterval 1 -MaxSamples 2
-  $byInstance = @{}
-  foreach ($s in $c[1].CounterSamples) {
-    $inst = $s.InstanceName
-    if ($inst -eq "_total" -or $inst -eq "idle") { continue }
-    if (-not $byInstance.ContainsKey($inst)) { $byInstance[$inst] = @{} }
-    $byInstance[$inst][($s.Path -split "\\")[-1]] = $s.CookedValue
-  }
+  $null = Get-CimInstance Win32_PerfFormattedData_PerfProc_Process   # first read primes the per-process CPU deltas
+  Start-Sleep -Seconds 1
   $mem = 0.0; $cpu = 0.0; $count = 0
-  foreach ($kv in $byInstance.GetEnumerator()) {
-    $procId = [int]$kv.Value["id process"]
-    if ($tree.Contains($procId)) {
-      $mem += $kv.Value["working set - private"]
-      $cpu += $kv.Value["% processor time"]
+  foreach ($p in (Get-CimInstance Win32_PerfFormattedData_PerfProc_Process)) {
+    if ($tree.Contains([int]$p.IDProcess)) {
+      $mem += [double]$p.WorkingSetPrivate
+      $cpu += [double]$p.PercentProcessorTime
       $count++
     }
   }
@@ -125,7 +119,7 @@ foreach ($n in $Tabs) {
     $s = Sample-Tree $root
     $rows += [pscustomobject]@{ Seconds = [int](((Get-Date) - $t0).TotalSeconds); MemoryMB = [math]::Round($s.Memory / 1MB, 1); CpuPercent = [math]::Round($s.Cpu, 2); Processes = $s.Processes }
     Write-Host ("  t={0,3}s  {1,8} MB  {2,6} % CPU  {3} processes" -f $rows[-1].Seconds, $rows[-1].MemoryMB, $rows[-1].CpuPercent, $rows[-1].Processes)
-    Start-Sleep -Seconds ([math]::Max(0, $SampleEvery - 2))
+    Start-Sleep -Seconds ([math]::Max(0, $SampleEvery - 1))
   }
   $rows | Export-Csv -NoTypeInformation -Path (Join-Path $Out "$stamp-$Browser-$n-tabs.csv")
   foreach ($procId in (Get-Tree $root)) { Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue }

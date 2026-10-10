@@ -151,6 +151,7 @@ impl Controller {
             if let Some(t) = self.tabs.get_mut(id) {
                 if t.lifecycle == Lifecycle::Live {
                     t.lifecycle = Lifecycle::Sleeping;
+                    log::info!("tab {id}: sleeping (WebView2 suspended)");
                     self.mark_state();
                 }
             }

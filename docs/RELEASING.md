@@ -1,20 +1,24 @@
 # Releasing
 
-## Versioning
+## Versioning and publishing
 
-Bump `version` in all three places, then tag:
+Bump `version` everywhere (a unit test and the Release workflow fail if they disagree):
 
-* `package.json`
-* `src-tauri/Cargo.toml`
+* `package.json` and `package-lock.json`
+* `src-tauri/Cargo.toml` and the `project-browser` entry in `src-tauri/Cargo.lock`
 * `src-tauri/tauri.conf.json`
 
+Write `release-notes/v<version>.md`, commit, push, then tag:
+
 ```text
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.1.2
+git push origin v0.1.2
 ```
 
-The tag triggers the **Windows build** workflow, which attaches the installer to a **draft** GitHub Release.
-Review the draft and publish it.
+The tag starts the **Release** workflow (`.github/workflows/release.yml`), which checks, builds, signs, publishes the
+GitHub Release (installer, signed updater package, `latest.json`) and verifies what it published. Details, the signing
+key and what is tested: [UPDATES.md](UPDATES.md). The ordinary **Windows build** workflow is for test builds only and
+never publishes.
 
 ## The installer
 
@@ -25,8 +29,8 @@ Review the draft and publish it.
 
 ## SmartScreen and signing
 
-**Smart App Control.** On PCs where Windows 11's Smart App Control is on (it is on this development PC), an unsigned
-installer or app is *blocked outright*, with no "Run anyway" button, and so are locally compiled Rust build tools
+**Smart App Control.** On PCs where Windows 11's Smart App Control is on an unsigned
+installer or app can be *blocked outright*, with no "Run anyway" button, and so are locally compiled Rust build tools
 (`os error 4551`). To run a build on such a PC it must be signed with a certificate Microsoft trusts (for example
 Azure Trusted Signing or a purchased code-signing certificate). Turning Smart App Control off is the only other way
 and is deliberately not done here.
@@ -37,15 +41,7 @@ anyway*. A signed installer removes the warning once it builds reputation. To si
 `signCommand` in `tauri.conf.json` (see the Tauri v2 "Windows code signing" guide). This repository does not do that
 for you.
 
-## Automatic updates (optional)
+## Automatic updates
 
-Update code is in place (`src-tauri/src/updates.rs`, `tauri-plugin-updater`) but dormant:
-
-1. Generate a signing key pair: `npx tauri signer generate -w updater.key` (keep the private key secret; `*.key` is
-   git-ignored).
-2. Put the **public** key in `plugins.updater.pubkey` of `tauri.conf.json` (replace the placeholder there).
-3. Set `bundle.createUpdaterArtifacts` to `true`, add repository secrets `TAURI_SIGNING_PRIVATE_KEY` and
-   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, and pass them as `env` to the `tauri build` step.
-4. Host a `latest.json` over https and build with `PROJECT_BROWSER_UPDATE_ENDPOINT=https://…/latest.json`.
-
-Without an endpoint, **Settings → About** states that updates are not configured instead of pretending to check.
+Live since 0.1.1: see [UPDATES.md](UPDATES.md). The updater verifies a Tauri signature (minisign) before installing; that
+is not the same thing as the Windows code signing above, which is still missing.

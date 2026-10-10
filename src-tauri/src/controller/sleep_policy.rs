@@ -136,6 +136,9 @@ pub fn suspend_still_valid(requested_epoch: u64, current_epoch: u64, is_active: 
 mod tests {
     use super::*;
 
+    /// Changes one field of a tab, to build the protected-tab cases.
+    type Edit = Box<dyn Fn(&mut TabFacts)>;
+
     fn tab(id: TabId) -> TabFacts {
         TabFacts {
             id,
@@ -159,7 +162,7 @@ mod tests {
 
     #[test]
     fn protected_tabs_are_never_slept_automatically() {
-        let cases: [(&str, Box<dyn Fn(&mut TabFacts)>); 8] = [
+        let cases: [(&str, Edit); 8] = [
             ("active", Box::new(|t| t.active = true)),
             ("audio", Box::new(|t| t.audible = true)),
             ("loading", Box::new(|t| t.loading = true)),

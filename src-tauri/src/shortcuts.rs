@@ -170,7 +170,7 @@ mod tests {
 
     #[test]
     fn editing_and_page_keys_pass_through() {
-        for c in [b'C', b'V', b'X', b'A', b'Z', b'P', b'S', b'U'] {
+        for c in *b"CVXAZPSU" {
             assert_eq!(map_key(key(c), C), None, "Ctrl+{}", c as char);
         }
         assert_eq!(map_key(VK_ESCAPE, NONE), None, "plain Esc belongs to the page");

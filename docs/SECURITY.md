@@ -85,8 +85,23 @@ another Windows account, or anyone who copies the profile folder or database, ca
 Limits: malware running as your Windows user can ask the Credential Manager for your credentials just like this
 browser can; Windows has no per-app isolation for generic credentials. Use an API key with a spending limit.
 
+## Updates
+
+* The app updates itself only from the release feed in its configuration, over https, and only installs a package whose
+  Tauri (minisign) signature verifies against the public key compiled into the app. A tampered file, or one signed by
+  another key, is rejected before installing; this is covered by automated tests.
+* An update is never installed without a confirmation, and the background check only shows a notice.
+* The private updater key lives outside the repository and is stored only as an encrypted GitHub Actions secret. It is
+  never printed, uploaded or placed in a release. This signature is separate from Windows code signing, which is missing.
+* `PROJECT_BROWSER_UPDATE_ENDPOINT` (https, or http on loopback) and `PROJECT_BROWSER_DATA_DIR` are test switches for the
+  local user; signatures are still verified.
+
+## Logs
+
+`%LOCALAPPDATA%\com.projectbrowser.desktop\logs\project-browser.log` records startup stages, native errors and update errors.
+It never contains page addresses beyond scheme and host (nothing for private tabs), cookies, passwords, API keys or page text.
+
 ## Known limitations
 
 * Installers are unsigned: SmartScreen warns on first run, and Smart App Control blocks them outright (see RELEASING.md).
-* The auto-updater is wired but only active in builds that set `PROJECT_BROWSER_UPDATE_ENDPOINT`.
 * There is no extension support.

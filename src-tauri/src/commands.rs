@@ -537,7 +537,7 @@ pub async fn first_run_complete(s: State<'_, AppState>, profile_name: Option<Str
 #[tauri::command]
 pub async fn import_detect(s: State<'_, AppState>) -> Result<Vec<DetectedProfile>> {
     let root = s.local_app_data.clone();
-    Ok(tauri::async_runtime::spawn_blocking(move || crate::import::detect(&root)).await.map_err(|e| Error::msg(e.to_string()))?)
+    tauri::async_runtime::spawn_blocking(move || crate::import::detect(&root)).await.map_err(|e| Error::msg(e.to_string()))
 }
 
 #[tauri::command]

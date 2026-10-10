@@ -2,7 +2,8 @@
 // They parse the Rust sources, so a renamed command, a new setting or a changed
 // payload fails `npm test` here instead of breaking at runtime inside the app.
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { execSync } from "node:child_process";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -329,5 +330,67 @@ describe("native wiring", () => {
 
   it("the file logger is installed at startup", () => {
     expect(read("src-tauri/src/lib.rs")).toContain("logging::init(");
+  });
+});
+
+// ---- release and update pipeline ----------------------------------------------------------
+
+describe("release pipeline", () => {
+  const conf = JSON.parse(read("src-tauri/tauri.conf.json")) as {
+    version: string;
+    bundle: { createUpdaterArtifacts: boolean; targets: string[] };
+    plugins: { updater: { endpoints: string[]; pubkey: string; windows?: { installMode?: string } } };
+  };
+  const release = read(".github/workflows/release.yml");
+
+  it("uses one version everywhere", () => {
+    const cargo = /^version = "(.+)"$/m.exec(read("src-tauri/Cargo.toml"))?.[1];
+    const lock = /name = "project-browser"\r?\nversion = "(.+)"/.exec(read("src-tauri/Cargo.lock"))?.[1];
+    const pkg = (JSON.parse(read("package.json")) as { version: string }).version;
+    expect([pkg, cargo, lock]).toEqual([conf.version, conf.version, conf.version]);
+    expect(existsSync(join(root, `release-notes/v${conf.version}.md`)), "release notes for the current version").toBe(true);
+  });
+
+  it("points the updater at the GitHub release feed with signed artifacts", () => {
+    expect(conf.plugins.updater.endpoints).toEqual(["https://github.com/hamzaedits1907-alt/project-browser/releases/latest/download/latest.json"]);
+    expect(Buffer.from(conf.plugins.updater.pubkey, "base64").toString("utf8")).toMatch(/^untrusted comment: minisign public key: [0-9A-F]{16}\n/);
+    expect(conf.bundle.createUpdaterArtifacts).toBe(true);
+    expect(conf.bundle.targets).toContain("nsis");
+    expect(conf.plugins.updater.windows?.installMode).toBe("passive");
+  });
+
+  it("never keeps an updater private key in the repository", () => {
+    const tracked = execSync("git ls-files", { cwd: root, encoding: "utf8" }).split("\n").filter(Boolean);
+    expect(tracked.filter((f) => /\.key$/i.test(f))).toEqual([]);
+    for (const f of tracked) {
+      if (/\.(png|ico|woff2|exe)$/i.test(f) || f === "package-lock.json") continue;
+      const text = readFileSync(join(root, f), "utf8");
+      // Built from pieces so this very file does not contain the marker it is looking for.
+      expect(text, f).not.toMatch(new RegExp("rsign " + "encrypted secret key|minisign " + "secret key"));
+    }
+    expect(read(".gitignore")).toMatch(/^\*\.key$/m);
+  });
+
+  it("is started only deliberately, and uses the signing secret without ever printing it", () => {
+    expect(release).toMatch(/on:\s*\n\s*push:\s*\n\s*tags:\s*\["v\*"\]\s*\n\s*workflow_dispatch:/);
+    expect(release).not.toMatch(/pull_request/);
+    expect(release).toContain("secrets.TAURI_SIGNING_PRIVATE_KEY");
+    expect(release).toMatch(/TAURI_SIGNING_PRIVATE_KEY is not set/);
+    expect(release).not.toMatch(/(echo|Write-Host|Write-Output)[^\n]*\$env:TAURI_SIGNING_PRIVATE_KEY\b(?!_PASSWORD)(?![^\n]*IsNullOrWhiteSpace)/);
+    expect(release).toMatch(/tauri-apps\/tauri-action@v\d+\.\d+\.\d+/);
+    expect(release).toContain("scripts/verify-release.py");
+    expect(release).toMatch(/cargo clippy[^\n]*-D warnings/);
+    expect(release).toContain("cargo test --locked");
+  });
+
+  it("does not expose the updater plugin's own commands to any webview", () => {
+    const cap = read("src-tauri/capabilities/shell.json");
+    expect(cap).not.toMatch(/updater:/);
+    expect(cap).not.toMatch(/process:/);
+  });
+
+  it("builds test installers without needing the private key", () => {
+    expect(read(".github/workflows/windows-build.yml")).toContain("tauri.ci.conf.json");
+    expect(JSON.parse(read("src-tauri/tauri.ci.conf.json"))).toEqual({ bundle: { createUpdaterArtifacts: false } });
   });
 });

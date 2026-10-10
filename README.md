@@ -14,28 +14,27 @@ It installs with a normal Windows installer and starts by double-clicking it.
 
 | Area | State |
 | --- | --- |
-| Rust core (tabs, navigation, history, bookmarks, downloads, permissions, gaming, perf, import, profiles) | written; unit tests written; **never compiled or run yet** (see below) |
-| Native page rendering (WebView2 child views placed under the toolbar) | implemented; **not yet verified in a real window**: follow [docs/VERIFY-WINDOWS.md](docs/VERIFY-WINDOWS.md) |
-| React shell (all pages, menus, wizards, AI panel) | complete; type-checked, linted, unit/contract-tested, rendered and inspected against a mock core |
-| Windows installer (NSIS, per-user, no admin rights) | produced by CI: see [docs/BUILDING.md](docs/BUILDING.md) |
+| Rust core (tabs, navigation, history, bookmarks, downloads, permissions, gaming, perf, import, profiles) | compiles and passes its unit tests in CI (`cargo test`, Clippy with warnings as errors, `cargo fmt`) |
+| Startup | 0.1.0 crashed at launch on some PCs; root cause and fix: [docs/CRASH-0.1.0.md](docs/CRASH-0.1.0.md). A startup smoke test launches the real exe in CI |
+| Native page rendering (WebView2 child views under the toolbar) | seen working: a real site rendered in the app's own window (screenshot of that window only, on the development PC). The full checklist in [docs/VERIFY-WINDOWS.md](docs/VERIFY-WINDOWS.md) is not complete |
+| Sleeping tabs, Gaming Mode, memory limit | rules unit-tested; measured memory results in [docs/BENCHMARK.md](docs/BENCHMARK.md) |
+| Updates | in-app, signed, user-confirmed: [docs/UPDATES.md](docs/UPDATES.md) (a full update from one published version to the next is documented there with its status) |
+| React shell (all pages, menus, wizards, AI panel) | type-checked, linted, unit/contract-tested, rendered and inspected against a mock core |
+| Windows installer (NSIS, per-user, no admin rights) | produced by CI and by the Release workflow |
 | Code signing | not configured, so Windows SmartScreen warns on first run (see [docs/RELEASING.md](docs/RELEASING.md)) |
 
-The Rust side could not be compiled locally (Smart App Control blocks Cargo build scripts). Everything native is
-therefore verified only by the GitHub Actions build, and that proves compilation and unit tests only. If the first CI
-run reports compile errors, those are the next thing to fix. Seeing real websites render needs a person to run the
-installer on a Windows PC that may run unsigned programs (see [docs/VERIFY-WINDOWS.md](docs/VERIFY-WINDOWS.md)); Smart App
-Control blocks the unsigned installer on the development PC.
+Install **0.1.1** once from the [latest release](https://github.com/hamzaedits1907-alt/project-browser/releases/latest);
+after that, updates install from inside the app (**Settings → About**). The Rust side cannot be compiled on a PC where
+Smart App Control blocks Cargo build scripts; CI does that work (see [docs/BUILDING.md](docs/BUILDING.md)).
 
 **Blank page area in `npm run dev`?** That is expected: `npm run dev` shows only the interface against a mock core, with
 no web engine. The page area then shows a "Development preview" notice. Websites render only in the native app.
 
 ## Get the installer (no terminal needed)
 
-1. Push this repository to GitHub.
-2. Open **Actions → Windows build** and wait for the run to finish (about 10–15 minutes the first time).
-3. Download the **project-browser-windows-installer** artifact, unzip it, double-click the `.exe`.
-
-Details and troubleshooting: [docs/BUILDING.md](docs/BUILDING.md).
+Download the `…_x64-setup.exe` from the [latest release](https://github.com/hamzaedits1907-alt/project-browser/releases/latest)
+and double-click it. (Test builds from every push are the **project-browser-windows-installer** artifact of the
+**Windows build** workflow.) Details and troubleshooting: [docs/BUILDING.md](docs/BUILDING.md).
 
 ## Develop
 
@@ -63,4 +62,7 @@ Handled natively so they work whichever view has focus. Full list in **Settings 
 * [docs/BUILDING.md](docs/BUILDING.md): CI build, local build, tests.
 * [docs/VERIFY-WINDOWS.md](docs/VERIFY-WINDOWS.md): the manual checklist that proves rendering, tabs, import and profiles on real Windows.
 * [docs/SECURITY.md](docs/SECURITY.md): trust boundaries, permissions, what the browser does and does not do.
-* [docs/RELEASING.md](docs/RELEASING.md): versions, installers, signing, updates.
+* [docs/RELEASING.md](docs/RELEASING.md): versions, installers, signing.
+* [docs/UPDATES.md](docs/UPDATES.md): the in-app updater, the release pipeline, the signing key, what is tested.
+* [docs/CRASH-0.1.0.md](docs/CRASH-0.1.0.md): the 0.1.0 startup crash, how it was found and fixed.
+* [docs/BENCHMARK.md](docs/BENCHMARK.md): the repeatable memory/CPU benchmark and its measured results.

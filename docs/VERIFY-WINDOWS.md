@@ -5,6 +5,20 @@ WebView2 draws web pages in the right place, that tabs switch correctly, or that
 Chrome profile. Nobody (including the tool that wrote this code) has run the native window yet. This checklist is
 how that gets verified. Record the result of every line; do not tick what you did not see.
 
+## Already verified (and how)
+
+Done on the development PC (Windows 11, WebView2 154.0.4258.62) with the CI-built executable, against a throwaway data
+folder (`PROJECT_BROWSER_DATA_DIR`), never the real profile:
+
+* **Starts and stays up:** `scripts/smoke-startup.ps1`, 3 of 3 runs: process alive after 20-25 s, startup stages logged, first
+  process sample finished, no Windows crash event. The same script run on the 0.1.0 build fails with `0xC0000005`
+  (details: [CRASH-0.1.0.md](CRASH-0.1.0.md)).
+* **A real website renders** in the right place: the app was started with `https://example.com` and its **own window only**
+  was captured (`PrintWindow`, so no other window can appear in the image): tab titled "Example Domain", lock icon, the
+  toolbar and tab strip above, the page filling the area under the bookmarks bar. Log: `webview created … bounds=1280x682 at 0,118`.
+
+Rows of the checklist below that are not mentioned here have **not** been run.
+
 ## What you need
 
 * The installer from the **project-browser-windows-installer** artifact of a green run (or the bare

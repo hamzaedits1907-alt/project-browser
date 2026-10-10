@@ -27,7 +27,8 @@
 1. Bump the version in `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` (and the `project-browser` entry in
    `Cargo.lock`), `package.json` and `package-lock.json`. A unit test and the release workflow fail if they disagree.
 2. Write `release-notes/v<version>.md` (it becomes the release text and the "what's new" in the app).
-3. Commit, push, then `git tag v<version>` and `git push origin v<version>`.
+3. Commit and push, and wait for the **Windows build** workflow of that commit to be green (it includes the startup smoke test
+   of the real exe). Only then `git tag v<version>` and `git push origin v<version>`.
 4. The **Release** workflow runs the checks (typecheck, lint, tests, build, `cargo fmt`, Clippy with warnings as errors,
    Rust unit and updater end-to-end tests), builds the installer and the signed updater package with `tauri-action`,
    publishes the Release with `latest.json`, and then **independently verifies** the published files

@@ -15,11 +15,10 @@ The workflow runs, in order: frontend typecheck, lint, tests and build → `carg
 updater end-to-end tests (`--locked`) → (informational) Credential Manager round-trip → `clippy -D warnings` → `tauri build`
 → **startup smoke test** (launches the built exe on the runner, see below). It uploads the installer, the bare
 `project-browser.exe`, the Rust test log and the smoke-test report. Test builds do not make the signed updater package; only
-the Release workflow does (see [UPDATES.md](UPDATES.md)). A tag such as `v0.1.0` additionally
-attaches the installer to a draft GitHub Release.
+the Release workflow does (see [UPDATES.md](UPDATES.md)); pushing a `v*` tag runs that workflow, not this one.
 
-**A green run proves compilation, unit tests and packaging only.** It does not prove that WebView2 renders pages; follow
-[VERIFY-WINDOWS.md](VERIFY-WINDOWS.md) on a Windows PC that may run unsigned programs (not one with Smart App Control on).
+**A green run proves compilation, the unit tests, packaging, and that the exe starts and survives its first seconds** (the smoke
+test). It does not prove that pages render or that every feature works; follow [VERIFY-WINDOWS.md](VERIFY-WINDOWS.md).
 
 ### If the run fails
 

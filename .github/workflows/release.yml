@@ -109,7 +109,7 @@ jobs:
         shell: pwsh
         run: |
           $file = "release-notes/$env:TAG.md"
-          if (-not (Test-Path $file)) { throw "Missing $file: write the release notes before tagging." }
+          if (-not (Test-Path $file)) { throw "Missing ${file}: write the release notes before tagging." }
           $text = Get-Content $file -Raw
           $delim = "EOF_" + [guid]::NewGuid().ToString("N")
           "body<<$delim`n$text`n$delim" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8

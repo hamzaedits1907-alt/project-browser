@@ -48,4 +48,34 @@ Gaming scenario, `--gaming` (Gaming Mode on for that session). Both are start-up
 
 ## Results
 
-*(see below; nothing here is a claim about other browsers)*
+Measured on 2026-10-10 on one PC: Windows 11 Pro (build 26200), 12 logical CPUs, 15.9 GB RAM, WebView2 runtime
+154.0.4258.62, Project Browser CI builds of 0.1.1 and 0.1.2, nothing else running. Three repetitions per row; each cell
+is the median of that repetition's 12 samples (60 s window, 5 s apart). "Range" is the lowest and highest repetition.
+Page list as in the script (the first 1, 5 or 10). **Nothing else was measured: there are no Chrome, Edge, Brave or Opera GX numbers here,
+and none of this says Project Browser uses less memory than any other browser.**
+
+Total memory of the whole process tree, MB (private working set):
+
+| Tabs | Normal | Gaming Mode, background tabs **sleep** | Gaming Mode, background tabs **unload** |
+| --- | --- | --- | --- |
+| 1 | 117 (117-120) | 135 (114-163, noisy: single tab, nothing to sleep) | n/a |
+| 5 | 302 (301-306) | 301 (300-304) | 290 (286-291) |
+| 10 | 385 (351-390) | 348 (344-377) | 313 (310-324) |
+
+Processes (median): normal 8 / 12 / 17 for 1 / 5 / 10 tabs; unload 9 for both 5 and 10 tabs. Idle CPU was 0-0.8 % of the machine in every run.
+
+What this does and does not show:
+
+* **Idle cost is low and flat:** with every page loaded and untouched, CPU was effectively zero.
+* **Sleeping saves very little here.** Suspending a tab stops its CPU use and trims memory, but these pages are tiny and static; at 5 tabs the
+  difference (302 vs 301 MB) is smaller than the spread between repetitions, and at 10 tabs the ranges (normal 351-390, sleeping 344-377)
+  overlap. Sleeping tabs matter for CPU and for heavy pages; that is **not** measured here.
+* **Unloading saves real memory:** at 10 tabs about 72 MB less than normal (313 vs 385 MB, -19 %, ranges do not overlap) and half the processes.
+  The price: an unloaded page reloads when opened (see the sleeping/unloading section of ARCHITECTURE.md).
+* The browser alone (one tab) is about 117 MB across 8 processes; most of the floor is WebView2's shared processes, which do not shrink to zero.
+* An earlier set of unload runs (0.1.1) was discarded: a bug treated an untouched drop-down list as typed-in text and kept retrying one tab, so the
+  runs were inconsistent. It is fixed in 0.1.2 (tests: `src/lib/unsavedInput.test.ts`); the table above is from 0.1.2.
+* A first set of runs was also discarded because other work was running on the PC during it (CPU column showed it). That is why the rules above say
+  "nothing else running".
+
+Raw per-sample CSV and JSON summaries are written by the script (`bench-results/`); they are not kept in the repository.

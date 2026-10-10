@@ -77,9 +77,19 @@ Signatures are verified regardless.
   logged, first process sample completed, no crash event.
 * The same feed URL answers `latest.json` with `windows-x86_64` and `windows-x86_64-nsis` entries pointing at that installer.
 
-**Not yet done: an update installed from inside a running older version.** That needs a second published release to
-update *to*, and a person (or UI automation) to press the buttons in the older, installed version. Everything it consists
-of is covered separately above (discovering a newer version, downloading, rejecting tampered or wrongly signed packages,
-version comparison, "up to date", the UI states), but the whole chain has not been run end to end.
-To do it: install 0.1.1; when a later version is published, open **Settings → About → Check now**, press **Download and
-install…** and confirm. The app should close, install and reopen on the new version with its tabs.
+**v0.1.2, 2026-10-10** (<https://github.com/hamzaedits1907-alt/project-browser/releases/tag/v0.1.2>), published by the same workflow.
+
+* `scripts/verify-release.py --tag v0.1.2` from this PC: version 0.1.2, installer `Project.Browser_0.1.2_x64-setup.exe`
+  (3,656,116 bytes, SHA-256 `50941c16aac6d2fa16ced0a87cc0a3ffafe66b85dcf9b79ce58932b5bf317c60`), signature verified against the key in
+  the config, signed comment `version:0.1.2`.
+* **A real 0.1.1 client discovered it.** A 0.1.1 build was started against the live feed (throwaway profile); about 20 s after start
+  it showed the toast "Version 0.1.2 is available. Open Settings → About to install it." (captured from the app's own window).
+  This exercises the live `latest.json`, the version comparison and the update notice in the real application.
+
+**Not yet done: the install step, run from inside an installed older version.** Everything it consists of is covered
+separately (downloading, rejecting tampered or wrongly signed packages, the UI states, the published installer installing
+silently and starting on a hosted runner), but pressing *Download and install…* in an installed 0.1.1 and watching it come back as 0.1.2 has not been
+done: running it on the development PC would replace the installed copy there, so it was left for you.
+To do it: install 0.1.1 (or keep it), then **Settings → About → Check now**, **Download and install…**, confirm. The app should
+close, install and reopen on 0.1.2 with its tabs restored; the log (`logs\project-browser.log`) then shows
+`update install: package downloaded and signature verified` in 0.1.2's own later runs.

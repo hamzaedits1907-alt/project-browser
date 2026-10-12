@@ -9,6 +9,7 @@ import { closePanel, openClearData, openSettingsSection, ui } from "../../lib/ui
 import type { PanelId } from "../../lib/ui";
 import type { Bookmark, HistoryEntry } from "../../lib/types";
 import { useLoad } from "../../lib/useLoad";
+import { FocusPanel, MediaPanel, NotesPanel } from "../../features/panels/ExtraPanels";
 import { ShieldSummary } from "../menus/ShieldSummary";
 import { Favicon } from "../ui/Favicon";
 import { Icon } from "../ui/Icon";
@@ -23,6 +24,9 @@ const TITLES: Record<PanelId, { title: string; icon: IconName }> = {
   history: { title: "History", icon: "history" },
   downloads: { title: "Downloads", icon: "download" },
   shield: { title: "Project Shield", icon: "shieldCheck" },
+  notes: { title: "Notes", icon: "note" },
+  media: { title: "Media hub", icon: "headphones" },
+  focus: { title: "Focus & Screen Time", icon: "target" },
 };
 
 /** Opens a page in the current tab, or in a new one with Ctrl or the middle button. */
@@ -264,6 +268,9 @@ const BODIES: Record<PanelId, () => ReactNode> = {
   history: () => <HistoryPanel />,
   downloads: () => <DownloadsPanel />,
   shield: () => <ShieldPanel />,
+  notes: () => <NotesPanel />,
+  media: () => <MediaPanel />,
+  focus: () => <FocusPanel />,
 };
 
 /**

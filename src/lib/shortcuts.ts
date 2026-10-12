@@ -54,6 +54,17 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
     ],
   },
   {
+    title: "Tools",
+    items: [
+      { keys: ["Ctrl", "K"], label: "Command Center: tabs, commands, bookmarks, history" },
+      { keys: ["Ctrl", "Shift", "A"], label: "Command Center (Chrome's tab search key)" },
+      { keys: ["Ctrl", "Shift", "E"], label: "Split view on or off" },
+      { keys: ["F9"], label: "Reader view and Listen" },
+      { keys: ["Ctrl", "Shift", "S"], label: "Screenshot" },
+      { keys: ["F1"], label: "This list of shortcuts" },
+    ],
+  },
+  {
     title: "Gaming & performance",
     items: [
       { keys: ["Ctrl", "Shift", "G"], label: "Toggle Gaming Mode" },

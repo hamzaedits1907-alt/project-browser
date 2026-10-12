@@ -1488,11 +1488,19 @@ async fn take_screenshot(app: &AppHandle, tab_id: TabId, full: bool) -> Result<V
         .ok_or_else(|| Error::msg("The page could not be captured."))
 }
 
+/// The last screenshot taken, so "Save" writes exactly what the preview showed (the page is hidden under the dialog
+/// by then and could not be captured again).
+static LAST_SHOT: std::sync::Mutex<Option<(TabId, bool, Vec<u8>)>> = std::sync::Mutex::new(None);
+
 /// A PNG screenshot of a tab (the visible part, or the whole page), as raw bytes for the clipboard or a preview.
 #[tauri::command]
 pub async fn page_screenshot(app: AppHandle, s: State<'_, AppState>, tab_id: TabId, full: bool) -> Result<tauri::ipc::Response> {
     live_web_tab(&s, tab_id).await?;
-    Ok(tauri::ipc::Response::new(take_screenshot(&app, tab_id, full).await?))
+    let png = take_screenshot(&app, tab_id, full).await?;
+    if let Ok(mut last) = LAST_SHOT.lock() {
+        *last = Some((tab_id, full, png.clone()));
+    }
+    Ok(tauri::ipc::Response::new(png))
 }
 
 /// A file name for a screenshot of `url` taken at `ms` (UTC, so names sort by time).
@@ -1524,7 +1532,11 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
 #[tauri::command]
 pub async fn screenshot_save(app: AppHandle, s: State<'_, AppState>, tab_id: TabId, full: bool) -> Result<String> {
     let (_, url) = live_web_tab(&s, tab_id).await?;
-    let png = take_screenshot(&app, tab_id, full).await?;
+    let cached = LAST_SHOT.lock().ok().and_then(|mut l| l.take()).filter(|(t, f, _)| *t == tab_id && *f == full).map(|(_, _, png)| png);
+    let png = match cached {
+        Some(png) => png,
+        None => take_screenshot(&app, tab_id, full).await?,
+    };
     let custom = s.ctl.call(|c| c.settings.download_dir.clone()).await?;
     let dir = custom
         .map(PathBuf::from)

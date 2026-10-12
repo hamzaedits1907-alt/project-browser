@@ -18,6 +18,12 @@ export function Privacy() {
         </SettingRow>
       </Card>
 
+      <Card title="Link Cleaner" subtitle="Ad networks and newsletters add tracking codes to links (fbclid, gclid, utm_source and similar) so the site can tie your visit to a click.">
+        <SettingRow title="Remove tracking codes from links" description="Before a page loads, its address is checked; known tracking parameters are removed and the clean address is loaded. Nothing else in the address changes. Works in private tabs too.">
+          <Toggle label="Remove tracking codes from links" checked={settings.cleanLinks} onChange={(cleanLinks) => void update({ cleanLinks })} />
+        </SettingRow>
+      </Card>
+
       <Card title="Passwords and autofill" subtitle="These use the web engine's built-in features. Data stays on this computer in your profile folder, encrypted by Windows.">
         <SettingRow title="Offer to save passwords">
           <Toggle label="Offer to save passwords" checked={settings.savePasswords} onChange={(savePasswords) => void update({ savePasswords })} />

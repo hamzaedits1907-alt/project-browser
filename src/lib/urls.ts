@@ -4,7 +4,7 @@ import type { Tab } from "./types";
 
 export const NEW_TAB_URL = "browser://newtab";
 
-export const INTERNAL_PAGES = ["newtab", "settings", "history", "bookmarks", "downloads", "performance", "gaming", "memory", "research"] as const;
+export const INTERNAL_PAGES = ["newtab", "settings", "history", "bookmarks", "downloads", "performance", "gaming", "memory", "research", "focus"] as const;
 export type InternalPage = (typeof INTERNAL_PAGES)[number];
 
 export function isInternalUrl(url: string): boolean {

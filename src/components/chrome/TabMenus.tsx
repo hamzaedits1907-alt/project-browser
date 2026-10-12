@@ -2,7 +2,8 @@ import { useState } from "react";
 
 import { GROUP_HEX, groupHex, groupLabel, nextGroupColor } from "../../lib/groups";
 import { api } from "../../lib/ipc";
-import { attempt, getState, useStore } from "../../lib/store";
+import { closeDuplicates, groupBySite, sortBySite } from "../../features/tabtools/tabtools";
+import { attempt, getState, toast, useStore } from "../../lib/store";
 import { useLoad } from "../../lib/useLoad";
 import { GROUP_COLORS } from "../../lib/types";
 import type { Tab, TabGroup } from "../../lib/types";
@@ -71,6 +72,13 @@ export function TabContextMenu({ menu, onClose }: { menu: MenuAt<Tab> | null; on
               {tab.group !== null && <MenuItem icon="close" label="Remove from group" onSelect={() => void attempt(() => api.tabGroup({ op: "remove", tab: tab.id }))} />}
             </>
           )}
+          {web && tab.id !== activeId && (
+            <MenuItem
+              icon="columns"
+              label="Open in split view with the current tab"
+              onSelect={() => void attempt(() => api.splitView({ op: "open", tabId: activeId ?? undefined, with: tab.id }))}
+            />
+          )}
           <MenuSeparator />
           <MenuItem icon="windowNew" label="Move tab to a new window" disabled={tabs.length < 2} onSelect={() => void attempt(() => api.tabToWindow(tab.id), "Could not open a new window")} />
           {others.map((w) => (
@@ -94,6 +102,11 @@ export function TabContextMenu({ menu, onClose }: { menu: MenuAt<Tab> | null; on
           <MenuItem icon="layers" label="Close other tabs" disabled={tabs.length < 2} onSelect={() => void attempt(() => api.tabCloseOthers(tab.id))} />
           <MenuItem icon="chevronRight" label="Close tabs to the right" disabled={!hasRight} onSelect={() => closeTabsToTheRight(tab)} />
           <MenuItem icon="history" label="Reopen closed tab" hint="Ctrl+Shift+T" disabled={closedCount === 0} onSelect={() => void attempt(() => api.tabReopen())} />
+          <MenuSeparator />
+          <MenuHeading>Tidy up</MenuHeading>
+          <MenuItem icon="broom" label="Close duplicate tabs" onSelect={() => void closeDuplicates(tabs, activeId).then((n) => toast(n ? `Closed ${n} duplicate tab${n === 1 ? "" : "s"}` : "No duplicate tabs"))} />
+          <MenuItem icon="list" label="Sort tabs by site" disabled={tabs.length < 3} onSelect={() => void sortBySite(tabs)} />
+          <MenuItem icon="group" label="Group tabs by site" onSelect={() => void groupBySite(tabs).then((n) => toast(n ? `Made ${n} group${n === 1 ? "" : "s"}` : "No site has two loose tabs"))} />
         </div>
       )}
     </Popover>

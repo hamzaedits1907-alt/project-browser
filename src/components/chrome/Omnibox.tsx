@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 
+import { instantAnswer, resolveBang } from "../../features/omnibox/instant";
 import { api } from "../../lib/ipc";
 import { useOverlay } from "../../lib/overlay";
 import { SEARCH_ENGINES, engineLabel } from "../../lib/settings";
-import { activeTab, attempt, onBus, useStore } from "../../lib/store";
+import { activeTab, attempt, onBus, toast, useStore } from "../../lib/store";
 import type { FillOptions, SearchEngine, Suggestion, Tab } from "../../lib/types";
 import { idleAddress, splitUrl } from "../../lib/urls";
 import { useLoad } from "../../lib/useLoad";
@@ -88,8 +89,13 @@ export function Omnibox() {
   const seq = useRef(0);
   const timer = useRef<number | undefined>(undefined);
 
+  // Calculator / unit answers and bang shortcuts are computed locally as the user types.
+  const instant = useMemo(() => (focused ? instantAnswer(text) : null), [focused, text]);
+  const bang = useMemo(() => (focused ? resolveBang(text) : null), [focused, text]);
+  const extras = (instant ? 1 : 0) + (bang ? 1 : 0);
+
   // The page is replaced by a snapshot while the address is being edited, so the suggestion list can be drawn over it.
-  const overlayReady = useOverlay(focused && suggestions.length > 0);
+  const overlayReady = useOverlay(focused && suggestions.length + extras > 0);
 
   const idle = idleAddress(tab);
   const shown = focused ? text : idle;
@@ -139,9 +145,12 @@ export function Omnibox() {
   const commit = (value: string, suggestion?: Suggestion, newTab = false) => {
     const input = inputRef.current;
     setSuggestions([]);
+    const viaBang = !suggestion ? resolveBang(value) : null;
     if (suggestion?.tabId != null) {
       const id = suggestion.tabId;
       void attempt(() => api.tabActivate(id));
+    } else if (viaBang) {
+      void attempt(() => (newTab ? api.tabNew(viaBang.url) : api.navigate(viaBang.url)));
     } else if (value.trim()) {
       void attempt(() => (newTab ? api.tabNew(value) : api.navigate(value)));
     }
@@ -160,6 +169,9 @@ export function Omnibox() {
     } else if (e.key === "ArrowUp" && count) {
       e.preventDefault();
       setSelected(selected <= 0 ? count - 1 : selected - 1);
+    } else if (e.key === "Enter" && e.ctrlKey && instant) {
+      e.preventDefault();
+      copyAnswer();
     } else if (e.key === "Enter") {
       e.preventDefault();
       const s = selected >= 0 ? suggestions[selected] : undefined;
@@ -176,9 +188,17 @@ export function Omnibox() {
     }
   };
 
+  const copyAnswer = () => {
+    if (!instant) return;
+    void navigator.clipboard
+      .writeText(instant.value)
+      .then(() => toast(`Copied ${instant.value}`))
+      .catch(() => toast("Could not copy"));
+  };
+
   const sec = securityIcon(tab);
   const parts = splitUrl(idle);
-  const showList = focused && overlayReady && suggestions.length > 0;
+  const showList = focused && overlayReady && suggestions.length + extras > 0;
   const canBookmark = !!tab && !tab.url.startsWith("browser://") && !tab.error;
 
   return (
@@ -280,6 +300,25 @@ export function Omnibox() {
 
       {showList && (
         <ul id="omni-suggestions" className="omni-list" role="listbox" onMouseDown={(e) => e.preventDefault()}>
+          {instant && (
+            <li className="omni-answer" role="option" aria-selected={false} title="Click or Ctrl+Enter to copy" onClick={copyAnswer}>
+              <span className="sugg-icon">
+                <Icon name="calculator" size={15} />
+              </span>
+              <span className="omni-answer-q truncate">{instant.question}</span>
+              <span className="omni-answer-a">{instant.answer}</span>
+              <span className="sugg-kind">Copy · Ctrl+Enter</span>
+            </li>
+          )}
+          {bang && (
+            <li className="omni-answer is-bang" role="option" aria-selected={selected < 0} onClick={(e) => commit(text, undefined, e.altKey)}>
+              <span className="sugg-icon">
+                <Icon name="zap" size={15} />
+              </span>
+              <span className="sugg-title truncate">{bang.query}</span>
+              <span className="sugg-kind">Search {bang.bang.name}</span>
+            </li>
+          )}
           {suggestions.map((s, i) => (
             <li
               key={`${s.kind}-${s.url}-${i}`}

@@ -1,5 +1,6 @@
-import { lazy, Suspense, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 
+import { SplitDivider } from "../../features/split/SplitDivider";
 import { useContentLayout } from "../../lib/layout";
 import { useOverlayState } from "../../lib/overlay";
 import { activeTab, useStore } from "../../lib/store";
@@ -19,6 +20,7 @@ const Performance = lazy(() => import("../../pages/Performance"));
 const Gaming = lazy(() => import("../../pages/Gaming"));
 const Memory = lazy(() => import("../../pages/Memory"));
 const Research = lazy(() => import("../../pages/Research"));
+const Focus = lazy(() => import("../../pages/Focus"));
 
 function InternalPage({ page }: { page: string }) {
   switch (page) {
@@ -38,6 +40,8 @@ function InternalPage({ page }: { page: string }) {
       return <Memory />;
     case "research":
       return <Research />;
+    case "focus":
+      return <Focus />;
     default:
       return <NewTab />;
   }
@@ -53,6 +57,14 @@ export function ContentHost() {
   const overlay = useOverlayState();
   const ref = useRef<HTMLElement>(null);
   useContentLayout(ref, true);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setWidth(el.clientWidth));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const internal = !!tab && isInternalUrl(tab.url);
   const page = tab ? internalPageOf(tab.url) : null;
@@ -70,6 +82,7 @@ export function ContentHost() {
       ) : (
         <>
           {!inTauri && tab && <DevPreviewNotice url={tab.url} />}
+          <SplitDivider width={width} />
           {overlay.open && overlay.snapshot ? (
             <img className={`overlay-snapshot is-${overlay.backdrop}`} src={overlay.snapshot} alt="" draggable={false} />
           ) : null}

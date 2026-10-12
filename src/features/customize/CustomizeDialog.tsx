@@ -17,6 +17,10 @@ export const TOOLBAR_LABELS: Record<string, { label: string; icon: IconName; hin
   memory: { label: "Project Memory", icon: "brain", hint: "Saved notes and research" },
   performance: { label: "Performance monitor", icon: "gauge", hint: "Shift+Esc" },
   privateWindow: { label: "New private window", icon: "incognito", hint: "Ctrl+Shift+N" },
+  split: { label: "Split view", icon: "columns", hint: "Ctrl+Shift+E" },
+  reader: { label: "Reader view and Listen", icon: "book", hint: "F9" },
+  screenshot: { label: "Screenshot", icon: "crop", hint: "Ctrl+Shift+S" },
+  commands: { label: "Command Center", icon: "command", hint: "Ctrl+K" },
 };
 
 function OrderList({ catalog, chosen, label, onChange }: { catalog: readonly string[]; chosen: string[]; label: (id: string) => { label: string; icon: IconName; hint?: string }; onChange: (next: string[]) => void }) {

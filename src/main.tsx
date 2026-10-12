@@ -9,6 +9,7 @@ import "./styles/ui.css";
 import "./styles/shell.css";
 import "./styles/pages.css";
 import "./styles/features.css";
+import "./styles/tools.css";
 
 import { App } from "./App";
 import { applyCachedLook } from "./lib/theme";

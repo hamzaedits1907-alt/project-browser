@@ -102,7 +102,8 @@ pub fn clean(address: &str) -> Option<String> {
         return None;
     }
     let kept: Vec<&str> = kept.into_iter().filter(|p| !p.is_empty()).collect();
-    url.set_query(if kept.is_empty() { None } else { Some(&kept.join("&")) });
+    let query = kept.join("&");
+    url.set_query(if query.is_empty() { None } else { Some(&query) });
     Some(url.to_string())
 }
 

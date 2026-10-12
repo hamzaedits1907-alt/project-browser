@@ -3,8 +3,8 @@ import { api } from "./ipc";
 import { readLocal, writeLocal } from "./storage";
 
 /** Side panels docked next to the page (they push the page aside: nothing has to float over the native view). */
-export type PanelId = "bookmarks" | "history" | "downloads" | "shield";
-const PANELS: PanelId[] = ["bookmarks", "history", "downloads", "shield"];
+export type PanelId = "bookmarks" | "history" | "downloads" | "shield" | "notes" | "media" | "focus";
+const PANELS: PanelId[] = ["bookmarks", "history", "downloads", "shield", "notes", "media", "focus"];
 
 function savedPanel(): PanelId | null {
   const p = readLocal<string | null>("panel", null);
@@ -20,7 +20,13 @@ export const ui = createStore({
   customize: null as null | "toolbar" | "sidebar",
   /** Bumped when something asks Settings to show a section (an already open Settings page follows it). */
   settingsJump: { section: "", n: 0 },
+  /** Shell dialogs and full-page views opened from the Command Center, menus and shortcuts. */
+  dialog: null as null | "palette" | "reader" | "screenshot" | "shortcuts" | "share" | "workspaces",
 });
+
+export type ShellDialog = NonNullable<ReturnType<typeof ui.get>["dialog"]>;
+export const openDialog = (dialog: ShellDialog) => ui.set({ dialog });
+export const closeDialog = () => ui.set({ dialog: null });
 
 export const openImportWizard = () => ui.set({ importOpen: true });
 export const closeImportWizard = () => ui.set({ importOpen: false });

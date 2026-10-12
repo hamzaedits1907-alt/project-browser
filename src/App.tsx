@@ -21,6 +21,10 @@ import { AiPanel } from "./features/ai/AiPanel";
 import { ai } from "./features/ai/aiStore";
 import { checkForUpdates } from "./features/update/updateStore";
 import { FirstRun } from "./features/firstrun/FirstRun";
+import { ScreenshotDialog, ShareDialog, ShortcutsDialog, WorkspacesDialog } from "./features/dialogs/ToolDialogs";
+import { CommandPalette } from "./features/palette/CommandPalette";
+import { ReaderView } from "./features/reader/ReaderView";
+import { useScreenTime, useShellShortcuts, useSitePrefs } from "./features/shellHooks";
 import { ImportWizard } from "./features/import/ImportWizard";
 import { applyLook } from "./lib/theme";
 import { init, useStore } from "./lib/store";
@@ -39,6 +43,9 @@ export function App() {
   useEffect(() => {
     void init();
   }, []);
+  useShellShortcuts();
+  useScreenTime();
+  useSitePrefs();
 
   // One quiet look for a new version shortly after startup (announced with a toast, never installed unasked).
   const checkUpdates = settings.checkUpdates;
@@ -120,6 +127,12 @@ export function App() {
       <CustomizeDialog />
       <ImportWizard />
       <ClearDataDialog />
+      <CommandPalette />
+      <ReaderView />
+      <ScreenshotDialog />
+      <ShortcutsDialog />
+      <ShareDialog />
+      <WorkspacesDialog />
       {firstRun && <FirstRun />}
     </div>
   );

@@ -114,6 +114,20 @@ const PATHS = {
   monitor: "M3 4h18v12H3zM8 20h8M12 16v4",
   tag: "M3 12V4h8l9 9-8 8zM7.5 7.5h.01",
   clock: "M12 21a9 9 0 100-18 9 9 0 000 18zM12 7v5l3 2",
+  columns: "M4 5h16v14H4zM12 5v14",
+  book: "M4 5.5C6.5 4 9.5 4 12 6c2.5-2 5.5-2 8-.5V19c-2.5-1.5-5.5-1.5-8 .5-2.5-2-5.5-2-8-.5zM12 6v13.5",
+  crop: "M6 3v13h13M3 6h13v13",
+  target: "M12 21a9 9 0 100-18 9 9 0 000 18zM12 16a4 4 0 100-8 4 4 0 000 8zM12 12h.01",
+  qr: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2v2h-2zM18 14h2M14 18h2v2M18 18h2v2h-2zM7 7h.01M17 7h.01M7 17h.01",
+  command: "M9 6a3 3 0 10-3 3h12a3 3 0 10-3-3v12a3 3 0 103-3H6a3 3 0 103 3z",
+  headphones: "M4 15v-3a8 8 0 0116 0v3M4 15h3v5H4zM17 15h3v5h-3z",
+  note: "M5 4h10l4 4v12H5zM15 4v4h4M8 12h8M8 16h5",
+  swap: "M7 7h13l-4-4M17 17H4l4 4",
+  wand: "M4 20L15 9M14 4v2M18 6l-1.5 1.5M20 10h-2M12.5 7.5l4 4",
+  calculator: "M6 3h12v18H6zM9 7h6M9 11h.01M12 11h.01M15 11h.01M9 14h.01M12 14h.01M15 14h.01M9 17h.01M12 17h3",
+  share: "M18 8a3 3 0 100-6 3 3 0 000 6zM6 15a3 3 0 100-6 3 3 0 000 6zM18 22a3 3 0 100-6 3 3 0 000 6zM8.6 13.5l6.8 4M15.4 6.5l-6.8 4",
+  hourglass: "M6 3h12M6 21h12M7 3c0 5 10 5 10 9s-10 4-10 9M17 3c0 5-10 5-10 9s10 4 10 9",
+  workspace: "M3 7h18v12H3zM8 7V4h8v3M3 12h18",
 } as const;
 
 export type IconName = keyof typeof PATHS;

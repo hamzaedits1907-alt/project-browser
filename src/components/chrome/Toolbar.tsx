@@ -5,7 +5,8 @@ import { badgeText } from "../../features/shield/shieldModel";
 import { api } from "../../lib/ipc";
 import { cue } from "../../lib/sounds";
 import { activeTab, attempt, useStore } from "../../lib/store";
-import { togglePanel, ui } from "../../lib/ui";
+import { openDialog, togglePanel, ui } from "../../lib/ui";
+import { startScreenshot } from "../../features/dialogs/screenshotState";
 import { openImportWizard } from "../../lib/ui";
 import type { Download } from "../../lib/types";
 import { MainMenu } from "../menus/MainMenu";
@@ -87,6 +88,23 @@ function ShieldButton() {
   );
 }
 
+function SplitButton() {
+  const split = useStore((s) => s.browser.split);
+  const activeId = useStore((s) => s.browser.activeId);
+  const tab = useStore(activeTab);
+  const on = !!split && (split.left === activeId || split.right === activeId);
+  const web = !!tab && !tab.url.startsWith("browser://");
+  return (
+    <IconButton
+      icon="columns"
+      label={on ? "Close split view (Ctrl+Shift+E)" : "Split view: show this page next to another tab (Ctrl+Shift+E)"}
+      active={on}
+      disabled={!on && !web}
+      onClick={() => void attempt(() => api.splitView(on ? { op: "close" } : { op: "open" }))}
+    />
+  );
+}
+
 function ToolbarItem({ id }: { id: string }) {
   const aiOpen = ai.use((s) => s.open);
   const panel = ui.use((s) => s.panel);
@@ -107,6 +125,14 @@ function ToolbarItem({ id }: { id: string }) {
       return <IconButton icon="brain" label="Project Memory" onClick={() => void attempt(() => api.tabNew("browser://memory"))} />;
     case "performance":
       return <IconButton icon="gauge" label="Performance monitor (Shift+Esc)" onClick={() => void attempt(() => api.runCommand({ type: "openPerformance" }))} />;
+    case "split":
+      return <SplitButton />;
+    case "reader":
+      return <IconButton icon="book" label="Reader view and Listen (F9)" onClick={() => openDialog("reader")} />;
+    case "screenshot":
+      return <IconButton icon="crop" label="Screenshot (Ctrl+Shift+S)" onClick={() => void startScreenshot(false)} />;
+    case "commands":
+      return <IconButton icon="command" label="Command Center (Ctrl+K)" onClick={() => openDialog("palette")} />;
     case "privateWindow":
       return <IconButton icon="incognito" label="New private window (Ctrl+Shift+N)" onClick={() => void attempt(() => api.runCommand({ type: "newPrivateWindow" }))} />;
     default:

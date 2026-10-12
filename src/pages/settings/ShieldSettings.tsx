@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { Badge, Button, Spinner, Toggle } from "../../components/ui/controls";
 import { Card, Notice, SettingRow } from "../../components/ui/Section";
+import { useSettings } from "../../lib/useSettings";
 import { formatCount, listStatus, ruleLines, updateMessage } from "../../features/shield/shieldModel";
 import { api } from "../../lib/ipc";
 import { attempt, toast } from "../../lib/store";
@@ -84,6 +85,7 @@ export function ShieldSettings() {
 
   return (
     <>
+      <SponsorSkipCard />
       <Card
         title="Project Shield"
         subtitle="Blocks advertising and tracking requests before they are sent, using public filter lists. Switch it off for a site from the shield button next to the address bar."
@@ -96,8 +98,8 @@ export function ShieldSettings() {
           Only counts are kept, never the addresses.
         </p>
         <Notice tone="info">
-          What this does: it cancels matching scripts, images, frames and other sub-resources of a page. It does not hide leftover empty spaces on a page (there is no
-          element hiding yet), it never blocks the page you are visiting, and it has not been compared with uBlock Origin or Brave Shields, so don't expect the same results.
+          What this does: it cancels matching scripts, images, frames and other sub-resources of a page and hides ad slots with the lists' site-specific element
+          rules. It never blocks the page you are visiting, and it has not been compared with uBlock Origin or Brave Shields, so don't expect the same results.
         </Notice>
       </Card>
 
@@ -199,5 +201,20 @@ export function ShieldSettings() {
         </p>
       </Card>
     </>
+  );
+}
+
+/** SponsorSkip lives with the Shield: both remove things from pages the user did not come for. */
+function SponsorSkipCard() {
+  const { settings, update } = useSettings();
+  return (
+    <Card title="SponsorSkip for YouTube" subtitle="Jumps over sponsor reads, self-promotion and subscribe reminders inside videos, using SponsorBlock's community database.">
+      <SettingRow
+        title="Skip sponsored segments"
+        description="For each video only the first four characters of a hash of its id are sent to sponsor.ajay.app, so the service cannot tell which video you watch. Off in private tabs. A notice with Undo appears whenever something is skipped."
+      >
+        <Toggle label="Skip sponsored segments" checked={settings.sponsorSkip} onChange={(sponsorSkip) => void update({ sponsorSkip })} />
+      </SettingRow>
+    </Card>
   );
 }

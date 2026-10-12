@@ -39,6 +39,9 @@ export const RAIL_ENTRIES: RailEntry[] = [
   { id: "passwords", label: "Passwords & autofill", icon: "key", section: "passwords" },
   { id: "privacy", label: "Privacy & Tunnel", icon: "tunnel", section: "privacy" },
   { id: "performance", label: "Performance", icon: "gauge", page: "performance" },
+  { id: "notes", label: "Notes", icon: "note", panel: "notes" },
+  { id: "media", label: "Media hub", icon: "headphones", panel: "media" },
+  { id: "focus", label: "Focus & Screen Time", icon: "target", panel: "focus" },
 ];
 
 /** Switches to the tab showing a browser page, reuses an empty New Tab for it, or opens it in a new tab. */

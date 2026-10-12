@@ -119,7 +119,8 @@ pub fn run() {
                 profiles,
                 db,
                 settings,
-                first_run: created || !onboarded,
+                // `PROJECT_BROWSER_SKIP_ONBOARDING=1`: test switch (the CI UI probe) for a fresh data folder without the welcome card.
+                first_run: (created || !onboarded) && std::env::var_os("PROJECT_BROWSER_SKIP_ONBOARDING").is_none(),
                 process_start,
                 startup_urls: urls_from_args(&std::env::args().collect::<Vec<_>>()),
                 load_all: load_all_from_args(&std::env::args().collect::<Vec<_>>()),

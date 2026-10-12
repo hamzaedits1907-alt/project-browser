@@ -55,6 +55,7 @@ public static class Probe {
 "@
 
 $env:PROJECT_BROWSER_DATA_DIR = $DataDir
+$env:PROJECT_BROWSER_SKIP_ONBOARDING = "1"
 $logPath = Join-Path $DataDir "logs\project-browser.log"
 $p = Start-Process -FilePath $Exe -ArgumentList "https://example.com" -PassThru
 $log = { if (Test-Path $logPath) { Get-Content $logPath -Raw } else { "" } }

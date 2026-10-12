@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { Button, TextField } from "../../components/ui/controls";
 import { Icon } from "../../components/ui/Icon";
+import { Logo } from "../../components/ui/Logo";
 import { ACCENTS, accentCss, SEARCH_ENGINES } from "../../lib/settings";
 import { api, errorMessage } from "../../lib/ipc";
 import { useOverlay } from "../../lib/overlay";
@@ -47,16 +48,7 @@ export function FirstRun() {
         {step === "welcome" && (
           <div className="fr-body">
             <div className="fr-logo" aria-hidden="true">
-              <svg viewBox="0 0 32 32" width="64" height="64">
-                <defs>
-                  <linearGradient id="fr-logo" x1="0" y1="0" x2="1" y2="1">
-                    <stop offset="0" stopColor="var(--accent-hi)" />
-                    <stop offset="1" stopColor="var(--accent-lo)" />
-                  </linearGradient>
-                </defs>
-                <rect x="2" y="2" width="28" height="28" rx="9" fill="url(#fr-logo)" />
-                <path d="M11 22V10h6.2a3.6 3.6 0 010 7.2H11" fill="none" stroke="var(--on-accent)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+              <Logo size={64} glow />
             </div>
             <h1>Welcome to Project Browser</h1>
             <p className="dim">A fast browser that gets out of your game's way. Sleeping tabs, a Gaming Mode that frees memory with one key, and a live look at what your browser is using.</p>

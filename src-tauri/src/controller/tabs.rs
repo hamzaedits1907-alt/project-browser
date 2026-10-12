@@ -452,7 +452,7 @@ impl Controller {
                     rect.x,
                     rect.y
                 );
-                self.views.insert(id, View { webview, visible, bounds: visible.then_some(rect) });
+                self.views.insert(id, View { webview, visible, bounds: visible.then_some(rect), rehost: false });
                 if let Some(t) = self.tabs.get_mut(id) {
                     t.lifecycle = Lifecycle::Live;
                     t.loading = true;
@@ -553,6 +553,11 @@ impl Controller {
                 if !view.visible {
                     let _ = view.webview.show();
                     view.visible = true;
+                }
+                if view.rehost {
+                    view.rehost = false;
+                    let id = *id;
+                    let _ = self.app.run_on_main_thread(move || crate::native::rehost(id));
                 }
             } else if view.visible {
                 let _ = view.webview.hide();

@@ -413,7 +413,7 @@ impl Controller {
             let target_window = self.app.get_window(&target_label);
             match target_window.as_ref().map(|w| v.webview.reparent(w)) {
                 Some(Ok(())) => {
-                    self.views.insert(tab_id, View { visible: false, bounds: None, ..v });
+                    self.views.insert(tab_id, View { visible: false, bounds: None, rehost: true, ..v });
                 }
                 other => {
                     log::warn!("tab {tab_id}: its webview could not move to window {target_label} ({other:?}); the page will reload there");

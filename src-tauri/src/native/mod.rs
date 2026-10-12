@@ -739,6 +739,35 @@ pub fn top_level_window_at(x: i32, y: i32) -> Option<isize> {
     }
 }
 
+/// Makes a tab's webview render again after it moved to another browser window (tab tear-off or move).
+///
+/// wry moves a webview by re-parenting its container window, which WebView2 never hears about: the controller's
+/// parent stays the same container, so WebView2 keeps tracking the old top-level window for visibility and
+/// occlusion and the page can stay unpainted (the black page area seen in the 0.6.0 UI probe). Re-assigning the
+/// parent window makes WebView2 re-evaluate its top-level window; the container is raised above the new window's
+/// shell webview, told that its position changed, and the controller's visibility is cycled so a new frame is drawn.
+pub fn rehost(id: TabId) {
+    use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE};
+    let Some(t) = tab_com(id) else { return };
+    unsafe {
+        let mut container = windows::Win32::Foundation::HWND::default();
+        if t.controller.ParentWindow(&mut container).is_err() || container.0.is_null() {
+            return;
+        }
+        if let Err(e) = t.controller.SetParentWindow(container) {
+            log::warn!("tab {id}: re-assigning the parent window failed: {e}");
+        }
+        let _ = SetWindowPos(container, Some(HWND_TOP), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        let _ = t.controller.NotifyParentWindowPositionChanged();
+        let visible = read_bool(|b| t.controller.IsVisible(b));
+        if visible {
+            let _ = t.controller.SetIsVisible(false);
+            let _ = t.controller.SetIsVisible(true);
+        }
+        log::info!("tab {id}: webview re-hosted in its new window (visible={visible})");
+    }
+}
+
 pub fn remove_tab(id: TabId) {
     context_menu::forget(&context_menu::MenuOwner::Tab(id));
     TABS.with(|t| t.borrow_mut().remove(&id));

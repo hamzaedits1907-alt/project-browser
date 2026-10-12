@@ -167,6 +167,8 @@ pub(crate) struct View {
     pub webview: tauri::Webview,
     pub visible: bool,
     pub bounds: Option<ContentRect>,
+    /// The webview moved to another window and has not been re-hosted there yet (see `native::rehost`).
+    pub rehost: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -811,6 +813,10 @@ impl Controller {
             if let Some(w) = self.app.get_webview_window(&self.current) {
                 let _ = w.show();
                 let _ = w.set_focus();
+            }
+            // Tabs moved into this window before it was shown are re-hosted now that it is visible.
+            for id in self.views.keys().copied().collect::<Vec<_>>() {
+                let _ = self.app.run_on_main_thread(move || crate::native::rehost(id));
             }
         }
         self.dirty = Dirty { state: true, downloads: true, prompts: true, find: true, settings: true, bookmarks: false };

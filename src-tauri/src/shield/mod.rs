@@ -405,7 +405,7 @@ impl Shield {
 
     pub fn rebuild_in_background(self: &Arc<Self>) {
         let me = self.clone();
-        let _ = tauri::async_runtime::spawn_blocking(move || me.rebuild_blocking());
+        drop(tauri::async_runtime::spawn_blocking(move || me.rebuild_blocking()));
     }
 
     /// Reads the stored copies and metadata of the lists. Call once at startup, off the UI thread.

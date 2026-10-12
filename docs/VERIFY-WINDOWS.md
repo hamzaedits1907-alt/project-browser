@@ -116,6 +116,36 @@ None of these has been seen working against NVIDIA; CI only runs mocked tests. M
 | N14 | Checklist → *Sign in to Google* | Google's real sign-in page opens in a tab. Note whether Google accepts the sign-in or shows an "unsupported browser" message, and whether you are still signed in after restarting | |
 | N15 | After 14, restart the app twice | Still signed in to the sites that allow it | |
 
+## 0.4.0 checks
+
+| # | Do this | Expect | Result |
+|---|---|---|---|
+| A1 | Settings → AI: with no internet, paste a key (nvapi-…), press *Save key* | "NVIDIA key saved"; no model message blocks it; *Test connection* reports the network problem | |
+| A2 | With internet, *Test connection*, then pick a model | A distinct result for key, catalog and model; the key stays saved when the model is wrong | |
+| D1 | Open a GitHub release asset link (a file) in a new tab, then close that tab at once | The download keeps going and finishes; the blank tab closes by itself | |
+| D2 | Start a big download, press Pause / Resume / Cancel | Each works; a cancelled one is shown as cancelled, not stuck | |
+| D3 | Look at `project-browser.log` after a download | Lines "download N: started…", "state … reason …" | |
+| W1 | Ctrl+N | A second window with its own tabs; closing one leaves the other | |
+| W2 | Ctrl+Shift+N, visit a site, sign in, close the private window | Nothing remains in the normal windows (no cookies, history) | |
+| W3 | Right-click a tab → *Move tab to a new window* | The page keeps playing/typed text stays; the old window picks another tab | |
+| W4 | Drag a tab out of the strip; drag a tab onto the other window's strip | New window / tab joins. If dragging between windows does nothing, report it: the menu route still works | |
+| W5 | Close a window, Ctrl+Shift+T | It returns with its tabs and size | |
+| W6 | Two windows open, restart the app | Both come back where they were | |
+| P1 | Sign in to Discord and ChatGPT, close the whole browser, reopen | Still signed in where the site allows it | |
+| P2 | Same, then open a new window | Signed in there too | |
+| P3 | Visit a page that opens a pop-up by itself on load (a test page with window.open on load) | Blocked, with the bar; *Open it once* opens it | |
+| P4 | A site's "Sign in with Google" pop-up | It opens, signs in, closes, and the opener is signed in; focus returns to the opener | |
+| S1 | Open a news site with ads; look at the shield button | A count; ads missing | |
+| S2 | Shield menu → switch off for this site, reload | Ads return; other sites still blocked | |
+| S3 | Settings → Project Shield → Update lists | Both lists show a rule count and version; with the network off an error and the old copy stays | |
+| S4 | Settings → Your rules: `||example.org^` then the test box | Blocked by "Your rules" | |
+| S5 | Open youtube.com, a login page, a bank page | Pages work normally (note any that break) | |
+| S6 | Task Manager while loading a heavy page with the Shield on | No sustained CPU spike from the browser process | |
+| T1 | Settings → Project Tunnel: enter a proxy you control, *Test the proxy* | Works / refused / unreachable with a reason | |
+| T2 | Enable, *Restart now* | After restart the state says "Proxy active (this browser only)" | |
+| T3 | Visit an IP-address check page | The proxy's address (if it is a forwarding proxy) | |
+| T4 | Stop the proxy and load a page | The page fails; it does not load directly | |
+
 ## Known behaviour to expect (not defects)
 
 * A restored tab starts with only its last URL: **back/forward history is not restored**. WebView2 has no API to rebuild

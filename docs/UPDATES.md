@@ -93,3 +93,16 @@ done: running it on the development PC would replace the installed copy there, s
 To do it: install 0.1.1 (or keep it), then **Settings → About → Check now**, **Download and install…**, confirm. The app should
 close, install and reopen on 0.1.2 with its tabs restored; the log (`logs\project-browser.log`) then shows
 `update install: package downloaded and signature verified` in 0.1.2's own later runs.
+
+**v0.2.0, 2026-10-12.** Published by the same workflow. The developer reported that 0.1.2 updated to 0.2.0 from inside the installed app
+(user-reported; not independently observed in this record).
+
+**v0.3.0, 2026-10-12** (<https://github.com/hamzaedits1907-alt/project-browser/releases/tag/v0.3.0>), commit `2271a78`, Release run 38232441835
+(checks, build, signing and publishing all green).
+
+* `scripts/verify-release.py --tag v0.3.0` from this PC: `latest.json` announces 0.3.0, installer
+  `Project.Browser_0.3.0_x64-setup.exe` (3,848,419 bytes, SHA-256 `9029a2642445848eaf235de704aa6903aaf47f032b5f700704ad94653e9cc1fc`),
+  signature verified against the key in the config, signed comment `version:0.3.0`. Result: `verified`.
+* The existing signing key and secret were reused; nothing about the updater configuration changed. Two new updater tests
+  (numeric version comparison, non-version feed) ran in CI.
+* Not done: installing 0.3.0 from inside a running 0.2.0 (that would replace the installed copy); the Settings → About button does it.

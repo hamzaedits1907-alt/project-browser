@@ -53,19 +53,26 @@ pub async fn set_layout(window: tauri::Window, s: State<'_, AppState>, content: 
 /// Hides the page while the shell draws menus over it, returning a snapshot of
 /// the page to show underneath (native webviews always render above the shell).
 #[tauri::command]
-pub async fn overlay_open(window: tauri::Window, app: AppHandle, s: State<'_, AppState>) -> Result<Option<String>> {
+pub async fn overlay_open(window: tauri::Window, app: AppHandle, s: State<'_, AppState>) -> Result<tauri::ipc::Response> {
     let tab = s.ctl.call_in(window.label().to_string(), |c| c.active_live_tab()).await?;
     let snapshot = match tab {
         Some(id) => {
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            app.run_on_main_thread(move || native::capture_preview(id, tx))?;
+            // Raw JPEG bytes (no base64 string through JSON): the shell turns them into a blob URL.
+            let rx = match native::take_prefetched(id) {
+                Some(rx) => rx,
+                None => {
+                    let (tx, rx) = tokio::sync::oneshot::channel();
+                    app.run_on_main_thread(move || native::capture_preview(id, tx))?;
+                    rx
+                }
+            };
             // A snapshot that never completes must not leave the popup waiting forever.
             tokio::time::timeout(SNAPSHOT_TIMEOUT, rx).await.ok().and_then(|r| r.ok()).flatten()
         }
         None => None,
     };
     s.ctl.call_in(window.label().to_string(), |c| c.set_overlay(true, false)).await?;
-    Ok(snapshot)
+    Ok(tauri::ipc::Response::new(snapshot.unwrap_or_default()))
 }
 
 #[tauri::command]

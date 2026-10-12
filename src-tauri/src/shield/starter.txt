@@ -29,3 +29,7 @@
 ||adsafeprotected.com^$third-party
 ||serving-sys.com^$third-party
 ||bluekai.com^$third-party
+! YouTube's ad reporting and ad-break requests (the ads themselves are handled by the YouTube script).
+||youtube.com/api/stats/ads^
+||youtube.com/pagead/
+||youtube.com/get_midroll_

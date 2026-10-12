@@ -15,7 +15,6 @@ use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use base64::Engine as _;
 use tauri::webview::PlatformWebview;
 use webview2_com::Microsoft::Web::WebView2::Win32::*;
 use webview2_com::*;
@@ -307,10 +306,13 @@ unsafe fn install_tab_inner(id: TabId, pw: &PlatformWebview, ctl: &ControllerHan
 
     let c = ctl.clone();
     webview.add_NavigationStarting(
-        &NavigationStartingEventHandler::create(Box::new(move |_, args| {
+        &NavigationStartingEventHandler::create(Box::new(move |sender, args| {
             let Some(args) = args else { return Ok(()) };
             let uri = pwstr(|p| args.Uri(p));
             note_top_navigation(id, &uri, &c);
+            if let Some(wv) = sender {
+                sync_youtube_guard(id, &wv);
+            }
             c.post_tab(id, move |ctl| ctl.on_nav_starting(id, uri));
             Ok(())
         })),
@@ -499,6 +501,12 @@ unsafe fn install_tab_inner(id: TabId, pw: &PlatformWebview, ctl: &ControllerHan
             &DOMContentLoadedEventHandler::create(Box::new(move |sender, _| {
                 let Some(wv) = sender else { return Ok(()) };
                 let host = TOP_HOST.with(|t| t.borrow().get(&id).cloned()).unwrap_or_default();
+                if crate::shield::youtube::is_youtube(&host) && crate::shield::global().is_some_and(|s| s.on_for(&host)) {
+                    // In case the document-creation script was not registered in time for this page (it does nothing
+                    // when it already ran).
+                    let script = HSTRING::from(crate::shield::youtube::SCRIPT);
+                    let _ = wv.ExecuteScript(&script, &ExecuteScriptCompletedHandler::create(Box::new(|_, _| Ok(()))));
+                }
                 let Some(css) = crate::shield::global().and_then(|s| s.cosmetic_css(&host)) else { return Ok(()) };
                 let Ok(text) = serde_json::to_string(&css) else { return Ok(()) };
                 let script = format!(
@@ -521,6 +529,52 @@ unsafe fn install_tab_inner(id: TabId, pw: &PlatformWebview, ctl: &ControllerHan
 }
 
 // ---- Project Shield: request blocking ---------------------------------------------------------
+
+thread_local! {
+    /// Tabs with Project Shield's YouTube script registered: its WebView2 script id, or `None` while registering.
+    static YT_GUARD: RefCell<HashMap<TabId, Option<String>>> = RefCell::new(HashMap::new());
+}
+
+/// On a navigation to YouTube, registers the Shield's YouTube script for the tab if the Shield is on for YouTube, or
+/// removes it if the Shield has been switched off for it. Other sites leave it as it is (the script checks the host).
+fn sync_youtube_guard(id: TabId, webview: &ICoreWebView2) {
+    let host = TOP_HOST.with(|t| t.borrow().get(&id).cloned()).unwrap_or_default();
+    if !crate::shield::youtube::is_youtube(&host) {
+        return;
+    }
+    let want = crate::shield::global().is_some_and(|s| s.on_for(&host));
+    let have = YT_GUARD.with(|g| g.borrow().contains_key(&id));
+    unsafe {
+        if want && !have {
+            YT_GUARD.with(|g| g.borrow_mut().insert(id, None));
+            let wv = webview.clone();
+            let _ = webview.AddScriptToExecuteOnDocumentCreated(
+                &HSTRING::from(crate::shield::youtube::SCRIPT),
+                &AddScriptToExecuteOnDocumentCreatedCompletedHandler::create(Box::new(move |res, script_id| {
+                    let kept = YT_GUARD.with(|g| match g.borrow_mut().get_mut(&id) {
+                        Some(slot) if res.is_ok() => {
+                            *slot = Some(script_id.clone());
+                            true
+                        }
+                        _ => false,
+                    });
+                    if !kept {
+                        YT_GUARD.with(|g| g.borrow_mut().remove(&id));
+                        if res.is_ok() {
+                            // Switched off (or the tab went away) while registering.
+                            let _ = wv.RemoveScriptToExecuteOnDocumentCreated(&HSTRING::from(script_id));
+                        }
+                    }
+                    Ok(())
+                })),
+            );
+        } else if !want && have {
+            if let Some(Some(script_id)) = YT_GUARD.with(|g| g.borrow_mut().remove(&id)) {
+                let _ = webview.RemoveScriptToExecuteOnDocumentCreated(&HSTRING::from(script_id));
+            }
+        }
+    }
+}
 
 /// A page is starting to load in the tab: remember its host and start the tab's blocked count again.
 fn note_top_navigation(id: TabId, uri: &str, ctl: &ControllerHandle) {
@@ -688,6 +742,7 @@ pub fn remove_tab(id: TabId) {
     context_menu::forget(&context_menu::MenuOwner::Tab(id));
     TABS.with(|t| t.borrow_mut().remove(&id));
     TOP_HOST.with(|t| t.borrow_mut().remove(&id));
+    YT_GUARD.with(|g| g.borrow_mut().remove(&id));
     POPUP_INTENT.with(|m| m.borrow_mut().remove(&id));
     if let Some(shield) = crate::shield::global() {
         shield.forget_tab(id);
@@ -1137,9 +1192,8 @@ unsafe fn read_stream(stream: &IStream) -> Option<Vec<u8>> {
     Some(buf)
 }
 
-/// Captures the visible page as a JPEG data URL (used as a backdrop while the
-/// shell shows menus over the page area).
-pub fn capture_preview(id: TabId, reply: tokio::sync::oneshot::Sender<Option<String>>) {
+/// Captures the visible page as JPEG bytes (used as a backdrop while the shell shows menus over the page area).
+pub fn capture_preview(id: TabId, reply: tokio::sync::oneshot::Sender<Option<Vec<u8>>>) {
     let Some(t) = tab_com(id) else {
         let _ = reply.send(None);
         return;
@@ -1154,16 +1208,39 @@ pub fn capture_preview(id: TabId, reply: tokio::sync::oneshot::Sender<Option<Str
             COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_JPEG,
             &stream,
             &CapturePreviewCompletedHandler::create(Box::new(move |res| {
-                let data = res
-                    .ok()
-                    .and_then(|_| read_stream(&s2))
-                    .map(|bytes| format!("data:image/jpeg;base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)));
-                let _ = reply.send(data);
+                let _ = reply.send(res.ok().and_then(|_| read_stream(&s2)));
                 Ok(())
             })),
         );
         // If CapturePreview failed synchronously the handler (and `reply`) is dropped,
         // which the awaiting side treats as "no snapshot".
+    }
+}
+
+type PendingCapture = (TabId, Instant, tokio::sync::oneshot::Receiver<Option<Vec<u8>>>);
+
+/// A capture started the moment a page asked for a right-click menu, so the menu does not wait for a fresh one after
+/// the round trip through the shell.
+static PREFETCHED: Mutex<Option<PendingCapture>> = Mutex::new(None);
+
+/// How long a prefetched capture may be used: only for the menu it was started for.
+const PREFETCH_TTL: Duration = Duration::from_millis(1500);
+
+/// Starts capturing tab `id` now (UI thread). The next `take_prefetched` for that tab gets the result.
+pub fn prefetch_capture(id: TabId) {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    if let Ok(mut p) = PREFETCHED.lock() {
+        *p = Some((id, Instant::now(), rx));
+    }
+    capture_preview(id, tx);
+}
+
+/// The capture `prefetch_capture` started for tab `id`, if it is recent; a stale or other tab's capture is dropped.
+pub fn take_prefetched(id: TabId) -> Option<tokio::sync::oneshot::Receiver<Option<Vec<u8>>>> {
+    let mut p = PREFETCHED.lock().ok()?;
+    match p.take() {
+        Some((tab, at, rx)) if tab == id && at.elapsed() < PREFETCH_TTL => Some(rx),
+        _ => None,
     }
 }
 

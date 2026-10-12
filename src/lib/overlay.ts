@@ -63,7 +63,9 @@ async function closeStep(): Promise<void> {
     if (overlay.backdrop !== wantedBackdrop()) setOverlay({ ...overlay, backdrop: wantedBackdrop() });
     return;
   }
+  const old = overlay.snapshot;
   setOverlay({ open: false, snapshot: null, backdrop: "dim" });
+  if (old?.startsWith("blob:")) URL.revokeObjectURL(old);
   // Give focus back to the page unless one of the shell's own text fields is being used.
   const typing = userIsTyping();
   try {

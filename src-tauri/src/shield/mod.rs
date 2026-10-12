@@ -15,6 +15,7 @@
 pub mod cosmetic;
 pub mod lists;
 pub mod rules;
+pub mod youtube;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -693,6 +694,15 @@ mod tests {
         assert!(!blocked(&s, "https://www.google-analytics.com/analytics.js", "google-analytics.com"), "first-party use is left alone");
         assert!(!blocked(&s, "https://news.example/app.js", "news.example"));
         assert!(!blocked(&s, "https://cdn.jsdelivr.net/npm/x.js", "news.example"), "ordinary third-party resources are not blocked");
+    }
+
+    #[test]
+    fn youtube_ad_requests_are_blocked_but_not_its_pages_or_videos() {
+        let s = shield();
+        assert!(blocked(&s, "https://www.youtube.com/api/stats/ads?ver=2&ns=1", "www.youtube.com"));
+        assert!(blocked(&s, "https://www.youtube.com/pagead/viewthroughconversion/1/", "www.youtube.com"));
+        assert!(!blocked(&s, "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "www.youtube.com"));
+        assert!(!blocked(&s, "https://www.youtube.com/youtubei/v1/player?key=x", "www.youtube.com"));
     }
 
     #[test]

@@ -169,6 +169,13 @@ function call<T = void>(cmd: CommandName, args?: Record<string, unknown>): Promi
   return invoke<T>(cmd, args);
 }
 
+/** The page snapshot arrives as raw JPEG bytes; a blob URL avoids a multi-megabyte base64 string. Empty means none. */
+function snapshotUrl(data: ArrayBuffer | Uint8Array | string | null): string | null {
+  if (typeof data === "string" || data === null) return data || null;
+  if (data.byteLength === 0) return null;
+  return URL.createObjectURL(new Blob([data as BlobPart], { type: "image/jpeg" }));
+}
+
 /** Commands return their errors as plain strings. */
 export function errorMessage(e: unknown): string {
   if (typeof e === "string") return e;
@@ -179,7 +186,7 @@ export function errorMessage(e: unknown): string {
 export const api = {
   shellReady: () => call<Bootstrap>("shell_ready"),
   setLayout: (content: ContentRect, viewport: Viewport) => call("set_layout", { content, viewport }),
-  overlayOpen: () => call<string | null>("overlay_open"),
+  overlayOpen: () => call<ArrayBuffer | Uint8Array | string | null>("overlay_open").then(snapshotUrl),
   overlayClose: (focusPage = true) => call("overlay_close", { focusPage }),
   runCommand: (command: BrowserCommand) => call("run_command", { command }),
 

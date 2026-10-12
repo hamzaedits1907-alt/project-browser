@@ -5,9 +5,11 @@ pub mod ai;
 pub mod commands;
 pub mod controller;
 pub mod db;
+pub mod default_browser;
 pub mod error;
 pub mod error_page;
 pub mod import;
+pub mod launch;
 pub mod logging;
 pub mod native;
 pub mod navigation;
@@ -32,11 +34,6 @@ use db::Db;
 use profile::ProfileStore;
 use settings::Settings;
 
-/// URLs passed on the command line (e.g. "Open with" or a second launch).
-fn urls_from_args(args: &[String]) -> Vec<String> {
-    args.iter().skip(1).filter(|a| !a.starts_with('-')).cloned().collect()
-}
-
 /// `--gaming`: start with Gaming Mode on for this session (benchmarking sleeping tabs without touching the UI).
 /// It is a start-up switch, not a saved preference: a profile used normally never gets it by accident.
 fn gaming_from_args(args: &[String]) -> bool {
@@ -54,7 +51,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             if let Some(state) = app.try_state::<AppState>() {
-                for url in urls_from_args(&argv) {
+                for url in launch::urls_from_args(&argv) {
                     state.ctl.post(move |c| c.open_url_in_focused_window(url));
                 }
             }
@@ -122,7 +119,7 @@ pub fn run() {
                 // `PROJECT_BROWSER_SKIP_ONBOARDING=1`: test switch (the CI UI probe) for a fresh data folder without the welcome card.
                 first_run: (created || !onboarded) && std::env::var_os("PROJECT_BROWSER_SKIP_ONBOARDING").is_none(),
                 process_start,
-                startup_urls: urls_from_args(&std::env::args().collect::<Vec<_>>()),
+                startup_urls: launch::urls_from_args(&std::env::args().collect::<Vec<_>>()),
                 load_all: load_all_from_args(&std::env::args().collect::<Vec<_>>()),
             });
 

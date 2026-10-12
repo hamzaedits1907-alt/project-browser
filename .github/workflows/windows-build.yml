@@ -132,6 +132,24 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+      # Installs the built installer on the runner, checks the default-browser registration it writes (ProgIDs,
+      # StartMenuInternet, Capabilities, RegisteredApplications), opens links through the registered commands (first
+      # launch, a second link forwarded to the running browser, a local .html file), then uninstalls and checks cleanup.
+      - name: Default-browser registration and link opening
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          ./scripts/verify-registration.ps1 -Installer $setup.FullName -ReportDir registration-report
+
+      - name: Upload registration report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: registration-report
+          path: registration-report
+          if-no-files-found: ignore
+          retention-days: 14
+
       # Real mouse and keyboard input on the runner's desktop: loads a page, right-clicks it, tears a tab off into a
       # new window, and captures the browser's own windows. Informational until it has proven stable on runners.
       - name: Native UI probe (informational)

@@ -1138,6 +1138,16 @@ pub struct AppInfo {
 }
 
 #[tauri::command]
+pub async fn default_browser_status() -> Result<crate::default_browser::DefaultBrowserStatus> {
+    Ok(crate::default_browser::status())
+}
+
+#[tauri::command]
+pub async fn default_browser_open_settings() -> Result<()> {
+    crate::default_browser::open_settings().map_err(|e| Error::Msg(format!("Could not open Windows Settings: {e}")))
+}
+
+#[tauri::command]
 pub async fn app_info(app: AppHandle, s: State<'_, AppState>) -> Result<AppInfo> {
     let (profile_dir, profile_name) = s.ctl.call(|c| (c.profile.dir.display().to_string(), c.profile.meta.name.clone())).await?;
     Ok(AppInfo {
@@ -1456,6 +1466,8 @@ macro_rules! all_commands {
             $crate::commands::memory_clear,
             $crate::commands::ai_cancel,
             $crate::commands::app_info,
+            $crate::commands::default_browser_status,
+            $crate::commands::default_browser_open_settings,
             $crate::commands::update_check,
             $crate::commands::update_install,
             $crate::commands::popup_decision,

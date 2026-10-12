@@ -440,6 +440,10 @@ export function installMockBackend(): void {
           }, 60);
           return null;
         }
+        case "default_browser_status":
+          return { registered: true, registeredHere: true, defaultHttp: false, defaultHttps: false };
+        case "default_browser_open_settings":
+          return null;
         case "app_info":
           return { version: "0.1.1", identifier: "com.projectbrowser.desktop", dataDir: "C:\\Users\\me\\AppData\\Local\\com.projectbrowser.desktop", profileDir: "C:\\Users\\me\\AppData\\Local\\com.projectbrowser.desktop\\profiles\\default", profileName: "Hamza", webview2Version: "131.0.2903.86", updateConfigured: true };
         case "update_check": {

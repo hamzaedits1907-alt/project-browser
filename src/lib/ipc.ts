@@ -9,6 +9,7 @@ import type {
   AiProbeResult,
   AiTestResult,
   AppInfo,
+  DefaultBrowserStatus,
   Bookmark,
   BrowserCommand,
   BrowserState,
@@ -141,6 +142,8 @@ export const COMMANDS = [
   "memory_clear",
   "ai_cancel",
   "app_info",
+  "default_browser_status",
+  "default_browser_open_settings",
   "update_check",
   "update_install",
   "popup_decision",
@@ -289,6 +292,8 @@ export const api = {
   memoryClear: () => call<number>("memory_clear"),
 
   appInfo: () => call<AppInfo>("app_info"),
+  defaultBrowserStatus: () => call<DefaultBrowserStatus>("default_browser_status"),
+  defaultBrowserOpenSettings: () => call("default_browser_open_settings"),
   updateCheck: () => call<UpdateStatus>("update_check"),
   updateInstall: () => call("update_install"),
 

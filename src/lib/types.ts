@@ -393,6 +393,14 @@ export interface FillResult {
   fields: number;
 }
 
+/** Windows registration and default-browser state (default_browser.rs). */
+export interface DefaultBrowserStatus {
+  registered: boolean;
+  registeredHere: boolean;
+  defaultHttp: boolean;
+  defaultHttps: boolean;
+}
+
 export interface AppInfo {
   version: string;
   identifier: string;

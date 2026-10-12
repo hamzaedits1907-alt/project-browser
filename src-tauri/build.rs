@@ -83,6 +83,8 @@ const COMMANDS: &[&str] = &[
     "memory_clear",
     "ai_cancel",
     "app_info",
+    "default_browser_status",
+    "default_browser_open_settings",
     "update_check",
     "update_install",
     "popup_decision",

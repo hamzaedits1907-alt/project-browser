@@ -169,6 +169,7 @@ const STRUCTS: [file: string, rust: string, ts: string][] = [
   ["commands.rs", "ClearOptions", "ClearOptions"],
   ["commands.rs", "ProfilesInfo", "ProfilesInfo"],
   ["commands.rs", "AppInfo", "AppInfo"],
+  ["default_browser.rs", "DefaultBrowserStatus", "DefaultBrowserStatus"],
   ["ai.rs", "AiConfigView", "AiConfigView"],
   ["ai.rs", "Capabilities", "AiCapabilities"],
   ["ai.rs", "ModelInfo", "ModelInfo"],

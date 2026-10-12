@@ -1,10 +1,65 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { Button, Segmented, Select, TextField, Toggle } from "../../components/ui/controls";
 import { Card, SettingRow } from "../../components/ui/Section";
+import { api, errorMessage } from "../../lib/ipc";
 import { SEARCH_ENGINES } from "../../lib/settings";
 import { useSettings } from "../../lib/useSettings";
-import type { SearchEngine, StartupBehavior } from "../../lib/types";
+import type { DefaultBrowserStatus, SearchEngine, StartupBehavior } from "../../lib/types";
+
+/** What the default-browser card says, from the real Windows registration. */
+export function describeDefault(s: DefaultBrowserStatus | null): { title: string; detail: string } {
+  if (!s) return { title: "Checking…", detail: "Reading the Windows registration." };
+  if (s.defaultHttp && s.defaultHttps) return { title: "Project Browser is your default browser", detail: "Links from other apps open here in a new tab." };
+  if (s.defaultHttp || s.defaultHttps)
+    return { title: "Partly the default", detail: `Windows opens ${s.defaultHttps ? "https" : "http"} links here but not ${s.defaultHttps ? "http" : "https"} links. Choose Project Browser for both in Windows Settings.` };
+  if (!s.registered)
+    return { title: "Not registered with Windows", detail: "This copy was not installed with the installer, so Windows does not list it as a browser. Install Project Browser to make it available." };
+  if (!s.registeredHere)
+    return { title: "Registered to another copy", detail: "Windows lists Project Browser, but its registration starts a different copy than this one." };
+  return { title: "Not your default browser", detail: "Windows lists Project Browser as a browser. Choose it in Windows Settings to open links here." };
+}
+
+function DefaultBrowserCard() {
+  const [status, setStatus] = useState<DefaultBrowserStatus | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const refresh = useCallback(() => {
+    api
+      .defaultBrowserStatus()
+      .then((s) => {
+        setStatus(s);
+        setError(null);
+      })
+      .catch((e) => setError(errorMessage(e)));
+  }, []);
+  useEffect(() => {
+    refresh();
+    // Coming back from Windows Settings: read the choice again.
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  }, [refresh]);
+  const d = describeDefault(status);
+  const isDefault = !!status && status.defaultHttp && status.defaultHttps;
+  return (
+    <Card title="Default browser">
+      <SettingRow title={d.title} description={error ?? d.detail}>
+        {!isDefault && (
+          <Button
+            disabled={!status}
+            onClick={() =>
+              void api
+                .defaultBrowserOpenSettings()
+                .then(() => setError(null))
+                .catch((e) => setError(errorMessage(e)))
+            }
+          >
+            Open Windows settings
+          </Button>
+        )}
+      </SettingRow>
+    </Card>
+  );
+}
 
 export function isValidSearchTemplate(t: string): boolean {
   return t.includes("%s") && /^https?:\/\//i.test(t.trim());
@@ -36,6 +91,8 @@ export function General() {
 
   return (
     <>
+      <DefaultBrowserCard />
+
       <Card title="On startup">
         <SettingRow title="When the browser opens" description="Pinned tabs always come back.">
           <Segmented<StartupBehavior>

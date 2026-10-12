@@ -40,7 +40,8 @@
         "installMode": "currentUser",
         "installerIcon": "icons/icon.ico",
         "displayLanguageSelector": false,
-        "startMenuFolder": "Project Browser"
+        "startMenuFolder": "Project Browser",
+        "installerHooks": "./windows/hooks.nsh"
       }
     }
   },

@@ -116,8 +116,9 @@ try {
 
   # 3. Escape closes it; Ctrl+T opens a tab.
   Key @(0x1B)
-  Start-Sleep -Milliseconds 900
-  $steps["log: menu closed"] = ((& $log) -match "context menu \d+: closed")
+  $closed = $false
+  for ($i = 0; $i -lt 20 -and -not $closed; $i++) { Start-Sleep -Milliseconds 250; $closed = ((& $log) -match "context menu \d+: closed") }
+  $steps["log: menu closed"] = $closed
   Key @(0x11, 0x54)
   Start-Sleep -Milliseconds 1500
   [void](Capture $main "03-new-tab")
@@ -129,8 +130,8 @@ try {
   for ($s = 1; $s -le 20; $s++) { [void][Probe]::SetCursorPos($from.X + $s * 6, $from.Y + $s * 16); Start-Sleep -Milliseconds 40 }
   Start-Sleep -Milliseconds 300
   [Probe]::mouse_event(0x0004, 0, 0, 0, [IntPtr]::Zero)
-  Start-Sleep -Seconds 3
-  $ws = [Probe]::Windows([uint32]$p.Id)
+  $ws = @()
+  for ($i = 0; $i -lt 32 -and $ws.Count -lt 2; $i++) { Start-Sleep -Milliseconds 250; $ws = @([Probe]::Windows([uint32]$p.Id)) }
   $steps["drag out: a second window exists"] = ($ws.Count -ge 2)
   $steps["log: tab moved to a new window"] = ((& $log) -match "moved from main to win-")
   $n = 4

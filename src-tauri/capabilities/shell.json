@@ -90,6 +90,8 @@
     "allow-memory-clear",
     "allow-ai-cancel",
     "allow-app-info",
+    "allow-default-browser-status",
+    "allow-default-browser-open-settings",
     "allow-update-check",
     "allow-update-install",
     "allow-popup-decision",

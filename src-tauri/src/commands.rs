@@ -1450,6 +1450,178 @@ pub async fn shield_test(url: String, page: String) -> Result<String> {
     Ok(running_shield()?.explain(url, &page_host, crate::shield::rules::T_SCRIPT))
 }
 
+// ---- split view, screenshots, media, reader ------------------------------------------------
+
+/// Opens, closes, swaps or resizes this window's split view (two tabs side by side).
+#[tauri::command]
+pub async fn split_view(window: tauri::Window, s: State<'_, AppState>, op: crate::controller::SplitOp) -> Result<()> {
+    s.ctl.call_in(window.label().to_string(), move |c| c.split_view(op)).await?
+}
+
+const SCREENSHOT_TIMEOUT: Duration = Duration::from_secs(12);
+
+/// Checks that a tab can be captured or read: a running web page. Returns its title and address.
+async fn live_web_tab(s: &State<'_, AppState>, tab_id: TabId) -> Result<(String, String)> {
+    s.ctl
+        .call_tab(tab_id, move |c| -> Result<(String, String)> {
+            let tab = c.tabs.get(tab_id).ok_or_else(|| Error::msg("That tab is no longer open."))?;
+            if is_internal(&tab.url) {
+                return Err(Error::msg("Browser pages can't be captured. Open a website first."));
+            }
+            if !c.tab_has_view(tab_id) {
+                return Err(Error::msg("This tab isn't loaded. Switch to it first."));
+            }
+            Ok((tab.title.clone(), tab.url.clone()))
+        })
+        .await?
+}
+
+async fn take_screenshot(app: &AppHandle, tab_id: TabId, full: bool) -> Result<Vec<u8>> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.run_on_main_thread(move || native::capture_screenshot(tab_id, full, tx))?;
+    tokio::time::timeout(SCREENSHOT_TIMEOUT, rx)
+        .await
+        .ok()
+        .and_then(|r| r.ok())
+        .flatten()
+        .filter(|png| !png.is_empty())
+        .ok_or_else(|| Error::msg("The page could not be captured."))
+}
+
+/// A PNG screenshot of a tab (the visible part, or the whole page), as raw bytes for the clipboard or a preview.
+#[tauri::command]
+pub async fn page_screenshot(app: AppHandle, s: State<'_, AppState>, tab_id: TabId, full: bool) -> Result<tauri::ipc::Response> {
+    live_web_tab(&s, tab_id).await?;
+    Ok(tauri::ipc::Response::new(take_screenshot(&app, tab_id, full).await?))
+}
+
+/// A file name for a screenshot of `url` taken at `ms` (UTC, so names sort by time).
+pub fn screenshot_name(url: &str, ms: i64) -> String {
+    let host =
+        url::Url::parse(url).ok().and_then(|u| u.host_str().map(|h| h.trim_start_matches("www.").to_string())).unwrap_or_else(|| "page".into());
+    let host: String = host.chars().map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == '-' { c } else { '_' }).take(60).collect();
+    let secs = ms.div_euclid(1000);
+    let (y, m, d) = civil_from_days(secs.div_euclid(86_400));
+    let rem = secs.rem_euclid(86_400);
+    format!("Screenshot {host} {y:04}-{m:02}-{d:02} {:02}{:02}{:02}.png", rem / 3600, (rem % 3600) / 60, rem % 60)
+}
+
+/// Days since 1970-01-01 to a calendar date (the civil-from-days algorithm by H. Hinnant).
+fn civil_from_days(z: i64) -> (i64, u32, u32) {
+    let z = z + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    (y, m, d)
+}
+
+/// Saves a screenshot of a tab as a PNG in the download folder and returns its path.
+#[tauri::command]
+pub async fn screenshot_save(app: AppHandle, s: State<'_, AppState>, tab_id: TabId, full: bool) -> Result<String> {
+    let (_, url) = live_web_tab(&s, tab_id).await?;
+    let png = take_screenshot(&app, tab_id, full).await?;
+    let custom = s.ctl.call(|c| c.settings.download_dir.clone()).await?;
+    let dir = custom
+        .map(PathBuf::from)
+        .filter(|d| d.is_dir())
+        .or_else(native::downloads_folder)
+        .ok_or_else(|| Error::msg("No download folder was found."))?;
+    let name = screenshot_name(&url, now_ms());
+    let mut path = dir.join(&name);
+    let mut n = 2;
+    while path.exists() {
+        path = dir.join(format!("{} ({n}).png", name.trim_end_matches(".png")));
+        n += 1;
+    }
+    std::fs::write(&path, &png).map_err(|e| Error::msg(format!("Could not save the screenshot: {e}")))?;
+    log::info!("screenshot saved ({} bytes)", png.len());
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// A media action the shell may ask for. Each maps to a fixed script; the only values put into a script are numbers
+/// that are checked first.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "action")]
+pub enum MediaAction {
+    Status,
+    Toggle,
+    Speed { rate: f64 },
+    Seek { seconds: f64 },
+    Loop,
+    PictureInPicture,
+}
+
+pub fn media_script(action: MediaAction) -> Result<String> {
+    let body = match action {
+        MediaAction::Status => String::new(),
+        MediaAction::Toggle => "if (v.paused) v.play(); else v.pause();".into(),
+        MediaAction::Speed { rate } => {
+            if !rate.is_finite() || !(0.25..=4.0).contains(&rate) {
+                return Err(Error::msg("Speed must be between 0.25x and 4x."));
+            }
+            format!("v.playbackRate = {rate};")
+        }
+        MediaAction::Seek { seconds } => {
+            if !seconds.is_finite() || seconds.abs() > 3600.0 {
+                return Err(Error::msg("That jump is too far."));
+            }
+            format!("v.currentTime = Math.max(0, Math.min((v.duration || 1e9), v.currentTime + ({seconds})));")
+        }
+        MediaAction::Loop => "v.loop = !v.loop;".into(),
+        MediaAction::PictureInPicture => {
+            "if (document.pictureInPictureElement) document.exitPictureInPicture(); else v.requestPictureInPicture().catch(() => {});".into()
+        }
+    };
+    Ok(format!(
+        "(() => {{ const all = [...document.querySelectorAll('video, audio')]; \
+         const v = all.find(m => !m.paused) || all.find(m => m.tagName === 'VIDEO' && m.duration > 0) || all[0]; \
+         if (!v) return {{ media: false }}; {body} \
+         return {{ media: true, video: v.tagName === 'VIDEO', paused: v.paused, rate: v.playbackRate, loop: v.loop, \
+         time: v.currentTime || 0, duration: isFinite(v.duration) ? v.duration : 0, pip: !!document.pictureInPictureElement }}; }})()"
+    ))
+}
+
+/// Controls the main audio or video element of a tab and returns its state.
+#[tauri::command]
+pub async fn media_control(app: AppHandle, s: State<'_, AppState>, tab_id: TabId, action: MediaAction) -> Result<serde_json::Value> {
+    live_web_tab(&s, tab_id).await?;
+    let script = media_script(action)?;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.run_on_main_thread(move || native::run_script(tab_id, script, tx))?;
+    let raw = tokio::time::timeout(Duration::from_secs(4), rx)
+        .await
+        .ok()
+        .and_then(|r| r.ok())
+        .flatten()
+        .ok_or_else(|| Error::msg("The page did not answer."))?;
+    serde_json::from_str(&raw).map_err(|_| Error::msg("The page did not answer."))
+}
+
+/// The article of a page, as plain blocks for the reader view (see native/reader_extract.js).
+#[tauri::command]
+pub async fn reader_view(app: AppHandle, s: State<'_, AppState>, tab_id: TabId) -> Result<serde_json::Value> {
+    live_web_tab(&s, tab_id).await?;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.run_on_main_thread(move || native::reader_extract(tab_id, tx))?;
+    let raw = tokio::time::timeout(PAGE_TEXT_TIMEOUT, rx)
+        .await
+        .ok()
+        .and_then(|r| r.ok())
+        .flatten()
+        .ok_or_else(|| Error::msg("Could not read this page."))?;
+    let value: serde_json::Value = serde_json::from_str(&raw).map_err(|_| Error::msg("Could not read this page."))?;
+    let empty = value.get("blocks").and_then(|b| b.as_array()).map(|b| b.is_empty()).unwrap_or(true);
+    if empty {
+        return Err(Error::msg("No article was found on this page."));
+    }
+    Ok(value)
+}
+
 /// Every command, for the invoke handler and the ACL manifest in build.rs.
 #[macro_export]
 macro_rules! all_commands {
@@ -1555,6 +1727,11 @@ macro_rules! all_commands {
             $crate::commands::shield_site,
             $crate::commands::shield_update,
             $crate::commands::shield_test,
+            $crate::commands::split_view,
+            $crate::commands::page_screenshot,
+            $crate::commands::screenshot_save,
+            $crate::commands::media_control,
+            $crate::commands::reader_view,
         ]
     };
 }
@@ -1570,6 +1747,28 @@ mod tests {
             std::fs::write(dir.join("manifest.json"), m).unwrap();
         }
         dir
+    }
+
+    #[test]
+    fn screenshot_names_are_dated_and_safe() {
+        // 2026-10-12 17:10:05 UTC
+        assert_eq!(screenshot_name("https://www.example.com/a?b", 1_791_825_005_000), "Screenshot example.com 2026-10-12 171005.png");
+        assert_eq!(civil_from_days(0), (1970, 1, 1));
+        assert_eq!(civil_from_days(19_723), (2024, 1, 1));
+        assert!(screenshot_name("not a url", 0).starts_with("Screenshot page 1970-01-01"));
+    }
+
+    #[test]
+    fn media_scripts_only_take_checked_numbers() {
+        assert!(media_script(MediaAction::Speed { rate: 1.5 }).unwrap().contains("v.playbackRate = 1.5;"));
+        assert!(media_script(MediaAction::Speed { rate: 9.0 }).is_err());
+        assert!(media_script(MediaAction::Speed { rate: f64::NAN }).is_err());
+        assert!(media_script(MediaAction::Seek { seconds: -10.0 }).unwrap().contains("+ (-10)"));
+        assert!(media_script(MediaAction::Seek { seconds: 1e9 }).is_err());
+        let a: MediaAction = serde_json::from_str(r#"{"action":"speed","rate":2}"#).unwrap();
+        assert!(matches!(a, MediaAction::Speed { rate } if rate == 2.0));
+        let pip: MediaAction = serde_json::from_str(r#"{"action":"pictureInPicture"}"#).unwrap();
+        assert!(matches!(pip, MediaAction::PictureInPicture));
     }
 
     #[test]

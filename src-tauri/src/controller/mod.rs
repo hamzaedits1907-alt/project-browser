@@ -17,10 +17,12 @@ mod context_menu;
 mod downloads;
 mod drag;
 mod events;
+mod extras;
 mod gaming;
 mod groups;
 mod perf;
 mod sleep_policy;
+mod split;
 mod tabs;
 mod window_set;
 
@@ -39,6 +41,7 @@ use crate::error::{now_ms, Error, Result};
 use crate::profile::{Profile, ProfileStore};
 use crate::settings::Settings;
 use crate::tabs::{GroupId, Tab, TabGroup, TabId, TabStrip};
+pub use split::{SplitOp, SplitView};
 
 pub use downloads::DownloadCommand;
 pub use drag::DragOutcome;
@@ -154,6 +157,8 @@ pub(crate) struct Layout {
     pub browser_fullscreen: bool,
     /// The right-click menu this window's shell is showing (its WebView2 request id).
     pub context_menu: Option<u64>,
+    /// Two tabs shown side by side (see `split.rs`).
+    pub split: Option<SplitView>,
 }
 
 /// Blocked-request counts per tab, sent to the shell a few times per second at most.
@@ -214,6 +219,8 @@ pub struct BrowserState {
     /// This window holds private tabs only.
     pub private_window: bool,
     pub window_count: usize,
+    /// The window's split-view pair, if it has one.
+    pub split: Option<SplitView>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -298,6 +305,10 @@ fn plan_restore_with_geometry(session: Session, startup: crate::settings::Startu
 pub enum UiEvent {
     FocusOmnibox,
     OpenFind,
+    OpenPalette,
+    Screenshot,
+    Reader,
+    Shortcuts,
     Toast { message: String },
 }
 
@@ -363,6 +374,10 @@ pub struct Controller {
     pub(crate) dirty_until: HashMap<TabId, i64>,
     /// Tabs WebView2 declined to suspend, and until when they are not asked again.
     pub(crate) suspend_cooldown: HashMap<TabId, i64>,
+    /// The YouTube video whose sponsor segments were last handed to each tab's current document.
+    pub(crate) sponsor_seen: HashMap<TabId, String>,
+    /// Addresses Link Cleaner rewrote this session.
+    pub(crate) links_cleaned: u64,
     pending_urls: Vec<String>,
     load_all: bool,
     dirty: Dirty,
@@ -415,6 +430,7 @@ impl Controller {
         }
         let downloads = init.db.downloads_list(DOWNLOAD_HISTORY_LIMIT).unwrap_or_default();
         crate::native::set_download_dir(init.settings.download_dir.as_ref().map(Into::into));
+        crate::native::set_clean_links(init.settings.clean_links);
         crate::native::set_popup_policy(
             init.settings.popup_allowed_hosts.clone(),
             init.settings.new_window_requests == crate::settings::NewWindowRequests::Window,
@@ -453,6 +469,8 @@ impl Controller {
             epochs: HashMap::new(),
             dirty_until: HashMap::new(),
             suspend_cooldown: HashMap::new(),
+            sponsor_seen: HashMap::new(),
+            links_cleaned: 0,
             pending_urls: init.startup_urls,
             load_all: init.load_all,
             dirty: Dirty::default(),
@@ -674,6 +692,7 @@ impl Controller {
             gaming: self.settings.gaming_mode,
             private_window: self.private_window,
             window_count: self.window_order.len(),
+            split: self.layout.split,
         }
     }
 
@@ -903,6 +922,9 @@ impl Controller {
         self.db.kv_set("settings", &self.settings)?;
         if prev.download_dir != next.download_dir {
             crate::native::set_download_dir(next.download_dir.as_ref().map(Into::into));
+        }
+        if prev.clean_links != next.clean_links {
+            crate::native::set_clean_links(next.clean_links);
         }
         if prev.popup_allowed_hosts != next.popup_allowed_hosts || prev.new_window_requests != next.new_window_requests {
             crate::native::set_popup_policy(next.popup_allowed_hosts.clone(), next.new_window_requests == crate::settings::NewWindowRequests::Window);

@@ -17,6 +17,10 @@ import type {
   Bootstrap,
   ContextMenuEvent,
   DragOutcome,
+  MediaAction,
+  MediaStatus,
+  ReaderArticle,
+  SplitOp,
   GroupId,
   GroupOp,
   TabDragEvent,
@@ -169,6 +173,11 @@ export const COMMANDS = [
   "shield_site",
   "shield_update",
   "shield_test",
+  "split_view",
+  "page_screenshot",
+  "screenshot_save",
+  "media_control",
+  "reader_view",
 ] as const;
 
 export type CommandName = (typeof COMMANDS)[number];
@@ -333,6 +342,15 @@ export const api = {
   /** Closes right-click menu `request`, running WebView2's command `command` if one was chosen. */
   contextMenuChoose: (request: number, command: number | null) => call("context_menu_choose", { request, command }),
   shieldTest: (url: string, page: string) => call<string>("shield_test", { url, page }),
+  /** Opens, closes, swaps or resizes this window's split view. */
+  splitView: (op: SplitOp) => call("split_view", { op }),
+  /** A PNG of the tab (visible part or the whole page) as bytes, for the clipboard or a preview. */
+  pageScreenshot: (tabId: TabId, full: boolean) =>
+    call<ArrayBuffer | Uint8Array>("page_screenshot", { tabId, full }).then((d) => new Blob([d as BlobPart], { type: "image/png" })),
+  /** Saves a PNG of the tab in the download folder; returns its path. */
+  screenshotSave: (tabId: TabId, full: boolean) => call<string>("screenshot_save", { tabId, full }),
+  mediaControl: (tabId: TabId, action: MediaAction) => call<MediaStatus>("media_control", { tabId, action }),
+  readerView: (tabId: TabId) => call<ReaderArticle>("reader_view", { tabId }),
 };
 
 /** Events emitted by the controller. Only the shell webview ever receives them. */

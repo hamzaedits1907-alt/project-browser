@@ -99,11 +99,39 @@ pub struct PinnedSite {
 }
 
 /// Sidebar entries, in their default order. The shell knows what each one opens; unknown ids are dropped.
-pub const SIDEBAR_ITEMS: &[&str] =
-    &["bookmarks", "history", "downloads", "ai", "memory", "research", "gaming", "shield", "passwords", "privacy", "performance"];
+pub const SIDEBAR_ITEMS: &[&str] = &[
+    "bookmarks",
+    "history",
+    "downloads",
+    "ai",
+    "memory",
+    "research",
+    "gaming",
+    "shield",
+    "passwords",
+    "privacy",
+    "performance",
+    "notes",
+    "media",
+    "focus",
+];
 pub const DEFAULT_SIDEBAR_ITEMS: &[&str] = &["bookmarks", "history", "downloads", "ai", "gaming", "shield", "passwords"];
 /// Optional toolbar buttons (back, forward, reload, the address bar and the menu are always there).
-pub const TOOLBAR_ITEMS: &[&str] = &["gaming", "shield", "ai", "downloads", "bookmarks", "history", "memory", "performance", "privateWindow"];
+pub const TOOLBAR_ITEMS: &[&str] = &[
+    "gaming",
+    "shield",
+    "ai",
+    "downloads",
+    "bookmarks",
+    "history",
+    "memory",
+    "performance",
+    "privateWindow",
+    "split",
+    "reader",
+    "screenshot",
+    "commands",
+];
 pub const DEFAULT_TOOLBAR_ITEMS: &[&str] = &["gaming", "shield", "ai", "downloads"];
 pub const NTP_WIDGETS: &[&str] = &["shortcuts", "continue", "closed", "bookmarks", "downloads", "system", "gaming", "ai"];
 pub const DEFAULT_NTP_WIDGETS: &[&str] = &["shortcuts", "continue", "closed", "bookmarks", "downloads", "system", "gaming", "ai"];
@@ -212,6 +240,11 @@ pub struct Settings {
     pub ntp_shortcuts: Vec<PinnedSite>,
     /// Most-visited sites the user removed from the New Tab page (by address).
     pub ntp_hidden_sites: Vec<String>,
+
+    /// Link Cleaner: remove click-tracking parameters (`fbclid`, `utm_*`, …) from addresses before pages load.
+    pub clean_links: bool,
+    /// SponsorSkip: skip sponsor segments in YouTube videos (only a hash prefix of the video id is sent; see sponsor.rs).
+    pub sponsor_skip: bool,
 }
 
 impl Default for Settings {
@@ -260,6 +293,8 @@ impl Default for Settings {
             ntp_widgets: strings(DEFAULT_NTP_WIDGETS),
             ntp_shortcuts: Vec::new(),
             ntp_hidden_sites: Vec::new(),
+            clean_links: true,
+            sponsor_skip: true,
         }
     }
 }

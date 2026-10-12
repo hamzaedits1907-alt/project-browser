@@ -1,9 +1,9 @@
 import type { PinnedSite, SearchEngine, Settings } from "./types";
 
 /** Same lists as `SIDEBAR_ITEMS`, `TOOLBAR_ITEMS`, `NTP_WIDGETS`, `THEMES` and `NTP_BACKGROUNDS` in settings.rs (contract-tested). */
-export const SIDEBAR_ITEMS = ["bookmarks", "history", "downloads", "ai", "memory", "research", "gaming", "shield", "passwords", "privacy", "performance"] as const;
+export const SIDEBAR_ITEMS = ["bookmarks", "history", "downloads", "ai", "memory", "research", "gaming", "shield", "passwords", "privacy", "performance", "notes", "media", "focus"] as const;
 export const DEFAULT_SIDEBAR_ITEMS = ["bookmarks", "history", "downloads", "ai", "gaming", "shield", "passwords"];
-export const TOOLBAR_ITEMS = ["gaming", "shield", "ai", "downloads", "bookmarks", "history", "memory", "performance", "privateWindow"] as const;
+export const TOOLBAR_ITEMS = ["gaming", "shield", "ai", "downloads", "bookmarks", "history", "memory", "performance", "privateWindow", "split", "reader", "screenshot", "commands"] as const;
 export const DEFAULT_TOOLBAR_ITEMS = ["gaming", "shield", "ai", "downloads"];
 export const NTP_WIDGETS = ["shortcuts", "continue", "closed", "bookmarks", "downloads", "system", "gaming", "ai"] as const;
 export const DEFAULT_NTP_WIDGETS = ["shortcuts", "continue", "closed", "bookmarks", "downloads", "system", "gaming", "ai"];
@@ -60,6 +60,8 @@ export const DEFAULT_SETTINGS: Settings = {
   ntpWidgets: DEFAULT_NTP_WIDGETS,
   ntpShortcuts: [],
   ntpHiddenSites: [],
+  cleanLinks: true,
+  sponsorSkip: true,
 };
 
 export const SEARCH_ENGINES: { id: SearchEngine; label: string; host: string }[] = [

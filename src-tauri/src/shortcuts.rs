@@ -43,6 +43,12 @@ pub enum Command {
     ZoomReset,
     Fullscreen,
     ToggleGamingMode,
+    /// Command Center: one search box for tabs, history, bookmarks and browser commands.
+    CommandPalette,
+    Screenshot,
+    ReaderMode,
+    ToggleSplit,
+    ShowShortcuts,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -64,8 +70,10 @@ const VK_ADD: u32 = 0x6B;
 const VK_SUBTRACT: u32 = 0x6D;
 const VK_F3: u32 = 0x72;
 const VK_F4: u32 = 0x73;
+const VK_F1: u32 = 0x70;
 const VK_F5: u32 = 0x74;
 const VK_F6: u32 = 0x75;
+const VK_F9: u32 = 0x78;
 const VK_F11: u32 = 0x7A;
 const VK_OEM_PLUS: u32 = 0xBB;
 const VK_OEM_COMMA: u32 = 0xBC;
@@ -90,7 +98,13 @@ pub fn map_key(vk: u32, m: Mods) -> Option<Command> {
         (true, false, false, VK_TAB) | (true, false, false, VK_NEXT) => Some(NextTab),
         (true, true, false, VK_TAB) | (true, false, false, VK_PRIOR) => Some(PrevTab),
         (true, false, false, k) if (key(b'1')..=key(b'9')).contains(&k) => Some(SelectTab((k - key(b'0')) as u8)),
-        (true, false, false, k) if k == key(b'L') || k == key(b'E') || k == key(b'K') => Some(FocusOmnibox),
+        (true, false, false, k) if k == key(b'K') => Some(CommandPalette),
+        (true, true, false, k) if k == key(b'A') => Some(CommandPalette),
+        (true, false, false, k) if k == key(b'L') || k == key(b'E') => Some(FocusOmnibox),
+        (true, true, false, k) if k == key(b'S') => Some(Screenshot),
+        (false, false, false, VK_F9) => Some(ReaderMode),
+        (true, true, false, k) if k == key(b'E') => Some(ToggleSplit),
+        (false, false, false, VK_F1) => Some(ShowShortcuts),
         (false, false, true, k) if k == key(b'D') => Some(FocusOmnibox),
         (false, false, false, VK_F6) => Some(FocusOmnibox),
         (true, false, false, k) if k == key(b'R') => Some(Reload),
@@ -151,6 +165,17 @@ mod tests {
         assert_eq!(map_key(key(b'3'), C), Some(Command::SelectTab(3)));
         assert_eq!(map_key(key(b'9'), C), Some(Command::SelectTab(9)));
         assert_eq!(map_key(key(b'N'), CS), Some(Command::NewPrivateWindow));
+    }
+
+    #[test]
+    fn feature_shortcuts() {
+        assert_eq!(map_key(key(b'K'), C), Some(Command::CommandPalette));
+        assert_eq!(map_key(key(b'A'), CS), Some(Command::CommandPalette));
+        assert_eq!(map_key(key(b'S'), CS), Some(Command::Screenshot));
+        assert_eq!(map_key(VK_F9, NONE), Some(Command::ReaderMode));
+        assert_eq!(map_key(key(b'E'), CS), Some(Command::ToggleSplit));
+        assert_eq!(map_key(VK_F1, NONE), Some(Command::ShowShortcuts));
+        assert_eq!(map_key(key(b'E'), C), Some(Command::FocusOmnibox));
     }
 
     #[test]

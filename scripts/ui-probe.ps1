@@ -110,7 +110,7 @@ function Brightness($bmp, [IntPtr]$h, [int]$x, [int]$y, [int]$w, [int]$hh) {
   if ($n -eq 0) { return 0 } else { return [Math]::Round($sum / $n, 1) }
 }
 # Mean absolute per-channel difference (0-255) between two captures over a region (logical pixels).
-function Diff($a, $b, [IntPtr]$h, [int]$x, [int]$y, [int]$w, [int]$hh) {
+function PixelDiff($a, $b, [IntPtr]$h, [int]$x, [int]$y, [int]$w, [int]$hh) {
   $s = [Probe]::GetDpiForWindow($h) / 96.0
   $sum = 0.0; $n = 0
   $maxX = [Math]::Min($a.Width, $b.Width); $maxY = [Math]::Min($a.Height, $b.Height)
@@ -183,7 +183,7 @@ try {
   Click $pt.X $pt.Y $true
   Start-Sleep -Milliseconds 1500
   $menu = Capture $main "02-right-click"
-  $d = Diff $before $menu $main 700 450 240 260
+  $d = PixelDiff $before $menu $main 700 450 240 260
   $notes["pixel change under the menu"] = $d
   $steps["right-click shows a menu"] = ($d -gt 8)
   $steps["log: our menu, not WebView2's"] = ((& $log) -match "context menu \d+: page target")
@@ -192,7 +192,7 @@ try {
   Key @(0x1B)
   Start-Sleep -Milliseconds 900
   $after = Capture $main "03-escape"
-  $d2 = Diff $before $after $main 700 450 240 260
+  $d2 = PixelDiff $before $after $main 700 450 240 260
   $notes["pixel change after Escape"] = $d2
   $steps["Escape removes the menu"] = ($d2 -lt 4)
 
@@ -200,7 +200,7 @@ try {
   Key @(0x11, 0x54)
   Start-Sleep -Milliseconds 1500
   $newTab = Capture $main "04-new-tab"
-  $d4 = Diff $after $newTab $main 200 250 700 350
+  $d4 = PixelDiff $after $newTab $main 200 250 700 350
   $notes["pixel change after Ctrl+T"] = $d4
   $steps["Ctrl+T shows the new-tab page"] = ($d4 -gt 20)
 
@@ -235,7 +235,7 @@ try {
     Key @(0x09); Start-Sleep -Milliseconds 200; Key @(0x0D)
     Start-Sleep -Seconds 5
     $tornAfter = Capture $torn "07-torn-off-after-link"
-    $d3 = Diff $tornBefore $tornAfter $torn 100 140 1000 560
+    $d3 = PixelDiff $tornBefore $tornAfter $torn 100 140 1000 560
     $notes["torn-off page change after following the link"] = $d3
     $steps["torn-off window: page takes input and navigates"] = ($d3 -gt 6)
   }

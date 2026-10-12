@@ -52,12 +52,17 @@ thread_local! {
     static TOP_HOST: RefCell<HashMap<TabId, String>> = RefCell::new(HashMap::new());
     /// What WebView2 said about the latest new-window request of each tab (see `PopupIntent`).
     static POPUP_INTENT: RefCell<HashMap<TabId, PopupIntent>> = RefCell::new(HashMap::new());
+    /// The last address Link Cleaner produced per tab, and when: a site that adds the parameters back by redirecting
+    /// gets its way the second time instead of looping.
+    static LAST_CLEAN: RefCell<HashMap<TabId, (String, Instant)>> = RefCell::new(HashMap::new());
 }
 
 static NEXT_PERMISSION: AtomicU64 = AtomicU64::new(1);
 /// Sites allowed to open pop-ups without a user action, and whether page-requested new windows open as browser windows.
 static POPUP_ALLOWED: Mutex<Vec<String>> = Mutex::new(Vec::new());
 static NEW_WINDOWS: AtomicBool = AtomicBool::new(false);
+/// Link Cleaner on (see `linkclean.rs`).
+static CLEAN_LINKS: AtomicBool = AtomicBool::new(true);
 static NEXT_DOWNLOAD: AtomicI64 = AtomicI64::new(0);
 static DOWNLOAD_DIR: Mutex<Option<PathBuf>> = Mutex::new(None);
 
@@ -179,6 +184,24 @@ pub fn set_popup_policy(allowed_hosts: Vec<String>, new_windows: bool) {
 pub fn popups_allowed_for(id: TabId) -> bool {
     let host = TOP_HOST.with(|t| t.borrow().get(&id).cloned()).unwrap_or_default();
     !host.is_empty() && POPUP_ALLOWED.lock().map(|a| a.iter().any(|d| crate::shield::rules::host_is_or_under(&host, d))).unwrap_or(false)
+}
+
+pub fn set_clean_links(on: bool) {
+    CLEAN_LINKS.store(on, Ordering::Relaxed);
+}
+
+/// The address Link Cleaner loads instead of `uri`, if it applies (and is not looping on a redirect).
+fn link_clean_target(id: TabId, uri: &str) -> Option<String> {
+    if !CLEAN_LINKS.load(Ordering::Relaxed) {
+        return None;
+    }
+    let clean = crate::linkclean::clean(uri)?;
+    let repeat = LAST_CLEAN.with(|m| m.borrow().get(&id).is_some_and(|(last, at)| *last == clean && at.elapsed() < Duration::from_secs(10)));
+    if repeat {
+        return None;
+    }
+    LAST_CLEAN.with(|m| m.borrow_mut().insert(id, (clean.clone(), Instant::now())));
+    Some(clean)
 }
 
 pub fn new_windows_open_as_windows() -> bool {
@@ -310,6 +333,12 @@ unsafe fn install_tab_inner(id: TabId, pw: &PlatformWebview, ctl: &ControllerHan
         &NavigationStartingEventHandler::create(Box::new(move |sender, args| {
             let Some(args) = args else { return Ok(()) };
             let uri = pwstr(|p| args.Uri(p));
+            if let Some(clean) = link_clean_target(id, &uri) {
+                // Cancelled here, loaded again without the tracking parameters (the controller navigates).
+                args.SetCancel(true)?;
+                c.post_tab(id, move |ctl| ctl.on_link_cleaned(id, clean));
+                return Ok(());
+            }
             note_top_navigation(id, &uri, &c);
             if let Some(wv) = sender {
                 sync_youtube_guard(id, &wv);
@@ -491,6 +520,16 @@ unsafe fn install_tab_inner(id: TabId, pw: &PlatformWebview, ctl: &ControllerHan
     )?;
 
     hook_accelerators(&controller, ctl, AccelOrigin::Tab(id))?;
+
+    // Split view: clicking into a half makes it the active tab.
+    let c = ctl.clone();
+    controller.add_GotFocus(
+        &FocusChangedEventHandler::create(Box::new(move |_, _| {
+            c.post_tab(id, move |ctl| ctl.on_tab_focused(id));
+            Ok(())
+        })),
+        &mut token,
+    )?;
 
     if let Err(e) = context_menu::hook(&webview, context_menu::MenuOwner::Tab(id), ctl) {
         log::warn!("tab {id}: the browser's own right-click menu is unavailable for this tab: {e}");
@@ -768,12 +807,25 @@ pub fn rehost(id: TabId) {
     }
 }
 
+/// The user's Downloads folder (wherever Windows has it), for files the browser saves itself (screenshots).
+pub fn downloads_folder() -> Option<PathBuf> {
+    use windows::Win32::System::Com::CoTaskMemFree;
+    use windows::Win32::UI::Shell::{FOLDERID_Downloads, SHGetKnownFolderPath, KF_FLAG_DEFAULT};
+    unsafe {
+        let p = SHGetKnownFolderPath(&FOLDERID_Downloads, KF_FLAG_DEFAULT, None).ok()?;
+        let path = p.to_string().ok().map(PathBuf::from);
+        CoTaskMemFree(Some(p.0 as _));
+        path.filter(|d| d.is_dir())
+    }
+}
+
 pub fn remove_tab(id: TabId) {
     context_menu::forget(&context_menu::MenuOwner::Tab(id));
     TABS.with(|t| t.borrow_mut().remove(&id));
     TOP_HOST.with(|t| t.borrow_mut().remove(&id));
     YT_GUARD.with(|g| g.borrow_mut().remove(&id));
     POPUP_INTENT.with(|m| m.borrow_mut().remove(&id));
+    LAST_CLEAN.with(|m| m.borrow_mut().remove(&id));
     if let Some(shield) = crate::shield::global() {
         shield.forget_tab(id);
     }
@@ -1313,6 +1365,77 @@ pub fn run_script(id: TabId, script: String, reply: tokio::sync::oneshot::Sender
             })),
         );
         // A synchronous failure drops the handler (and `reply`); the caller treats that as "could not fill".
+    }
+}
+
+/// Runs a fixed script of the browser's own (SponsorSkip data, media controls) in a tab's top frame, ignoring the result.
+pub fn exec_script(id: TabId, script: String) {
+    if let Some(t) = tab_com(id) {
+        unsafe {
+            let _ = t.webview.ExecuteScript(&HSTRING::from(script), &ExecuteScriptCompletedHandler::create(Box::new(|_, _| Ok(()))));
+        }
+    }
+}
+
+const READER_JS: &str = include_str!("reader_extract.js");
+
+/// Reads the article of a page for the reader view (see reader_extract.js). Replies with the script's JSON.
+pub fn reader_extract(id: TabId, reply: tokio::sync::oneshot::Sender<Option<String>>) {
+    run_script(id, READER_JS.to_string(), reply);
+}
+
+/// The largest page height a full-page screenshot covers, in CSS pixels (Chromium's own capture limit is 16384).
+pub const MAX_SCREENSHOT_HEIGHT: f64 = 16000.0;
+
+/// Takes a PNG screenshot of a tab through the DevTools protocol: the visible part, or the whole page (`full`).
+/// Replies with the PNG bytes, or `None` when the page could not be captured.
+pub fn capture_screenshot(id: TabId, full: bool, reply: tokio::sync::oneshot::Sender<Option<Vec<u8>>>) {
+    let Some(t) = tab_com(id) else {
+        let _ = reply.send(None);
+        return;
+    };
+    let webview = t.webview.clone();
+    let capture = move |params: String, reply: tokio::sync::oneshot::Sender<Option<Vec<u8>>>| unsafe {
+        let _ = webview.CallDevToolsProtocolMethod(
+            &HSTRING::from("Page.captureScreenshot"),
+            &HSTRING::from(params),
+            &CallDevToolsProtocolMethodCompletedHandler::create(Box::new(move |res, json| {
+                use base64::Engine as _;
+                let png = res
+                    .ok()
+                    .and_then(|_| serde_json::from_str::<serde_json::Value>(&json).ok())
+                    .and_then(|v| v.get("data").and_then(|d| d.as_str()).and_then(|d| base64::engine::general_purpose::STANDARD.decode(d).ok()));
+                let _ = reply.send(png);
+                Ok(())
+            })),
+        );
+    };
+    if !full {
+        capture(r#"{"format":"png"}"#.to_string(), reply);
+        return;
+    }
+    unsafe {
+        let _ = t.webview.CallDevToolsProtocolMethod(
+            &HSTRING::from("Page.getLayoutMetrics"),
+            &HSTRING::from("{}"),
+            &CallDevToolsProtocolMethodCompletedHandler::create(Box::new(move |res, json| {
+                let size = res.ok().and_then(|_| serde_json::from_str::<serde_json::Value>(&json).ok()).and_then(|v| {
+                    let s = v.get("cssContentSize")?;
+                    Some((s.get("width")?.as_f64()?, s.get("height")?.as_f64()?))
+                });
+                let params = match size {
+                    Some((w, h)) if w > 0.0 && h > 0.0 => serde_json::json!({
+                        "format": "png",
+                        "captureBeyondViewport": true,
+                        "clip": { "x": 0, "y": 0, "width": w.ceil(), "height": h.min(MAX_SCREENSHOT_HEIGHT).ceil(), "scale": 1 }
+                    })
+                    .to_string(),
+                    _ => r#"{"format":"png"}"#.to_string(),
+                };
+                capture(params, reply);
+                Ok(())
+            })),
+        );
     }
 }
 

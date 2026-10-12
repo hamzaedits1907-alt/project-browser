@@ -115,6 +115,11 @@
     "allow-shield-set",
     "allow-shield-site",
     "allow-shield-update",
-    "allow-shield-test"
+    "allow-shield-test",
+    "allow-split-view",
+    "allow-page-screenshot",
+    "allow-screenshot-save",
+    "allow-media-control",
+    "allow-reader-view"
   ]
 }

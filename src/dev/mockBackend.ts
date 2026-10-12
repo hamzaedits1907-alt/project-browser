@@ -128,6 +128,7 @@ export function installMockBackend(): void {
     gaming: settings.gamingMode,
     privateWindow: params.get("privatewindow") === "1",
     windowCount: params.get("windows") === "2" ? 2 : 1,
+    split: params.get("split") === "1" ? { left: 4, right: 2, ratio: 0.5 } : null,
   };
   let bookmarks: Bookmark[] = [
     { id: 1, parentId: null, kind: "folder", title: "Bookmarks bar", url: null, position: 0, createdAt: now },
@@ -245,8 +246,45 @@ export function installMockBackend(): void {
             settings = { ...settings, gamingMode: !settings.gamingMode };
             void emit("pb:settings", settings);
           } else if (c.type === "find") void emit("pb:ui", { kind: "openFind" });
+          else if (c.type === "commandPalette") void emit("pb:ui", { kind: "openPalette" });
+          else if (c.type === "readerMode") void emit("pb:ui", { kind: "reader" });
+          else if (c.type === "showShortcuts") void emit("pb:ui", { kind: "shortcuts" });
           return null;
         }
+        case "split_view": {
+          const op = a.op as { op: string; tabId?: number; ratio?: number };
+          if (op.op === "open") state = { ...state, split: { left: op.tabId ?? state.activeId ?? 4, right: 2, ratio: 0.5 } };
+          else if (op.op === "close") state = { ...state, split: null };
+          else if (op.op === "swap" && state.split) state = { ...state, split: { ...state.split, left: state.split.right, right: state.split.left } };
+          else if (op.op === "ratio" && state.split) state = { ...state, split: { ...state.split, ratio: Math.min(0.8, Math.max(0.2, op.ratio ?? 0.5)) } };
+          return pushState();
+        }
+        case "media_control":
+          return { media: true, video: true, paused: false, rate: 1, loop: false, time: 42, duration: 213, pip: false };
+        case "screenshot_save":
+          return "C:\\Users\\you\\Downloads\\Screenshot example.com 2026-10-12 171005.png";
+        case "reader_view":
+          return {
+            title: "Rust (programming language)",
+            byline: "Wikipedia contributors",
+            site: "Wikipedia",
+            lang: "en",
+            words: 182,
+            truncated: false,
+            blocks: [
+              { k: "h1", text: "Rust (programming language)" },
+              { k: "p", text: "Rust is a general-purpose programming language emphasizing performance, type safety and concurrency. It enforces memory safety, meaning that all references point to valid memory, without a garbage collector." },
+              { k: "h2", text: "History" },
+              { k: "p", text: "The language grew out of a personal project begun in 2006 by Mozilla Research employee Graydon Hoare. Mozilla began sponsoring the project in 2009 and the first stable release, Rust 1.0, was published in May 2015." },
+              { k: "quote", text: "Rust has been the most admired programming language in the Stack Overflow Developer Survey every year since 2016." },
+              { k: "h2", text: "Features" },
+              { k: "li", text: "Ownership and borrowing instead of a garbage collector" },
+              { k: "li", text: "Zero-cost abstractions and pattern matching" },
+              { k: "li", text: "A package manager and build tool, Cargo" },
+              { k: "pre", text: "fn main() {\n    println!(\"Hello, world!\");\n}" },
+              { k: "p", text: "Rust is used in web browsers, operating systems, game engines and command-line tools." },
+            ],
+          };
         case "settings_get":
           return settings;
         case "settings_set":

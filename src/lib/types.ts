@@ -58,6 +58,59 @@ export interface BrowserState {
   /** This window holds private tabs only and is never saved. */
   privateWindow: boolean;
   windowCount: number;
+  /** The window's split-view pair, if it has one (`controller/split.rs`). */
+  split: SplitView | null;
+}
+
+/** Two tabs shown side by side; `ratio` is the left half's share of the page width. */
+export interface SplitView {
+  left: TabId;
+  right: TabId;
+  ratio: number;
+}
+
+export type SplitOp =
+  | { op: "open"; tabId?: TabId; with?: TabId }
+  | { op: "close" }
+  | { op: "swap" }
+  | { op: "ratio"; ratio: number };
+
+export type MediaAction =
+  | { action: "status" }
+  | { action: "toggle" }
+  | { action: "speed"; rate: number }
+  | { action: "seek"; seconds: number }
+  | { action: "loop" }
+  | { action: "pictureInPicture" };
+
+/** What `media_control` reports about the page's main audio or video element. */
+export interface MediaStatus {
+  media: boolean;
+  video?: boolean;
+  paused?: boolean;
+  rate?: number;
+  loop?: boolean;
+  time?: number;
+  duration?: number;
+  pip?: boolean;
+}
+
+/** One block of a page's article for the reader view (`native/reader_extract.js`). */
+export interface ReaderBlock {
+  k: "h1" | "h2" | "h3" | "p" | "li" | "quote" | "pre" | "img";
+  text?: string;
+  src?: string;
+  alt?: string;
+}
+
+export interface ReaderArticle {
+  title: string;
+  byline: string;
+  site: string;
+  lang: string;
+  blocks: ReaderBlock[];
+  words: number;
+  truncated: boolean;
 }
 
 export type SearchEngine = "google" | "bing" | "duckduckgo" | "brave" | "startpage" | "ecosia";
@@ -125,6 +178,10 @@ export interface Settings {
   ntpWidgets: string[];
   ntpShortcuts: PinnedSite[];
   ntpHiddenSites: string[];
+  /** Link Cleaner: strip click-tracking parameters before pages load. */
+  cleanLinks: boolean;
+  /** SponsorSkip: skip sponsor segments in YouTube videos. */
+  sponsorSkip: boolean;
 }
 
 export interface ProfileMeta {
@@ -180,7 +237,14 @@ export interface Bootstrap {
   version: string;
 }
 
-export type UiEvent = { kind: "focusOmnibox" } | { kind: "openFind" } | { kind: "toast"; message: string };
+export type UiEvent =
+  | { kind: "focusOmnibox" }
+  | { kind: "openFind" }
+  | { kind: "openPalette" }
+  | { kind: "screenshot" }
+  | { kind: "reader" }
+  | { kind: "shortcuts" }
+  | { kind: "toast"; message: string };
 
 export interface Suggestion {
   kind: "search" | "url" | "tab" | "bookmark" | "history";
@@ -563,7 +627,12 @@ export type BrowserCommand =
   | { type: "zoomOut" }
   | { type: "zoomReset" }
   | { type: "fullscreen" }
-  | { type: "toggleGamingMode" };
+  | { type: "toggleGamingMode" }
+  | { type: "commandPalette" }
+  | { type: "screenshot" }
+  | { type: "readerMode" }
+  | { type: "toggleSplit" }
+  | { type: "showShortcuts" };
 
 // ---- Project Memory and page reading -----------------------------------------------------
 

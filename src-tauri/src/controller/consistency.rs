@@ -17,18 +17,18 @@ pub(crate) enum Drift {
     InternalWithView(TabId),
     /// The model says the page is loaded (live or sleeping) but there is no webview.
     MissingView(TabId),
-    /// A webview is visible although it is not the active tab (or a shell popup hides the page).
+    /// A webview is visible although it is not on screen (the active tab or its split partner), or a shell popup hides the page.
     ExtraVisible(TabId),
 }
 
-/// `views` is `(tab id, currently visible)` for every existing webview.
-pub(crate) fn find_drift(tabs: &[Tab], views: &[(TabId, bool)], active: Option<TabId>, overlay: bool) -> Vec<Drift> {
+/// `views` is `(tab id, currently visible)` for every existing webview; `shown` are the tabs that belong on screen.
+pub(crate) fn find_drift(tabs: &[Tab], views: &[(TabId, bool)], shown: &[TabId], overlay: bool) -> Vec<Drift> {
     let mut out = Vec::new();
     for &(id, visible) in views {
         match tabs.iter().find(|t| t.id == id) {
             None => out.push(Drift::OrphanView(id)),
             Some(t) if is_internal(&t.url) => out.push(Drift::InternalWithView(id)),
-            Some(_) if visible && (Some(id) != active || overlay) => out.push(Drift::ExtraVisible(id)),
+            Some(_) if visible && (!shown.contains(&id) || overlay) => out.push(Drift::ExtraVisible(id)),
             Some(_) => {}
         }
     }
@@ -64,22 +64,22 @@ mod tests {
         set_lifecycle(&mut s, 1, Lifecycle::Live);
         set_lifecycle(&mut s, 2, Lifecycle::Sleeping);
         // 3 is a shell page: no webview. Tab 1 is active and visible, tab 2 hidden and suspended.
-        assert!(find_drift(s.tabs(), &[(1, true), (2, false)], Some(1), false).is_empty());
+        assert!(find_drift(s.tabs(), &[(1, true), (2, false)], &[1], false).is_empty());
         // Restored (unloaded) web tabs have no webview either.
         let u = strip(&["https://a/"]);
-        assert!(find_drift(u.tabs(), &[], Some(1), false).is_empty());
+        assert!(find_drift(u.tabs(), &[], &[1], false).is_empty());
     }
 
     #[test]
     fn finds_a_webview_left_behind_for_a_closed_tab() {
         let s = strip(&["https://a/"]);
-        assert_eq!(find_drift(s.tabs(), &[(1, true), (9, false)], Some(1), false), vec![Drift::OrphanView(9)]);
+        assert_eq!(find_drift(s.tabs(), &[(1, true), (9, false)], &[1], false), vec![Drift::OrphanView(9)]);
     }
 
     #[test]
     fn finds_a_webview_on_a_shell_page() {
         let s = strip(&["browser://settings"]);
-        assert_eq!(find_drift(s.tabs(), &[(1, false)], Some(1), false), vec![Drift::InternalWithView(1)]);
+        assert_eq!(find_drift(s.tabs(), &[(1, false)], &[1], false), vec![Drift::InternalWithView(1)]);
     }
 
     #[test]
@@ -87,7 +87,7 @@ mod tests {
         let mut s = strip(&["https://a/", "https://b/"]);
         set_lifecycle(&mut s, 1, Lifecycle::Live);
         set_lifecycle(&mut s, 2, Lifecycle::Sleeping);
-        assert_eq!(find_drift(s.tabs(), &[], Some(1), false), vec![Drift::MissingView(1), Drift::MissingView(2)]);
+        assert_eq!(find_drift(s.tabs(), &[], &[1], false), vec![Drift::MissingView(1), Drift::MissingView(2)]);
     }
 
     #[test]
@@ -95,8 +95,10 @@ mod tests {
         let mut s = strip(&["https://a/", "https://b/"]);
         set_lifecycle(&mut s, 1, Lifecycle::Live);
         set_lifecycle(&mut s, 2, Lifecycle::Live);
-        assert_eq!(find_drift(s.tabs(), &[(1, true), (2, true)], Some(1), false), vec![Drift::ExtraVisible(2)]);
+        assert_eq!(find_drift(s.tabs(), &[(1, true), (2, true)], &[1], false), vec![Drift::ExtraVisible(2)]);
         // While a shell menu is open the page must be hidden, active tab included.
-        assert_eq!(find_drift(s.tabs(), &[(1, true), (2, false)], Some(1), true), vec![Drift::ExtraVisible(1)]);
+        assert_eq!(find_drift(s.tabs(), &[(1, true), (2, false)], &[1], true), vec![Drift::ExtraVisible(1)]);
+        // In split view the active tab's partner is on screen too.
+        assert!(find_drift(s.tabs(), &[(1, true), (2, true)], &[1, 2], false).is_empty());
     }
 }

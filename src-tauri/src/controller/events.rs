@@ -28,6 +28,9 @@ impl Controller {
         tab.loading = true;
         tab.error = None;
         tab.blocked_popup = None;
+        // A new document has none of SponsorSkip's data yet.
+        self.sponsor_seen.remove(&id);
+        let Some(tab) = self.tabs.get_mut(id) else { return };
         if !uri.is_empty() && uri != "about:blank" {
             tab.url = uri;
             tab.security = Security::for_url(&tab.url);
@@ -53,6 +56,10 @@ impl Controller {
         }
         if id == self.tabs.active_id().unwrap_or_default() {
             self.close_find();
+        }
+        if !new_document {
+            // YouTube moves between videos without loading a new document.
+            self.sponsor_check(id);
         }
         self.mark_session();
     }
@@ -96,6 +103,7 @@ impl Controller {
                 }
             }
             self.refresh_tab_meta(id);
+            self.sponsor_check(id);
             self.mark_session();
             return;
         }

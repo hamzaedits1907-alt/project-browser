@@ -37,6 +37,7 @@ const EMPTY_BROWSER: BrowserState = {
   gaming: false,
   privateWindow: false,
   windowCount: 1,
+  split: null,
 };
 
 let state: AppState = {
@@ -82,7 +83,7 @@ export function activeTab(s: AppState): Tab | null {
 
 // ---- UI event bus (focus omnibox, open find) -------------------------------------
 
-type BusEvent = "focusOmnibox" | "openFind" | "openSiteInfo" | "openFill";
+type BusEvent = "focusOmnibox" | "openFind" | "openSiteInfo" | "openFill" | "openPalette" | "screenshot" | "reader" | "shortcuts";
 const bus = new Map<BusEvent, Set<() => void>>();
 
 export function onBus(name: BusEvent, fn: () => void): () => void {

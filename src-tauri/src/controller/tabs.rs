@@ -504,7 +504,8 @@ impl Controller {
     pub(crate) fn reconcile_views(&mut self) {
         use super::consistency::{find_drift, Drift};
         let views: Vec<(TabId, bool)> = self.views.iter().map(|(id, v)| (*id, v.visible)).collect();
-        let drift = find_drift(self.tabs.tabs(), &views, self.tabs.active_id(), self.layout.overlay);
+        let shown: Vec<TabId> = self.tabs.active_id().into_iter().chain(self.split_partner_on_screen()).collect();
+        let drift = find_drift(self.tabs.tabs(), &views, &shown, self.layout.overlay);
         if drift.is_empty() {
             return;
         }
@@ -531,18 +532,20 @@ impl Controller {
 
     /// Positions/shows the active tab's webview and hides all others.
     pub(crate) fn relayout(&mut self) {
-        let Some(rect) = self.layout.content else { return };
-        let active = self.tabs.active_id();
-        if let Some(a) = active {
-            let needs_view = self.tabs.get(a).is_some_and(|t| !is_internal(&t.url));
-            if needs_view && !self.views.contains_key(&a) && rect.width > 0.0 && rect.height > 0.0 {
-                self.create_view(a, true);
+        let Some(area) = self.layout.content else { return };
+        self.validate_split();
+        let placed = super::split::placements(self.tabs.active_id(), self.layout.split, area);
+        for (id, _) in &placed {
+            let needs_view = self.tabs.get(*id).is_some_and(|t| !is_internal(&t.url));
+            if needs_view && !self.views.contains_key(id) && area.width > 0.0 && area.height > 0.0 {
+                self.create_view(*id, true);
             }
         }
         let overlay = self.layout.overlay;
         for (id, view) in self.views.iter_mut() {
-            let show = Some(*id) == active && !overlay && rect.width > 0.0 && rect.height > 0.0;
-            if show {
+            let target = placed.iter().find(|(p, _)| p == id).map(|(_, r)| *r);
+            let show = !overlay && area.width > 0.0 && area.height > 0.0 && target.is_some();
+            if let (true, Some(rect)) = (show, target) {
                 if view.bounds != Some(rect) {
                     let _ = view.webview.set_bounds(Rect {
                         position: LogicalPosition::new(rect.x, rect.y).into(),
@@ -748,6 +751,32 @@ impl Controller {
                 }
             }
             Command::Fullscreen => self.toggle_browser_fullscreen(),
+            Command::CommandPalette => {
+                self.focus_shell();
+                self.ui(UiEvent::OpenPalette);
+            }
+            Command::ShowShortcuts => {
+                self.focus_shell();
+                self.ui(UiEvent::Shortcuts);
+            }
+            Command::Screenshot => {
+                if self.active_live_tab().is_some() {
+                    self.ui(UiEvent::Screenshot);
+                }
+            }
+            Command::ReaderMode => {
+                if self.active_live_tab().is_some() {
+                    self.focus_shell();
+                    self.ui(UiEvent::Reader);
+                }
+            }
+            Command::ToggleSplit => {
+                let op =
+                    if self.split_partner_on_screen().is_some() { super::SplitOp::Close } else { super::SplitOp::Open { tab_id: None, with: None } };
+                if let Err(e) = self.split_view(op) {
+                    self.toast(e.to_string());
+                }
+            }
             Command::ToggleGamingMode => {
                 let mut s = self.settings.clone();
                 s.gaming_mode = !s.gaming_mode;

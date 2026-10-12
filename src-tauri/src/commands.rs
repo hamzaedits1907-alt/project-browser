@@ -1156,6 +1156,46 @@ pub async fn update_install(app: AppHandle, updates: State<'_, crate::updates::U
     crate::updates::install(&app, &updates).await
 }
 
+/// What the user chose for a pop-up the page opened without being asked to: `open`, `allow` (this site, from now on) or
+/// `dismiss`.
+#[tauri::command]
+pub async fn popup_decision(s: State<'_, AppState>, tab_id: TabId, action: String) -> Result<()> {
+    s.ctl.call_tab(tab_id, move |c| c.popup_decision(tab_id, &action)).await?
+}
+
+// ---- Project Tunnel ------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn tunnel_state(s: State<'_, AppState>) -> Result<crate::tunnel::TunnelView> {
+    Ok(crate::tunnel::view(&crate::tunnel::load(&s.data_root)))
+}
+
+/// Saves the proxy settings. They take effect when the browser restarts, and the state says so.
+#[tauri::command]
+pub async fn tunnel_set(s: State<'_, AppState>, config: crate::tunnel::TunnelConfig) -> Result<crate::tunnel::TunnelView> {
+    let cfg = if config.enabled || !config.host.trim().is_empty() {
+        config.validated().map_err(Error::msg)?
+    } else {
+        crate::tunnel::TunnelConfig::default()
+    };
+    crate::tunnel::save(&s.data_root, &cfg)?;
+    Ok(crate::tunnel::view(&cfg))
+}
+
+/// Asks the proxy, in the open, whether it speaks its protocol and agrees to connect. Changes nothing.
+#[tauri::command]
+pub async fn tunnel_probe(config: crate::tunnel::TunnelConfig) -> Result<crate::tunnel::ProbeResult> {
+    let cfg = config.validated().map_err(Error::msg)?;
+    Ok(crate::tunnel::probe(&cfg).await)
+}
+
+/// Saves the session and starts the browser again (the proxy is applied at start-up).
+#[tauri::command]
+pub async fn tunnel_restart(app: AppHandle, s: State<'_, AppState>) -> Result<()> {
+    s.ctl.call(|c| c.prepare_exit()).await?;
+    app.restart()
+}
+
 // ---- windows -------------------------------------------------------------------------------
 
 /// All browser windows, for the "move to window" menu. `current` marks the window that asked.
@@ -1346,6 +1386,11 @@ macro_rules! all_commands {
             $crate::commands::app_info,
             $crate::commands::update_check,
             $crate::commands::update_install,
+            $crate::commands::popup_decision,
+            $crate::commands::tunnel_state,
+            $crate::commands::tunnel_set,
+            $crate::commands::tunnel_probe,
+            $crate::commands::tunnel_restart,
             $crate::commands::windows_list,
             $crate::commands::tab_to_window,
             $crate::commands::shield_state,

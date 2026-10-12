@@ -286,7 +286,7 @@ describe("settings defaults", () => {
   it("match Settings::default() in Rust", () => {
     const src = read("src-tauri/src/settings.rs");
     const block = src.slice(src.indexOf("impl Default for Settings"), src.indexOf("impl Settings {"));
-    const enumValue: Record<string, string> = { Google: "google", RestoreSession: "restoreSession", Sleep: "sleep" };
+    const enumValue: Record<string, string> = { Google: "google", RestoreSession: "restoreSession", Sleep: "sleep", Tab: "tab" };
     const parsed: Record<string, unknown> = {};
     for (const m of block.matchAll(/^\s+(\w+): (.+),$/gm)) {
       const key = camel(m[1] as string);

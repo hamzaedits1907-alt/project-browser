@@ -394,6 +394,10 @@ impl Controller {
         }
         let downloads = init.db.downloads_list(DOWNLOAD_HISTORY_LIMIT).unwrap_or_default();
         crate::native::set_download_dir(init.settings.download_dir.as_ref().map(Into::into));
+        crate::native::set_popup_policy(
+            init.settings.popup_allowed_hosts.clone(),
+            init.settings.new_window_requests == crate::settings::NewWindowRequests::Window,
+        );
         let tab_ids = Arc::new(AtomicU64::new(1));
         let main = crate::window::SHELL_LABEL.to_string();
         Controller {
@@ -701,7 +705,14 @@ impl Controller {
         for (i, st) in plan.tabs.into_iter().enumerate() {
             // Restored tabs start unloaded; their webview is created when first shown.
             let id = self.tabs.create(
-                crate::tabs::NewTab { url: st.url, pinned: st.pinned, title: Some(st.title), favicon: st.favicon, ..Default::default() },
+                crate::tabs::NewTab {
+                    url: st.url,
+                    pinned: st.pinned,
+                    title: Some(st.title),
+                    favicon: st.favicon,
+                    private: self.private_window,
+                    ..Default::default()
+                },
                 now,
             );
             self.refresh_tab_meta(id);
@@ -855,6 +866,9 @@ impl Controller {
         self.db.kv_set("settings", &self.settings)?;
         if prev.download_dir != next.download_dir {
             crate::native::set_download_dir(next.download_dir.as_ref().map(Into::into));
+        }
+        if prev.popup_allowed_hosts != next.popup_allowed_hosts || prev.new_window_requests != next.new_window_requests {
+            crate::native::set_popup_policy(next.popup_allowed_hosts.clone(), next.new_window_requests == crate::settings::NewWindowRequests::Window);
         }
         if prev.save_passwords != next.save_passwords || prev.autofill != next.autofill {
             let private: Vec<TabId> = self.all_tabs().iter().filter(|t| t.private).map(|t| t.id).collect();

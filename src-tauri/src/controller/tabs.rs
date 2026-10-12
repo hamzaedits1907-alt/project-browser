@@ -3,7 +3,7 @@
 use tauri::{LogicalPosition, LogicalSize, Manager, Rect};
 
 use super::{Controller, UiEvent, View};
-use crate::error::now_ms;
+use crate::error::{now_ms, Result};
 use crate::native::{self, NavAction};
 use crate::navigation::{self, internal_page, is_internal, resolve_input, Resolved, NEW_TAB_URL};
 use crate::shortcuts::{zoom_step, Command};
@@ -98,6 +98,66 @@ impl Controller {
             self.after_activation();
         }
         self.mark_session();
+    }
+
+    /// A page asked for a new window and the user's setting says to give it a browser window of its own.
+    pub fn open_from_page_in_window(&mut self, opener: TabId, url: String) {
+        if url::Url::parse(&url).map(|u| navigation::is_blocked_tab_navigation(&u)).unwrap_or(true) {
+            return;
+        }
+        let private = self.tab_is_private(self.tabs.get(opener).map(|t| t.private).unwrap_or(false));
+        let tab = crate::controller::window_set::session_tab(url);
+        self.open_window(crate::controller::window_set::WindowSpec { tabs: vec![tab], active: 0, geometry: None, private, empty: false });
+    }
+
+    /// The popup the tab's page opened without being asked to was blocked: remember it so the shell can offer it.
+    pub fn on_popup_blocked(&mut self, id: TabId, url: String) {
+        let host = crate::navigation::host_of(&url).unwrap_or_default();
+        log::info!("tab {id}: blocked a pop-up the page opened by itself (to {host})");
+        if let Some(t) = self.tabs.get_mut(id) {
+            t.blocked_popup = Some(url);
+            self.mark_state();
+        }
+    }
+
+    /// What the user chose in the "pop-up blocked" bar: open it once, always allow this site, or dismiss.
+    pub fn popup_decision(&mut self, id: TabId, action: &str) -> Result<()> {
+        let Some(url) = self.tabs.get(id).and_then(|t| t.blocked_popup.clone()) else { return Ok(()) };
+        if let Some(t) = self.tabs.get_mut(id) {
+            t.blocked_popup = None;
+        }
+        match action {
+            "open" => {
+                self.open_from_page(id, url, false);
+            }
+            "allow" => {
+                let host = self.tabs.get(id).and_then(|t| navigation::host_of(&t.url)).and_then(|h| crate::shield::normalize_site(&h));
+                if let Some(host) = host {
+                    let mut next = self.settings.clone();
+                    if !next.popup_allowed_hosts.contains(&host) {
+                        next.popup_allowed_hosts.push(host);
+                    }
+                    self.update_settings(next)?;
+                }
+                self.open_from_page(id, url, false);
+            }
+            _ => {}
+        }
+        self.mark_state();
+        Ok(())
+    }
+
+    /// Gives the keyboard focus back to a tab's page (after a pop-up window opened from it was closed).
+    pub fn focus_tab(&mut self, id: TabId) {
+        if self.tabs.active_id() != Some(id) {
+            return;
+        }
+        if let Some(w) = self.app.get_window(&self.current) {
+            let _ = w.set_focus();
+        }
+        if let Some(v) = self.views.get(&id).filter(|v| v.visible) {
+            let _ = v.webview.set_focus();
+        }
     }
 
     /// Switches to an existing tab showing `url`, or opens one.

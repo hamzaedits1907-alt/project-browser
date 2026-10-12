@@ -30,6 +30,8 @@ export interface Tab {
   heavy: boolean;
   bookmarked: boolean;
   lastActive: number;
+  /** The address of the last pop-up this page opened without being asked to (it was blocked). */
+  blockedPopup: string | null;
 }
 
 export interface BrowserState {
@@ -47,6 +49,7 @@ export interface BrowserState {
 export type SearchEngine = "google" | "bing" | "duckduckgo" | "brave" | "startpage" | "ecosia";
 export type StartupBehavior = "restoreSession" | "newTab";
 export type BackgroundTabAction = "sleep" | "unload";
+export type NewWindowRequests = "tab" | "window";
 
 export interface Settings {
   searchEngine: SearchEngine;
@@ -74,6 +77,9 @@ export interface Settings {
   /** Most page text, in characters, one AI request may carry (about four characters per token). */
   aiMaxContextChars: number;
   checkUpdates: boolean;
+  /** Sites that may open pop-ups without being asked to. */
+  popupAllowedHosts: string[];
+  newWindowRequests: NewWindowRequests;
 }
 
 export interface ProfileMeta {
@@ -622,3 +628,38 @@ export interface WindowBrief {
   /** The window that asked. */
   current: boolean;
 }
+
+// ---- Project Tunnel -----------------------------------------------------------------------------
+
+export type ProxyKind = "http" | "socks5";
+
+export interface TunnelConfig {
+  enabled: boolean;
+  kind: ProxyKind;
+  host: string;
+  port: number;
+}
+
+export type TunnelState =
+  | { kind: "notSetUp" }
+  | { kind: "off" }
+  | { kind: "restartNeeded"; turningOn: boolean }
+  | { kind: "active" };
+
+export interface TunnelProvider {
+  id: string;
+  name: string;
+  availability: "available" | "unavailable";
+  scope: string;
+  needs: string;
+}
+
+export interface TunnelView {
+  config: TunnelConfig;
+  state: TunnelState;
+  /** The proxy the running browser was started with. */
+  running: TunnelConfig | null;
+  providers: TunnelProvider[];
+}
+
+export type ProbeResult = { kind: "works"; millis: number } | { kind: "refused"; reason: string } | { kind: "unreachable"; reason: string };

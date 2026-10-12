@@ -28,6 +28,37 @@ export function Privacy() {
         <Notice tone="info">Private tabs never save passwords, autofill data, history or site permissions.</Notice>
       </Card>
 
+      <Card
+        title="Pop-ups and new windows"
+        subtitle="A page can ask for a new window. Sign-in windows that a click opens always work and stay signed in to the same profile; a pop-up that no click asked for is blocked."
+      >
+        <SettingRow title="A link or page asks for a new window" description="Pop-ups that request a size (most sign-in windows) stay small pop-up windows either way, so the page that opened them keeps working.">
+          <Select
+            label="Where new-window requests open"
+            value={settings.newWindowRequests}
+            options={[
+              { value: "tab", label: "In a new tab" },
+              { value: "window", label: "In a new browser window" },
+            ]}
+            onChange={(newWindowRequests) => void update({ newWindowRequests })}
+          />
+        </SettingRow>
+        {settings.popupAllowedHosts.length === 0 ? (
+          <p className="dim">No site is allowed to open pop-ups on its own. When one tries, a bar appears with the choice.</p>
+        ) : (
+          <ul className="shield-sites" aria-label="Sites allowed to open pop-ups on their own">
+            {settings.popupAllowedHosts.map((host) => (
+              <li key={host}>
+                <span data-selectable>{host}</span>
+                <Button size="sm" variant="ghost" onClick={() => void update({ popupAllowedHosts: settings.popupAllowedHosts.filter((h) => h !== host) })}>
+                  Block again
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
       <SitePermissions />
     </>
   );

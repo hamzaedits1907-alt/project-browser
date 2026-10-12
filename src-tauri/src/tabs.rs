@@ -78,6 +78,8 @@ pub struct Tab {
     pub bookmarked: bool,
     /// Unix ms when the tab was last the active tab (drives tab sleeping).
     pub last_active: i64,
+    /// The address of the last pop-up this page opened without being asked to. It was blocked; the shell offers it.
+    pub blocked_popup: Option<String>,
     #[serde(skip)]
     pub opener: Option<TabId>,
 }
@@ -103,6 +105,7 @@ impl Tab {
             heavy: false,
             bookmarked: false,
             last_active: 0,
+            blocked_popup: None,
             opener: None,
         }
     }
@@ -419,13 +422,13 @@ mod tests {
     fn attached_pinned_tabs_join_the_pinned_group_and_openers_are_dropped() {
         let mut s = TabStrip::new();
         let p = s.create(NewTab { url: "pinned".into(), pinned: true, activate: true, ..Default::default() }, 0);
-        s.create(spec("plain"), 0);
+        let plain = s.create(spec("plain"), 0);
         let mut foreign = Tab::new(99, "pin2".into(), true, false);
         foreign.opener = Some(p);
         s.attach(foreign, false, 1);
         assert_eq!(urls(&s), ["pinned", "pin2", "plain"]);
         assert_eq!(s.get(99).unwrap().opener, None);
-        assert_eq!(s.active_id(), Some(p), "attaching without activate keeps the current tab");
+        assert_eq!(s.active_id(), Some(plain), "attaching without activate keeps the current tab");
         let mut empty = TabStrip::new();
         empty.attach(Tab::new(7, "only".into(), false, false), false, 1);
         assert_eq!(empty.active_id(), Some(7), "an empty strip always has an active tab");

@@ -47,11 +47,16 @@ thread_local! {
     static PERMISSIONS: RefCell<HashMap<u64, PendingPermission>> = RefCell::new(HashMap::new());
     /// The shell webview of every browser window, by window label.
     static SHELLS: RefCell<HashMap<String, TabCom>> = RefCell::new(HashMap::new());
-    /// Host of the page each tab is loading, for the Shield's first-party checks.
+    /// Host of the page each tab is loading, for the Shield's first-party checks and the pop-up policy.
     static TOP_HOST: RefCell<HashMap<TabId, String>> = RefCell::new(HashMap::new());
+    /// What WebView2 said about the latest new-window request of each tab (see `PopupIntent`).
+    static POPUP_INTENT: RefCell<HashMap<TabId, PopupIntent>> = RefCell::new(HashMap::new());
 }
 
 static NEXT_PERMISSION: AtomicU64 = AtomicU64::new(1);
+/// Sites allowed to open pop-ups without a user action, and whether page-requested new windows open as browser windows.
+static POPUP_ALLOWED: Mutex<Vec<String>> = Mutex::new(Vec::new());
+static NEW_WINDOWS: AtomicBool = AtomicBool::new(false);
 static NEXT_DOWNLOAD: AtomicI64 = AtomicI64::new(0);
 static DOWNLOAD_DIR: Mutex<Option<PathBuf>> = Mutex::new(None);
 
@@ -147,6 +152,36 @@ fn frame_guard_success() {
         }
     }
     log::info!("frame info walk finished");
+}
+
+/// The part of a new-window request that only the native event knows: whether a user action caused it.
+#[derive(Debug, Clone)]
+pub struct PopupIntent {
+    pub uri: String,
+    pub user_initiated: bool,
+}
+
+/// Takes the intent recorded for the tab's latest `NewWindowRequested`. The wry handler that decides what to do with the
+/// request runs after the native event handlers returned, on the same thread, so the intent is always there by then.
+pub fn take_popup_intent(id: TabId) -> Option<PopupIntent> {
+    POPUP_INTENT.with(|m| m.borrow_mut().remove(&id))
+}
+
+pub fn set_popup_policy(allowed_hosts: Vec<String>, new_windows: bool) {
+    if let Ok(mut a) = POPUP_ALLOWED.lock() {
+        *a = allowed_hosts;
+    }
+    NEW_WINDOWS.store(new_windows, Ordering::Relaxed);
+}
+
+/// May the page loaded in the tab open pop-ups that no user action asked for?
+pub fn popups_allowed_for(id: TabId) -> bool {
+    let host = TOP_HOST.with(|t| t.borrow().get(&id).cloned()).unwrap_or_default();
+    !host.is_empty() && POPUP_ALLOWED.lock().map(|a| a.iter().any(|d| crate::shield::rules::host_is_or_under(&host, d))).unwrap_or(false)
+}
+
+pub fn new_windows_open_as_windows() -> bool {
+    NEW_WINDOWS.load(Ordering::Relaxed)
 }
 
 /// Sets the folder new downloads are saved to (`None` = WebView2's default, the user's Downloads folder).
@@ -276,6 +311,19 @@ unsafe fn install_tab_inner(id: TabId, pw: &PlatformWebview, ctl: &ControllerHan
             let uri = pwstr(|p| args.Uri(p));
             note_top_navigation(id, &uri, &c);
             c.post_tab(id, move |ctl| ctl.on_nav_starting(id, uri));
+            Ok(())
+        })),
+        &mut token,
+    )?;
+
+    // WebView2 knows whether a user action opened a new window; wry's handler (which decides what happens to the
+    // request) does not. Record it here for that handler.
+    webview.add_NewWindowRequested(
+        &NewWindowRequestedEventHandler::create(Box::new(move |_, args| {
+            let Some(args) = args else { return Ok(()) };
+            let uri = pwstr(|p| args.Uri(p));
+            let user_initiated = read_bool(|b| args.IsUserInitiated(b));
+            POPUP_INTENT.with(|m| m.borrow_mut().insert(id, PopupIntent { uri, user_initiated }));
             Ok(())
         })),
         &mut token,
@@ -596,6 +644,7 @@ pub fn remove_shell(label: &str) {
 pub fn remove_tab(id: TabId) {
     TABS.with(|t| t.borrow_mut().remove(&id));
     TOP_HOST.with(|t| t.borrow_mut().remove(&id));
+    POPUP_INTENT.with(|m| m.borrow_mut().remove(&id));
     if let Some(shield) = crate::shield::global() {
         shield.forget_tab(id);
     }

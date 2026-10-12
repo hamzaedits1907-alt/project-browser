@@ -16,6 +16,7 @@ import { Privacy } from "./settings/Privacy";
 import { Profiles } from "./settings/Profiles";
 import { ShieldSettings } from "./settings/ShieldSettings";
 import { Shortcuts } from "./settings/Shortcuts";
+import { TunnelSettings } from "./settings/TunnelSettings";
 import { SECTION_META, matchSections, resolveSection } from "./settingsIndex";
 
 const RENDER: Record<string, () => ReactNode> = {
@@ -25,6 +26,7 @@ const RENDER: Record<string, () => ReactNode> = {
   gaming: () => <GamingSettings />,
   privacy: () => <Privacy />,
   shield: () => <ShieldSettings />,
+  tunnel: () => <TunnelSettings />,
   passwords: () => <Passwords />,
   profiles: () => <Profiles />,
   import: () => <ImportSection />,

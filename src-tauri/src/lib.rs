@@ -17,6 +17,7 @@ pub mod settings;
 pub mod shield;
 pub mod shortcuts;
 pub mod tabs;
+pub mod tunnel;
 pub mod updates;
 pub mod vault;
 pub mod window;
@@ -79,6 +80,19 @@ pub fn run() {
             let runtime = updates::webview2_version().unwrap_or_else(|| "unknown".into());
             log::info!("startup: WebView2 runtime {runtime}");
             native::init_frame_guard(&data_root, &runtime, std::env::var(native::FRAME_INFO_ENV).ok().as_deref());
+
+            // The browser proxy (if the user set one up) is part of the start-up arguments every webview shares.
+            let tunnel_config = tunnel::load(&data_root);
+            let proxy = tunnel_config.enabled.then(|| tunnel_config.clone().validated().ok()).flatten();
+            tunnel::set_applied(proxy.clone());
+            window::init_browser_args(proxy.as_ref());
+            if let Some(p) = &proxy {
+                log::info!(
+                    "startup: browser traffic goes through the configured proxy ({} proxy, port {})",
+                    if p.kind == tunnel::ProxyKind::Socks5 { "SOCKS5" } else { "HTTP" },
+                    p.port
+                );
+            }
 
             let profiles = ProfileStore::new(&data_root);
             let (profile, created) = profiles.open_launch_profile(None)?;

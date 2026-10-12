@@ -26,6 +26,8 @@ export const DEFAULT_SETTINGS: Settings = {
   memoryLimitMb: 0,
   aiMaxContextChars: 24000,
   checkUpdates: true,
+  popupAllowedHosts: [],
+  newWindowRequests: "tab",
 };
 
 export const SEARCH_ENGINES: { id: SearchEngine; label: string; host: string }[] = [

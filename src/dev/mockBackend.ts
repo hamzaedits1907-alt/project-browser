@@ -57,7 +57,7 @@ function tab(id: number, url: string, title: string, extra: Partial<Tab> = {}): 
   return {
     id, url, title, favicon: null, pinned: false, private: false, loading: false, canGoBack: false, canGoForward: false, zoom: 1,
     audible: false, muted: false, lifecycle: url.startsWith("browser://") ? "unloaded" : "live", security: url.startsWith("https") ? "secure" : "internal",
-    error: null, heavy: false, bookmarked: false, lastActive: now - id * MIN, ...extra,
+    error: null, heavy: false, bookmarked: false, lastActive: now - id * MIN, blockedPopup: null, ...extra,
   };
 }
 
@@ -440,6 +440,24 @@ export function installMockBackend(): void {
           }, 250);
           return null;
         }
+        case "tunnel_state":
+        case "tunnel_set": {
+          const config = (a.config as { enabled: boolean; kind: string; host: string; port: number } | undefined) ?? { enabled: false, kind: "http", host: "", port: 0 };
+          return {
+            config, running: null,
+            state: !config.host ? { kind: "notSetUp" } : config.enabled ? { kind: "restartNeeded", turningOn: true } : { kind: "off" },
+            providers: [
+              { id: "browser-proxy", name: "Your own proxy (HTTP or SOCKS5)", availability: "available", scope: "This browser's pages only.", needs: "" },
+              { id: "system-tunnel", name: "System-wide tunnel (WireGuard or OpenVPN)", availability: "unavailable", scope: "Would route the whole computer.", needs: "A tunnel driver and a signed helper service with administrator rights, route and DNS changes, a firewall kill switch, and a server to connect to." },
+            ],
+          };
+        }
+        case "tunnel_probe":
+          return { kind: "unreachable", reason: "Preview only: no proxy is contacted here." };
+        case "tunnel_restart":
+          return null;
+        case "popup_decision":
+          return null;
         case "windows_list":
           return [
             { label: "main", title: "GitHub", private: false, tabCount: 4, current: true },

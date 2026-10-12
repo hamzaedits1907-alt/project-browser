@@ -62,6 +62,11 @@ pub struct WindowBrief {
     pub current: bool,
 }
 
+/// A saved-tab record for a page that has just been asked for.
+pub(super) fn session_tab(url: String) -> SessionTab {
+    SessionTab { url, title: String::new(), pinned: false, favicon: None }
+}
+
 fn tab_title(tabs: &TabStrip) -> String {
     tabs.active().map(|t| if t.title.trim().is_empty() { t.url.clone() } else { t.title.clone() }).unwrap_or_default()
 }

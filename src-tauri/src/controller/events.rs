@@ -27,6 +27,7 @@ impl Controller {
         }
         tab.loading = true;
         tab.error = None;
+        tab.blocked_popup = None;
         if !uri.is_empty() && uri != "about:blank" {
             tab.url = uri;
             tab.security = Security::for_url(&tab.url);

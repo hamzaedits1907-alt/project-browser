@@ -4,6 +4,7 @@ import { BookmarksBar } from "./components/chrome/BookmarksBar";
 import { ContentHost } from "./components/chrome/ContentHost";
 import { FindBar } from "./components/chrome/FindBar";
 import { PermissionBar } from "./components/chrome/PermissionBar";
+import { PopupBar } from "./components/chrome/PopupBar";
 import { TitleBar } from "./components/chrome/TitleBar";
 import { Toasts } from "./components/chrome/Toasts";
 import { Toolbar } from "./components/chrome/Toolbar";
@@ -76,6 +77,7 @@ export function App() {
       {!fullscreen && settings.showBookmarksBar && <BookmarksBar />}
       <FindBar key={activeId ?? 0} />
       <PermissionBar />
+      <PopupBar />
       <div className="workspace">
         <ContentHost />
         {aiOpen && !fullscreen && <AiPanel />}

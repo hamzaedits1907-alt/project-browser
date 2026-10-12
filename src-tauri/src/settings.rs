@@ -23,6 +23,16 @@ pub enum BackgroundTabAction {
     Unload,
 }
 
+/// Where a page's request for a new window (a `target="_blank"` link, `window.open`) opens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum NewWindowRequests {
+    #[default]
+    Tab,
+    /// A browser window of its own. Pop-ups that ask for a size (sign-in windows) stay small pop-up windows either way.
+    Window,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -69,6 +79,10 @@ pub struct Settings {
 
     /// Look for a new version once after startup (it is never installed without asking).
     pub check_updates: bool,
+
+    /// Sites that may open pop-ups without being asked to (a pop-up nobody asked for is blocked everywhere else).
+    pub popup_allowed_hosts: Vec<String>,
+    pub new_window_requests: NewWindowRequests,
 }
 
 impl Default for Settings {
@@ -98,6 +112,8 @@ impl Default for Settings {
             memory_limit_mb: 0,
             ai_max_context_chars: 24000,
             check_updates: true,
+            popup_allowed_hosts: Vec::new(),
+            new_window_requests: NewWindowRequests::Tab,
         }
     }
 }
@@ -112,6 +128,10 @@ impl Settings {
 
     /// Clamps values coming from the UI into sane ranges.
     pub fn sanitized(mut self) -> Settings {
+        self.popup_allowed_hosts = self.popup_allowed_hosts.iter().filter_map(|h| crate::shield::normalize_site(h)).collect();
+        self.popup_allowed_hosts.sort();
+        self.popup_allowed_hosts.dedup();
+        self.popup_allowed_hosts.truncate(200);
         self.sleep_after_minutes = self.sleep_after_minutes.clamp(1, 24 * 60);
         self.heavy_tab_memory_mb = self.heavy_tab_memory_mb.clamp(100, 16_384);
         // 0 = off; otherwise keep the limit in a range that cannot starve the browser itself.

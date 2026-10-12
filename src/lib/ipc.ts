@@ -49,6 +49,9 @@ import type {
   TabId,
   UiEvent,
   UpdateEvent,
+  ProbeResult,
+  TunnelConfig,
+  TunnelView,
   UpdateStatus,
   Viewport,
   WindowBrief,
@@ -135,6 +138,11 @@ export const COMMANDS = [
   "app_info",
   "update_check",
   "update_install",
+  "popup_decision",
+  "tunnel_state",
+  "tunnel_set",
+  "tunnel_probe",
+  "tunnel_restart",
   "windows_list",
   "tab_to_window",
   "shield_state",
@@ -274,6 +282,13 @@ export const api = {
   shieldSet: (patch: { enabled?: boolean; listId?: string; listEnabled?: boolean; userRules?: string }) => call<ShieldView>("shield_set", { patch }),
   shieldSite: (host: string, enabled: boolean) => call<ShieldView>("shield_site", { host, enabled }),
   shieldUpdate: (force: boolean) => call<ShieldUpdateSummary>("shield_update", { force }),
+  tunnelState: () => call<TunnelView>("tunnel_state"),
+  /** Saves the proxy settings; they take effect after a restart. */
+  tunnelSet: (config: TunnelConfig) => call<TunnelView>("tunnel_set", { config }),
+  tunnelProbe: (config: TunnelConfig) => call<ProbeResult>("tunnel_probe", { config }),
+  tunnelRestart: () => call("tunnel_restart"),
+  /** What the user chose for a blocked pop-up: open it once, always allow this site, or dismiss. */
+  popupDecision: (tabId: TabId, action: "open" | "allow" | "dismiss") => call("popup_decision", { tabId, action }),
   /** All browser windows (the asking window is marked `current`). */
   windowsList: () => call<WindowBrief[]>("windows_list"),
   /** Moves a tab to the window `target`, or to a new window. The page keeps running. Resolves to the window's label. */

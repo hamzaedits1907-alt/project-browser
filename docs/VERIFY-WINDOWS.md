@@ -159,6 +159,20 @@ None of these has been seen working against NVIDIA; CI only runs mocked tests. M
 | U7 | Visit a news site with ads | Fewer empty ad boxes than 0.4.0 (element hiding) | |
 | U8 | Task Manager → Processes | "Project Browser" group with the WebView2 processes under it | |
 
+## 0.5.1 checks (not yet done on a real PC)
+
+1. Right-click a web page: the menu appears quickly (well under a second), with the page still visible behind it.
+   Pick Copy on selected text and Back from the menu: both still work.
+2. Click into the address bar and type: the suggestion list appears without a noticeable pause.
+3. With Shield on, play several YouTube videos (including long ones that normally have mid-roll ads): no pre-roll or
+   mid-roll ad plays, and no ad tiles in the home feed or next to the video. If an ad does start, it should be skipped
+   within about a second. Turn Shield off for youtube.com and reload: ads come back (the script is not added).
+4. Watch for YouTube's "ad blockers are not allowed" message or stalled playback, and report it if it appears.
+   The YouTube script follows YouTube's current page structure and will need updates when YouTube changes it.
+5. CI note: the `native-ui-probe` reports "menu closed" and "a second window exists" as failed. These checks also fail
+   on the v0.5.0 build: the probe waits 0.9 s for the close to be logged, but it arrives about 1.4 s after Escape, and its
+   window count misses the new window. The log shows the menu closing and the tab moving to `win-2` in both builds.
+
 ## Known behaviour to expect (not defects)
 
 * A restored tab starts with only its last URL: **back/forward history is not restored**. WebView2 has no API to rebuild

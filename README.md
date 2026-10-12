@@ -7,8 +7,8 @@ It installs with a normal Windows installer and starts by double-clicking it.
 * **Tabs that cost nothing.** Idle tabs sleep (WebView2 suspend) or unload; they wake instantly.
 * **Gaming Mode** (`Ctrl+Shift+G`). Background tabs sleep after 10 s, downloads are held, animations reduced, sampling slows down.
 * **Honest performance tools.** Real per-tab and per-process memory/CPU, GPU utilisation, startup timings. Sampling runs only while a page that shows it is open.
-* **Chrome / Edge / Brave import** for bookmarks (including signed-in Chrome's `AccountBookmarks`), history and the default search engine. Safe to repeat. Passwords, autofill, cards and cookies are **not** imported, and the wizard says so.
-* **AI assistant** (optional). Your own local model (Ollama, LM Studio) or your own API key (OpenAI-compatible, Anthropic). Nothing is sent until you ask; page text only when you opt in. The API key lives in the Windows Credential Manager, never in the browser's database.
+* **Chrome / Edge / Brave import** for bookmarks, history (with visit dates), the default search engine, addresses, open tabs, and passwords from a CSV you export yourself (stored encrypted, filled only when you click, never submitted). Safe to repeat, with a checklist afterwards saying what is done, what is not possible (cookies, cards) and what is left. Active Chrome logins are **not** migrated, and the wizard says why.
+* **NVIDIA AI** (optional, NVIDIA is the only provider). Chat about the page, explain/translate a selection, extract data, **Research** (compare pages you tick; every quote is checked against the page it came from), **Claim Battle**, **Project Memory** (notes and research you chose to keep, searchable, deletable), and **Actions** (a plan you review and confirm, from a fixed list of safe browser actions). Nothing is sent until you ask; page text only for the pages you choose, never from private tabs. The API key lives in the Windows Credential Manager, never in the browser's database. See [docs/AI.md](docs/AI.md).
 
 ## Status
 
@@ -20,10 +20,11 @@ It installs with a normal Windows installer and starts by double-clicking it.
 | Sleeping tabs, Gaming Mode, memory limit | rules unit-tested; measured memory results in [docs/BENCHMARK.md](docs/BENCHMARK.md) |
 | Updates | in-app, signed, user-confirmed: [docs/UPDATES.md](docs/UPDATES.md) (a full update from one published version to the next is documented there with its status) |
 | React shell (all pages, menus, wizards, AI panel) | type-checked, linted, unit/contract-tested, rendered and inspected against a mock core |
+| NVIDIA features (chat, Research, Actions, Memory) | logic unit-tested with mocked replies; **never run against NVIDIA with a real key** yet: [docs/AI.md](docs/AI.md), [docs/VERIFY-WINDOWS.md](docs/VERIFY-WINDOWS.md) |
 | Windows installer (NSIS, per-user, no admin rights) | produced by CI and by the Release workflow |
 | Code signing | not configured, so Windows SmartScreen warns on first run (see [docs/RELEASING.md](docs/RELEASING.md)) |
 
-Install **0.1.1** once from the [latest release](https://github.com/hamzaedits1907-alt/project-browser/releases/latest);
+Install once from the [latest release](https://github.com/hamzaedits1907-alt/project-browser/releases/latest);
 after that, updates install from inside the app (**Settings → About**). The Rust side cannot be compiled on a PC where
 Smart App Control blocks Cargo build scripts; CI does that work (see [docs/BUILDING.md](docs/BUILDING.md)).
 
@@ -64,5 +65,7 @@ Handled natively so they work whichever view has focus. Full list in **Settings 
 * [docs/SECURITY.md](docs/SECURITY.md): trust boundaries, permissions, what the browser does and does not do.
 * [docs/RELEASING.md](docs/RELEASING.md): versions, installers, signing.
 * [docs/UPDATES.md](docs/UPDATES.md): the in-app updater, the release pipeline, the signing key, what is tested.
+* [docs/AI.md](docs/AI.md): the NVIDIA features, how they are bounded, what is and is not tested.
+* [docs/CHROME-MIGRATION.md](docs/CHROME-MIGRATION.md): what is imported, what cannot be, and why.
 * [docs/CRASH-0.1.0.md](docs/CRASH-0.1.0.md): the 0.1.0 startup crash, how it was found and fixed.
 * [docs/BENCHMARK.md](docs/BENCHMARK.md): the repeatable memory/CPU benchmark and its measured results.

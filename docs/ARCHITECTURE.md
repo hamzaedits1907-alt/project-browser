@@ -29,7 +29,9 @@
   (run on a blocking thread, never on the controller); `apply` writes to the profile database in one quick step. Both
   database writes are idempotent.
 * **secrets.rs** secret storage: `SecretStore` trait, Windows Credential Manager implementation, opaque `Secret` type.
-* **ai.rs** the assistant backend: provider abstraction (OpenAI-compatible, Anthropic), SSE streaming, page-context fencing.
+* **ai.rs** the NVIDIA backend: model catalog, key check, SSE streaming with a responsive Stop, deadlines and length bounds, the
+  user's context limit (`check_context`), page-read rules, page-style checks. [AI.md](AI.md) has the feature-level view.
+* **db/memory.rs** Project Memory (schema v3): user-saved records, Unicode-aware search, links between records.
 * **window.rs** builds the shell window and tab webviews.
 * **updates.rs** in-app updates (`tauri-plugin-updater`, GitHub Releases, signature-checked, user-confirmed): [UPDATES.md](UPDATES.md).
 * **controller/sleep_policy.rs** the pure rules for sleeping/unloading tabs; `controller/gaming.rs` applies them. `controller/consistency.rs` checks the tab model against the native views after every step.
@@ -46,8 +48,8 @@
 | `components/chrome/` | title bar, tabs, toolbar, omnibox, bookmarks bar, find/permission bars, content host |
 | `components/menus/` | main menu, site panel, downloads popover, tab search |
 | `components/ui/` | icons and primitives |
-| `pages/` | New Tab, Settings (+ `pages/settings/*`), History, Bookmarks, Downloads, Performance, Gaming |
-| `features/` | import wizard, first run, clear-data dialog, AI panel |
+| `pages/` | New Tab, Settings (+ `pages/settings/*`), History, Bookmarks, Downloads, Performance, Gaming, Memory, Research |
+| `features/` | import wizard and checklist, first run, clear-data dialog, AI panel, `research/` (page comparison and claim check, quote verification), `actions/` (plan allowlist, confirmation, history), `memory/` |
 | `dev/mockBackend.ts` | dev-only mock core (never shipped) |
 
 ### Development preview (plain `npm run dev`)
@@ -82,6 +84,13 @@ slot where the native webview would sit.
   arrives after the tab was switched to is ignored (rapid switching cannot mark a running page as asleep).
 * Restored tabs are created unloaded and only get a webview when first shown.
 
+**Not implemented, so nothing here claims it:** automatic detection of a running game (Gaming Mode is a manual switch);
+download throttling (WebView2 has no bandwidth control, so Gaming Mode can hold downloads but not slow them); unloading in
+response to *Windows'* free-memory pressure (the memory limit is on the browser's own total); a configurable idle time for
+Gaming Mode (fixed at 10 s; the normal idle time is configurable). No frame-rate benefit is claimed anywhere: it has not
+been measured. The only memory comparisons that exist are in [BENCHMARK.md](BENCHMARK.md): Project Browser against itself
+(1/5/10 tabs, normal vs Gaming/sleep vs Gaming/unload) on one PC; none against Chrome, Brave or Opera GX.
+
 ### Session restore
 
 The session (URLs, titles, favicons, pinned flag, order, selected tab) is saved to the profile database shortly after
@@ -96,6 +105,16 @@ invisible. While any popup is open the shell calls `overlay_open`: the core capt
 hides the webview and returns the snapshot, which the content area shows as a dimmed backdrop. `overlay_close`
 brings the live page back (and returns keyboard focus to it unless a shell text box is focused). The find bar,
 permission prompt and bookmarks bar are *docked rows* instead, so they never need to hide the page.
+
+### What the performance numbers are
+
+Memory is each process's **private working set** (`PROCESS_MEMORY_COUNTERS_EX2.PrivateWorkingSetSize`, the figure in Task
+Manager's Memory column), summed over the host process and the WebView2 processes the browser started (each PID once). It is
+not total working set and not commit size, and the Performance page says so. CPU is kernel+user time deltas as a share of all
+logical CPUs; GPU is the PDH "GPU Engine" utilisation for those PIDs and shows `n/a` when Windows doesn't provide it. Startup
+is measured from the process creation time. A value that can't be read is shown as unavailable, never filled in.
+Memory before/after sleeping is measured from outside by `scripts/benchmark.ps1` ([BENCHMARK.md](BENCHMARK.md)), which is
+deliberately separate from the running browser.
 
 ### Performance rules the code follows
 

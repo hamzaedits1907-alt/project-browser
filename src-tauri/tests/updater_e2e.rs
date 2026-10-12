@@ -114,6 +114,23 @@ fn the_same_or_an_older_published_version_reports_no_update() {
 }
 
 #[test]
+fn versions_are_compared_as_numbers_not_as_text() {
+    // "0.10.0" sorts before "0.2.0" as text, but it is the newer version: it must be offered.
+    let ten = release_server("0.10.0", PAYLOAD, SIGNATURE_A);
+    let update = check_against(&ten, PUBKEY_A).unwrap().expect("0.10.0 is newer than 0.1.0");
+    assert_eq!(update.version, "0.10.0");
+    // A pre-release of the version already installed is older, not newer.
+    let pre = release_server("0.1.0-beta.1", PAYLOAD, SIGNATURE_A);
+    assert!(check_against(&pre, PUBKEY_A).unwrap().is_none(), "a pre-release of the current version is not an update");
+}
+
+#[test]
+fn a_feed_announcing_something_that_is_not_a_version_is_an_error_not_an_update() {
+    let bad = release_server("soon", PAYLOAD, SIGNATURE_A);
+    assert!(check_against(&bad, PUBKEY_A).is_err());
+}
+
+#[test]
 fn a_correctly_signed_package_downloads_and_verifies() {
     let base = release_server("99.0.0", PAYLOAD, SIGNATURE_A);
     let update = check_against(&base, PUBKEY_A).unwrap().unwrap();

@@ -98,6 +98,28 @@ from this vault.
 * Keys left by earlier versions: a plaintext key in the database is erased (kept only if it was an NVIDIA key); a
   credential for a provider that is no longer supported is never used and can be removed from Settings.
 
+## After the import: the checklist
+
+The result screen ends with one row per kind of data, each with a status: **Imported**, **Already imported**, **Not supported**
+(with the reason), **Close your old browser** (open tabs can't be read while Chrome runs), **Needs you**, **Failed** or
+**Nothing found**. A row can repeat *just that item* ("Try this item again") without importing the rest again. Passwords
+stay a separate step you perform (export the CSV, choose the file). Nothing is shown as done unless the core reported it
+written.
+
+## Staying signed in
+
+* All tabs of a profile share one WebView2 user-data folder (`<profile>/webview`), also across restarts, so cookies and local
+  storage persist wherever the website allows. Private tabs use WebView2 private mode and don't share it. Each profile has its
+  own folder; data is cleared only by *Clear browsing data*. (A test checks that the shell and every tab use the profile's folder
+  and identical arguments.)
+* **Google:** the checklist's *Sign in to Google* opens `https://accounts.google.com/` in an ordinary tab: Google's own page,
+  normal navigation, no spoofed browser identity, no custom form. Whether Google accepts the sign-in in this WebView2 browser
+  is Google's decision and **has not been observed yet** (see VERIFY-WINDOWS.md). Signing in to Google is not Chrome Sync and
+  does not sign you in to other sites.
+* Existing Chrome sessions are not migrated (cookies are encrypted with a key only Chrome can use, and the app-bound `v20`
+  scheme is deliberately not defeated). Saved passwords + one sign-in per site + persistent sessions here is the supported
+  route.
+
 ## What we found in a real Chrome profile (structure only)
 
 * One profile *Default*; `Bookmarks` plus `AccountBookmarks` (signed in).

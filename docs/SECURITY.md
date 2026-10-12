@@ -70,6 +70,22 @@ Full detail, with evidence from a real profile: [CHROME-MIGRATION.md](CHROME-MIG
 * Page text is attached only when "Include this page" is on, never from private tabs, and is fenced and labelled
   as untrusted content in the prompt (prompt-injection hygiene).
 * Features that need image input or tool calling stay off until a real check of the selected model confirmed them.
+* Research, Actions, Project Memory and page restyling add no new network destination and no new secret: they use the same
+  request path. [AI.md](AI.md) describes each. What matters for security:
+  * **What may be read.** The core refuses to read private tabs, browser pages, files and tabs that aren't running
+    (`ai::page_read_blocker`), whatever the shell asks. Page text never includes form field contents. Cookies, saved
+    passwords, files and the API key are never part of a request.
+  * **How much.** Every request is checked against the user's context limit in the core (`ai::check_context`).
+  * **Pages are untrusted.** In every prompt page text, titles and addresses are fenced, the fence markers are neutralised
+    inside them, and the model is told they are data. Replies and page text are rendered and saved as text and are never
+    parsed as a plan, so a page cannot add a step or grant itself a permission. The planner is not shown any page.
+  * **What may be done.** Plans can only contain the nine tools in AI.md, each with its own argument check; a plan with
+    anything else is rejected whole. Nothing runs until the user confirms, and every step can be unticked. There is no
+    shell, file, form, download, password or cookie tool. Addresses must be public http/https; in a private tab, opened
+    pages are private tabs.
+  * **Page styles** are CSS only, checked in the shell and again in the core (no `url()`, `@import`, escapes or markup),
+    inserted as text content of one `<style>` element, local to the view, removable.
+  * **Citations are checked, not trusted.** A quote counts only if it is found in the page text that was sent.
 * The API key is a secret and is handled as one; see "Credential protection" below.
 
 ## Credential protection

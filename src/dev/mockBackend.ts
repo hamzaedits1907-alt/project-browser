@@ -38,7 +38,41 @@ function tab(id: number, url: string, title: string, extra: Partial<Tab> = {}): 
   };
 }
 
+const MOCK_PAGES: Record<number, string> = {
+  1: "GitHub is a platform where developers host code. The Pro plan costs 4 dollars per user per month and includes advanced code review tools.",
+  2: "This page lists a GitHub alternative. Our plan costs 8 dollars per user per month and includes unlimited private repositories.",
+};
+
+// Canned answers for the AI preview: they only exercise the interface. They are not from any model.
+const MOCK_COMPARE = {
+  summary: "The two pages quote different prices for similar plans.",
+  claims: [
+    { text: "The Pro plan costs 4 dollars per user per month", basis: "stated", sources: ["S1"], quote: "The Pro plan costs 4 dollars per user per month" },
+    { text: "The alternative costs 8 dollars per user per month", basis: "stated", sources: ["S2"], quote: "Our plan costs 8 dollars per user per month" },
+    { text: "Both include a free tier", basis: "stated", sources: ["S1"], quote: "there is also a free tier for everyone" },
+  ],
+  contradictions: [
+    { topic: "Price", positions: [{ text: "4 dollars", sources: ["S1"], quote: "costs 4 dollars per user per month" }, { text: "8 dollars", sources: ["S2"], quote: "costs 8 dollars per user per month" }] },
+  ],
+  missing: ["What the free tier includes"],
+  openQuestions: ["Do the plans include the same features?"],
+  table: { columns: ["Item", "S1", "S2"], rows: [["Price per user per month", "4 dollars", "8 dollars"]] },
+};
+const MOCK_CLAIM = {
+  summary: "One page gives a price; another gives a different one.",
+  supporting: [{ text: "The plan costs 4 dollars", sources: ["S1"], quote: "The Pro plan costs 4 dollars per user per month" }],
+  contradicting: [{ text: "The alternative costs 8 dollars", sources: ["S2"], quote: "Our plan costs 8 dollars per user per month" }],
+  uncertain: [{ text: "It is the cheapest option", basis: "inferred", sources: [], quote: "", why: "No page says this." }],
+  missing: ["A third-party price comparison"],
+  reliability: [{ source: "S2", note: "Reads like the vendor's own marketing page." }],
+};
+
 export function installMockBackend(): void {
+  const memory: Record<string, unknown>[] = [
+    { id: 1, kind: "note", title: "GPU shopping", body: "Compare 12 GB and 16 GB cards.\nCheck power draw.", tags: ["gpu"], sources: [], related: [], createdAt: now - 86_400_000, updatedAt: now - 86_400_000 },
+    { id: 2, kind: "research", title: "Hosting prices", body: "Question: which plan is cheaper?\n\nSupporting evidence\n- 4 dollars [S1]", tags: ["claim check"], sources: [{ url: "https://github.com/", title: "GitHub" }], related: [1], createdAt: now - 3_600_000, updatedAt: now - 3_600_000 },
+  ];
+  let memorySeq = 3;
   const params = new URLSearchParams(location.search);
   let aiModel = params.get("ai") === "1" ? "google/gemma-3-4b-it" : "";
   let aiKey = params.get("ai") === "1";
@@ -295,6 +329,60 @@ export function installMockBackend(): void {
         }
         case "ai_probe":
           return a.feature === "vision" ? { supported: "yes", message: "Confirmed: the model supports image input." } : { supported: "no", message: "The model answered but didn't call the tool." };
+        case "ai_page_snapshot": {
+          const id = a.tabId as number;
+          const t = state.tabs.find((x) => x.id === id);
+          if (!t || t.url.startsWith("browser://")) throw "Only web pages can be read, not browser pages or files.";
+          const text = MOCK_PAGES[id] ?? `This is the text of ${t.title}. There is also a free tier for everyone.`;
+          return { tabId: id, title: t.title, url: t.url, text, selection: "", totalChars: text.length, truncated: false };
+        }
+        case "ai_ask": {
+          const id = String(a.requestId);
+          const system = String(a.system ?? "");
+          const reply = system.includes("research engine")
+            ? JSON.stringify(String(a.messages && JSON.stringify(a.messages)).includes("Weigh the pages") ? MOCK_CLAIM : MOCK_COMPARE)
+            : system.includes("short plan")
+              ? JSON.stringify({ summary: "Open one page, summarize the current page and save the summary.", steps: [{ tool: "open_pages", args: { urls: ["https://example.com/"] }, why: "You asked for a page" }, { tool: "summarize_page", args: {}, why: "Summarize what you are reading" }, { tool: "save_to_memory", args: { title: "Summary" }, why: "Keep the summary" }] })
+              : "A short canned answer.";
+          let i = 0;
+          const timer = setInterval(() => {
+            void emit("pb:ai", { requestId: id, kind: "delta", text: reply.slice(i, i + 40) });
+            i += 40;
+            if (i >= reply.length) {
+              clearInterval(timer);
+              void emit("pb:ai", { requestId: id, kind: "done", text: "" });
+            }
+          }, 30);
+          return null;
+        }
+        case "page_style":
+          return a.css !== null;
+        case "memory_list": {
+          const words = String(a.query ?? "").toLowerCase().split(/\s+/).filter(Boolean);
+          return memory.filter((m) => words.every((w) => JSON.stringify(m).toLowerCase().includes(w))).sort((x, y) => (y.updatedAt as number) - (x.updatedAt as number));
+        }
+        case "memory_save": {
+          const draft = a.draft as Record<string, unknown>;
+          const at = Date.now();
+          if (a.id) {
+            const i = memory.findIndex((m) => m.id === a.id);
+            if (i >= 0) memory[i] = { ...memory[i], ...draft, updatedAt: at };
+            return memory[i];
+          }
+          const item = { id: memorySeq++, ...draft, createdAt: at, updatedAt: at };
+          memory.push(item);
+          return item;
+        }
+        case "memory_delete": {
+          const i = memory.findIndex((m) => m.id === a.id);
+          if (i >= 0) memory.splice(i, 1);
+          return i >= 0;
+        }
+        case "memory_clear": {
+          const n = memory.length;
+          memory.length = 0;
+          return n;
+        }
         case "ai_chat": {
           const id = String(a.requestId);
           const text = "Here's a **quick summary**:\n\n- The page introduces the topic\n- It lists three key ideas\n- It ends with `references`\n\n```rust\nfn main() { println!(\"hi\"); }\n```";

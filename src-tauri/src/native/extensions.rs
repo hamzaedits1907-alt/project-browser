@@ -6,6 +6,8 @@
 //! What WebView2 does not offer, and so neither does this: the Chrome Web Store, packed `.crx` files, and an extension
 //! toolbar (extension popups have no place to open). Content scripts, background workers and declarative rules run.
 
+use std::result::Result;
+
 use serde::Serialize;
 use tokio::sync::oneshot::Sender;
 use webview2_com::Microsoft::Web::WebView2::Win32::*;

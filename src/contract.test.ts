@@ -378,8 +378,11 @@ describe("native wiring", () => {
     const uses = [...windowRs.matchAll(/\.data_directory\(([\w.]+(?:\(\))?(?:\.clone\(\))?)\)/g)].map((m) => m[1] as string);
     expect(uses.length).toBeGreaterThanOrEqual(3); // shell, tab, popup
     for (const u of uses) expect(u).toMatch(/^(profile\.webview_dir\(\)|data_dir(\.clone\(\))?)$/);
-    const args = [...windowRs.matchAll(/\.additional_browser_args\(([^)]*)\)/g)].map((m) => m[1] as string);
-    expect(new Set(args)).toEqual(new Set(["BROWSER_ARGS"]));
+    // One function supplies the arguments (plain ones plus the proxy, if one is set up), so no webview can differ.
+    const args = [...windowRs.matchAll(/\.additional_browser_args\(([^
+]*)\)$/gm)].map((m) => m[1] as string);
+    expect(args.length).toBeGreaterThanOrEqual(3);
+    expect(new Set(args)).toEqual(new Set(["&browser_args()"]));
   });
 
   it("private tabs use WebView2 private mode", () => {

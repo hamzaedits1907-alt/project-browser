@@ -7,7 +7,7 @@ export const TOOLBAR_ITEMS = ["gaming", "shield", "ai", "downloads", "bookmarks"
 export const DEFAULT_TOOLBAR_ITEMS = ["gaming", "shield", "ai", "downloads"];
 export const NTP_WIDGETS = ["shortcuts", "continue", "closed", "bookmarks", "downloads", "system", "gaming", "ai"] as const;
 export const DEFAULT_NTP_WIDGETS = ["shortcuts", "continue", "closed", "bookmarks", "downloads", "system", "gaming", "ai"];
-export const THEMES = ["neon", "oled", "violet", "tactical", "crimson", "minimal", "performance", "custom"] as const;
+export const THEMES = ["neon", "oled", "violet", "tactical", "crimson", "minimal", "performance", "studio", "daylight", "custom"] as const;
 export const NTP_BACKGROUNDS = ["grid", "aurora", "circuit", "horizon", "plain"] as const;
 
 export type SidebarItem = (typeof SIDEBAR_ITEMS)[number];
@@ -92,6 +92,8 @@ export interface Palette {
   glow: number;
   /** Decorative gradients, light lines and background patterns. */
   effects: boolean;
+  /** Light surfaces (dark text): switches lines, shadows and the scrim to their light-theme values. */
+  scheme?: "light";
 }
 
 export interface ThemeDef {
@@ -146,6 +148,18 @@ export const THEME_DEFS: ThemeDef[] = [
     label: "Performance",
     blurb: "Flat surfaces, no glow, no background effects, no animation.",
     palette: { bg: ["#0b0c0f", "#101115", "#15171c", "#1b1e24", "#23262e", "#2c3039"], text: TEXT_COOL, accent: [196, 80, 56], accent2: 196, glow: 0, effects: false },
+  },
+  {
+    id: "studio",
+    label: "Studio",
+    blurb: "Calm graphite and a soft blue: a professional look without glow.",
+    palette: { bg: ["#16171a", "#1b1c20", "#212227", "#28292f", "#303138", "#3a3b43"], text: ["#ededf0", "#b3b4bc", "#7d7e88", "#56575f"], accent: [217, 88, 66], accent2: 248, glow: 0.15, effects: false },
+  },
+  {
+    id: "daylight",
+    label: "Daylight",
+    blurb: "A light theme for bright rooms: white surfaces and crisp blue.",
+    palette: { bg: ["#e9ebf0", "#f3f4f7", "#ffffff", "#f2f3f6", "#e7e9ee", "#dcdfe6"], text: ["#15171c", "#454a55", "#6c7280", "#9aa0ad"], accent: [216, 88, 48], accent2: 252, glow: 0, effects: false, scheme: "light" },
   },
   {
     id: "custom",

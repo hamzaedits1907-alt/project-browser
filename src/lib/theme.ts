@@ -35,6 +35,7 @@ export function lookFor(s: Settings): AppliedLook {
     tabs: s.tabStyle,
     gaming: String(s.gamingMode),
     vertical: String(s.verticalTabs),
+    scheme: p.scheme ?? "dark",
   };
   return { vars, attrs };
 }

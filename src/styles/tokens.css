@@ -164,6 +164,24 @@
   --line-2: hsl(var(--ah) 40% 70% / 0.11);
 }
 
+/* Light themes (Daylight): dark lines on light surfaces, softer shadows, a light scrim. */
+:root[data-scheme="light"] {
+  color-scheme: light;
+  --line-1: rgb(15 20 35 / 0.06);
+  --line-2: rgb(15 20 35 / 0.1);
+  --line-3: rgb(15 20 35 / 0.16);
+  --line-4: rgb(15 20 35 / 0.26);
+  --scrim: rgb(30 36 50 / 0.32);
+  --on-accent: #ffffff;
+  --sh-pop: 0 24px 56px -14px rgb(20 28 48 / 0.28), 0 4px 14px rgb(20 28 48 / 0.12);
+  --sh-card: 0 1px 2px rgb(20 28 48 / 0.06), 0 8px 24px -16px rgb(20 28 48 / 0.18);
+  --sheen: none;
+  --good: #11935a;
+  --warn: #b7791f;
+  --bad: #d43552;
+  --info: #2b6fd6;
+}
+
 /* Without effects (Minimal, Performance): flat surfaces, no glow, no decorative gradients. */
 :root[data-effects="off"] {
   --glow: 0;

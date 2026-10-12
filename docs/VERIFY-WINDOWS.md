@@ -159,6 +159,40 @@ None of these has been seen working against NVIDIA; CI only runs mocked tests. M
 | U7 | Visit a news site with ads | Fewer empty ad boxes than 0.4.0 (element hiding) | |
 | U8 | Task Manager → Processes | "Project Browser" group with the WebView2 processes under it | |
 
+## 0.7.0 checks (not yet done on a real PC)
+
+What CI already shows for 0.7.0 is listed in `docs/FEATURE-MATRIX.md` ("Evidence"). These need a person:
+
+1. **Tear-off.** Drag a tab with a playing video out of the strip. The new window shows the page (not black), the video
+   keeps playing, Back still works in it, and you can type into the page. Drag it back onto the first window's strip.
+2. **Split view.** On a web page press Ctrl+Shift+E (or the columns button, or a tab's menu > "Open in split view").
+   Both pages show side by side; drag the divider; double-click it to even it out; click into the right half: the
+   address bar now shows the right page; Ctrl+Shift+E again closes split view. Switch to a third tab and back: the pair
+   returns.
+3. **Command Center.** Ctrl+K: type part of a tab title, a command ("dupl"), a bookmark, a sum ("12*7"), "10 km in
+   miles", "!yt lofi". Arrow keys and Enter work; Esc closes; Tab switches between commands and tabs.
+4. **Address bar.** Type `2^10`: an answer row shows 1 024 (Ctrl+Enter copies it). `!w rust` opens Wikipedia's search.
+5. **Reader.** F9 on a news article or Wikipedia: the article shows without clutter; text size, sepia/night themes and
+   serif toggle work; **Listen** reads aloud with a Windows voice and highlights the paragraph; double-click a
+   paragraph starts reading there; Esc returns to the page.
+6. **Screenshot.** Ctrl+Shift+S: a preview of what you see; Copy puts a picture in the clipboard (paste into Paint);
+   Save writes `Screenshot <site> <date>.png` to Downloads; "Capture the whole page" on a long page captures all of it.
+7. **SponsorSkip.** Play a YouTube video that has sponsor segments on sponsor.ajay.app (most large tech channels):
+   the sponsor read is skipped with a "Skipped sponsor · Undo" notice; Undo plays it. Settings > Project Shield turns
+   it off. Nothing happens in private tabs.
+8. **Link Cleaner.** Open `https://example.com/?utm_source=test&fbclid=abc&id=7`: the address bar ends up at
+   `https://example.com/?id=7`. Settings > Privacy turns it off.
+9. **Focus.** Sidebar > Focus (or Ctrl+K "focus 25"): start a 25-minute session, open youtube.com: the Focus page
+   appears instead. End the session: YouTube opens. browser://focus shows today's time per site.
+10. **Per-site memory.** Zoom a site to 125%, close the tab, open the site again: 125%. Ctrl+K "Dark pages" on a light
+    site: it turns dark, stays dark after reload and on the next visit.
+11. **Panels.** Notes (per site and scratchpad, kept after restart), Media hub (play/pause, speed, ±10 s, PiP for the
+    page in front; list of tabs playing sound with mute buttons).
+12. **Workspaces.** Ctrl+K "Workspaces": save the window's tabs under a name; open it later: the pages return as a tab
+    group with that name. The folder shows under Other bookmarks > Workspaces.
+13. **Tidy up.** Tab right-click > Tidy up: close duplicates, sort by site, group by site.
+14. F1 shows every shortcut.
+
 ## 0.6.0 checks (not yet done on a real PC)
 
 1. Install 0.6.0 (or let 0.5.x update itself). Open Windows Settings > Apps > Default apps: **Project Browser** is listed.

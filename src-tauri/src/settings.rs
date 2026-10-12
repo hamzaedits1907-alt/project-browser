@@ -135,7 +135,7 @@ pub const TOOLBAR_ITEMS: &[&str] = &[
 pub const DEFAULT_TOOLBAR_ITEMS: &[&str] = &["gaming", "shield", "ai", "downloads"];
 pub const NTP_WIDGETS: &[&str] = &["shortcuts", "continue", "closed", "bookmarks", "downloads", "system", "gaming", "ai"];
 pub const DEFAULT_NTP_WIDGETS: &[&str] = &["shortcuts", "continue", "closed", "bookmarks", "downloads", "system", "gaming", "ai"];
-pub const THEMES: &[&str] = &["neon", "oled", "violet", "tactical", "crimson", "minimal", "performance", "custom"];
+pub const THEMES: &[&str] = &["neon", "oled", "violet", "tactical", "crimson", "minimal", "performance", "studio", "daylight", "custom"];
 pub const NTP_BACKGROUNDS: &[&str] = &["grid", "aurora", "circuit", "horizon", "plain"];
 
 fn strings(list: &[&str]) -> Vec<String> {

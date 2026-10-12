@@ -1,8 +1,9 @@
-# Rendering engine: WebView2 today, and what moving to bundled Chromium (CEF) would take
+# Rendering engine: WebView2 today, a bundled Chromium (CEF) tomorrow
 
-Status for 0.6.0: **websites are still rendered by Microsoft Edge WebView2.** The move to a bundled Chromium engine was
-investigated in the 0.6.0 sprint and **not shipped**. This page explains why, so nobody mistakes the current
-architecture for something it is not.
+**Status for 0.7.0: websites are rendered by Microsoft Edge WebView2**, the Chromium-based runtime that ships with
+Windows and is updated by Microsoft. Project Browser does **not** bundle its own engine yet. The goal is a bundled
+Chromium engine; 0.7.0 adds the first step, a reproducible prototype, and this page records what it showed and what
+the migration still needs.
 
 ## What runs today
 
@@ -12,38 +13,80 @@ architecture for something it is not.
 | Every website tab and popup | WebView2 (the Evergreen runtime installed with Windows, Chromium-based, updated by Microsoft) |
 | Native glue | `src-tauri/src/native/` talks to WebView2's COM API (`ICoreWebView2*`) directly |
 
-WebView2 is Chromium underneath, but it is Microsoft's runtime, shared with the OS, and versioned by Microsoft. Project
-Browser does not have its own engine and does not claim to.
+## Step 1 (0.7.0): the CEF prototype
 
-## Why CEF was not shipped in 0.6.0
+`.github/workflows/cef-prototype.yml` on a Windows runner:
 
-1. **Every browser feature is written against WebView2's API.** About 2,200 lines in `native/` use `ICoreWebView2*`
-   directly: request blocking (Project Shield's `WebResourceRequested`), the YouTube script
-   (`AddScriptToExecuteOnDocumentCreated`), downloads (`DownloadStarting`, pause/resume), permissions, the right-click
-   menu (`ContextMenuRequested` with `SelectedCommandId`), page snapshots (`CapturePreview`), find, zoom, printing, audio
-   state, process metrics (`GetProcessExtendedInfos`), extensions (`ICoreWebView2Profile7`) and private mode. Moving to
-   CEF means re-implementing each of these against CEF's C API (`CefRequestHandler`, `CefResourceRequestHandler`,
-   `CefDownloadHandler`, `CefContextMenuHandler`, …), not swapping a library.
-2. **Tauri has no production CEF runtime.** Tauri's windowing and IPC are tied to wry, which uses WebView2 on Windows.
-   The Tauri project's CEF work (`cef-rs`, a CEF runtime for Tauri) is experimental. Embedding CEF next to wry means a
-   second message loop, a second set of child windows to lay out and focus, and a hand-written bridge between the React
-   shell and CEF browsers.
-3. **Distribution.** CEF's Windows binaries (libcef.dll, resources, locales, the GPU/renderer subprocess executable)
-   are roughly 250–350 MB unpacked and about 100 MB compressed. The installer would grow from about 4 MB to about
-   100 MB, and every Chromium security release would have to be rebuilt and shipped by this project (WebView2 is patched
-   by Microsoft through Windows Update today).
-4. **It could not be verified here.** Native code cannot be compiled or run on the development PC (Smart App Control
-   stays on), so every step would be checked only through CI runs of 15–20 minutes each. A migration this size, built
-   that way and released without a person having used it, would put working features at risk.
+1. Downloads a **pinned stable CEF build** (CEF 152.0.13, Chromium 152.0.7977.158, from Spotify's automated CEF builds)
+   and checks it against the SHA-1 the build index publishes.
+2. Compiles CEF's minimal embedding sample, `cefsimple`, with CMake and the runner's MSVC: a real native program that
+   embeds the bundled `libcef.dll` (no system browser involved).
+3. Runs it on an engine test page (`prototype/cef/engine-test.html`, served over `http://127.0.0.1`) and on real sites
+   (example.com, Wikipedia, YouTube). For each it records the window title the page set, a capture of the window, its
+   brightness (a black window is a failure), the processes CEF started and their memory (`scripts/cef-probe.ps1`).
+4. Measures the size of the runnable engine on disk and zipped.
 
-## What it would take (estimate, not a commitment)
+Results of the run this release was built with are in "Prototype results" below; the raw evidence is the
+`cef-prototype-report` artifact.
 
-1. A CEF build pinned to a Chromium version (Spotify's automated CEF builds), downloaded and cached in CI.
-2. A `cef` engine module behind the same interface `native/` exposes today (create tab, navigate, events), so the
-   controller and the React shell do not change.
-3. Re-implementing the hooks listed above, one at a time, keeping WebView2 as the fallback until each is proven.
-4. Packaging: CEF's files in the NSIS installer and a subprocess executable signed with the app.
-5. An update channel for Chromium security releases (at least monthly).
+## Why the browser itself has not switched yet
 
-That is a multi-release project. Until it is done, the About page reports the WebView2 runtime version that renders
-pages, and the release notes say so plainly.
+1. **Every browser feature is written against WebView2's API.** About 2,500 lines in `native/` use `ICoreWebView2*`:
+   request blocking (Shield's `WebResourceRequested`), scripts added at document creation (YouTube guard, SponsorSkip),
+   downloads (`DownloadStarting`, pause/resume), permissions, the right-click menu (`ContextMenuRequested` +
+   `SelectedCommandId`), page snapshots and screenshots (`CapturePreview`, DevTools protocol), find, zoom, printing,
+   audio state, process metrics, extensions (`ICoreWebView2Profile7`), private mode, focus and re-parenting. Each one
+   must be re-implemented against CEF's handlers (`CefRequestHandler`, `CefResourceRequestHandler`,
+   `CefDownloadHandler`, `CefContextMenuHandler`, `CefDisplayHandler`, `CefFocusHandler`, …).
+2. **Tauri has no production CEF runtime.** Tauri's windowing and IPC sit on wry, which uses WebView2 on Windows. The
+   Tauri project's CEF work (`cef-rs` and a CEF runtime for Tauri) is not production-ready. Hosting CEF browsers next
+   to the WebView2 shell means a second message loop (or `multi_threaded_message_loop`), CEF's subprocess executable,
+   and a bridge between the React shell and CEF browsers.
+3. **Distribution and security updates.** The runnable engine is roughly 300 MB on disk and well over 100 MB zipped
+   (measured below); today's installer is about 4 MB. Every Chromium security release (several a month) would have to
+   be rebuilt, signed and shipped by this project, where WebView2 is patched by Microsoft through Windows Update.
+   Without a fast, automated, signed update channel for the engine, a bundled Chromium is **less** safe than WebView2.
+4. **Media.** The standard CEF builds do not include proprietary codecs (H.264/AAC) or the Widevine DRM module; the
+   engine test records this. YouTube works with VP9/AV1, but Netflix, Spotify Web and some streaming sites do not.
+   Shipping H.264 requires a codec licence; Widevine requires a licence from Google.
+5. **It could not be verified here.** Native code cannot be compiled or run on the development PC (Smart App Control
+   stays on), so every step is checked only through CI runs. A wholesale switch, released without anyone having used it,
+   would put working features at risk.
+
+## The migration plan
+
+1. ~~Pinned CEF build in CI, checksum-verified, rendering real pages~~ (0.7.0, this prototype).
+2. An `Engine` trait in the core with the operations the controller uses today (create a view, navigate, show/hide,
+   bounds, events), implemented for WebView2 first so nothing changes for users.
+3. A CEF implementation behind it, hosted as child windows of the Tauri window (CEF windowed rendering, its own
+   message-loop thread), one hook at a time: navigation events, downloads, request blocking, context menu, permissions.
+   WebView2 stays the default; CEF is opt-in and labelled experimental.
+4. Packaging: CEF files in the NSIS installer (or a separate downloadable engine package), the subprocess executable
+   signed with the app, a size budget.
+5. An engine update channel: rebuilt within days of every Chromium security release, signed, delivered through the
+   existing updater, with CI that refuses to release an engine older than the current stable Chromium.
+6. Extensions: CEF's Chrome-style browsers can run Chrome extensions with toolbar actions; WebView2 cannot. That is the
+   main feature reason to finish the move.
+
+Until step 3 ships, the About page reports the WebView2 runtime version that renders pages, and release notes say so.
+
+## Prototype results
+
+CI run [38297085815](https://github.com/hamzaedits1907-alt/project-browser/actions/runs/38297085815) (windows-latest,
+2026-10-12), artifact `cef-prototype-report`. **Passed: the bundled engine rendered every page.**
+
+| Page | Title the page set | Painted (brightness) | Processes | Private memory |
+|---|---|---|---|---|
+| Engine test (127.0.0.1) | `PBTEST {…}` | yes (234) | browser 1, GPU 1, renderer 3, utility 4 | 189 MB |
+| example.com | Example Domain | yes (233) | browser 1, GPU 1, renderer 3, utility 2 | 130 MB |
+| Wikipedia article | Chromium (web browser) - Wikipedia | yes (245) | browser 1, GPU 1, renderer 3, utility 2 | 175 MB |
+| youtube.com | YouTube | yes (250) | browser 1, GPU 1, renderer 4, utility 4 | 412 MB |
+
+Engine capabilities (`Chrome/152.0.0.0`): modern JavaScript, CSS grid / `:has()` / container queries, localStorage,
+cookies, IndexedDB, WebGL 2, WebGPU, Web Audio, service workers, WebAssembly, VP9 and AV1 video (incl. Media Source):
+**all yes**. **H.264 video: no. Widevine DRM: no.** (As expected for standard CEF builds; see point 4 above.)
+
+Size: **399.9 MB on disk, 179.5 MB zipped** for the runnable engine. Today's installer is about 4 MB.
+
+Conclusion: the bundled engine works and is current (Chromium 152 stable). Shipping it needs the engine abstraction,
+re-implemented hooks, the update channel and a codec decision (steps 2–5), not a different engine.

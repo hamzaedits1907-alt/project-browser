@@ -57,7 +57,7 @@ pub fn run() {
                     state.ctl.post(move |c| c.open_url_in_focused_window(url));
                 }
             }
-            if let Some(w) = app.get_webview_window(window::SHELL_LABEL) {
+            if let Some(w) = app.get_window(window::SHELL_LABEL) {
                 let _ = w.unminimize();
                 let _ = w.set_focus();
             }

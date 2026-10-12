@@ -829,7 +829,9 @@ impl Controller {
                 self.startup.shell_ready_ms = Some(now_ms() - start);
                 log::info!("startup: shell UI ready {} ms after process start", now_ms() - start);
             }
-            if let Some(w) = self.app.get_webview_window(&self.current) {
+            // `get_window`, not `get_webview_window`: once a tab webview has been added or moved into the window it is
+            // no longer a single-webview window, and the lookup would miss it (a torn-off window then never showed).
+            if let Some(w) = self.app.get_window(&self.current) {
                 let _ = w.show();
                 let _ = w.set_focus();
             }

@@ -8,6 +8,10 @@ It installs with a normal Windows installer and starts by double-clicking it.
 * **Gaming Mode** (`Ctrl+Shift+G`). Background tabs sleep after 10 s, downloads are held, animations reduced, sampling slows down.
 * **Honest performance tools.** Real per-tab and per-process memory/CPU, GPU utilisation, startup timings. Sampling runs only while a page that shows it is open.
 * **Chrome / Edge / Brave import** for bookmarks, history (with visit dates), the default search engine, addresses, open tabs, and passwords from a CSV you export yourself (stored encrypted, filled only when you click, never submitted). Safe to repeat, with a checklist afterwards saying what is done, what is not possible (cookies, cards) and what is left. Active Chrome logins are **not** migrated, and the wizard says why.
+* **Split view, Command Center, Reader with Listen** (0.7.0). Two tabs side by side (`Ctrl+Shift+E`); one box for tabs, commands, bookmarks, history, sums and conversions (`Ctrl+K`); articles without clutter, read aloud with Windows voices (`F9`).
+* **SponsorSkip, Link Cleaner, Project Shield.** Sponsor segments in YouTube videos skipped (privately: only a hash prefix is sent), tracking codes stripped from links, ads and trackers blocked with public filter lists.
+* **Focus Mode and Screen Time.** Block distracting sites for a session or after a daily limit; see where the day went. Stays on your PC.
+* **Everyday tools.** Full-page screenshots (`Ctrl+Shift+S`), QR share, workspaces, notes per site, a media hub, per-site zoom and dark pages, tab tidy-up, light and dark themes.
 * **NVIDIA AI** (optional, NVIDIA is the only provider). Chat about the page, explain/translate a selection, extract data, **Research** (compare pages you tick; every quote is checked against the page it came from), **Claim Battle**, **Project Memory** (notes and research you chose to keep, searchable, deletable), and **Actions** (a plan you review and confirm, from a fixed list of safe browser actions). Nothing is sent until you ask; page text only for the pages you choose, never from private tabs. The API key lives in the Windows Credential Manager, never in the browser's database. See [docs/AI.md](docs/AI.md).
 
 ## Status
@@ -55,10 +59,13 @@ from production builds). Query parameters select states, e.g. `?page=gaming`, `?
 Handled natively so they work whichever view has focus. Full list in **Settings → Shortcuts**.
 
 `Ctrl+T` new tab · `Ctrl+W` close · `Ctrl+Shift+T` reopen · `Ctrl+L` address bar · `Ctrl+F` find · `Ctrl+D` bookmark ·
-`Ctrl+H` history · `Ctrl+J` downloads · `Ctrl+,` settings · `Ctrl+Shift+G` Gaming Mode · `Shift+Esc` performance monitor.
+`Ctrl+H` history · `Ctrl+J` downloads · `Ctrl+,` settings · `Ctrl+Shift+G` Gaming Mode · `Shift+Esc` performance monitor ·
+`Ctrl+K` Command Center · `Ctrl+Shift+E` split view · `F9` reader · `Ctrl+Shift+S` screenshot · `F1` all shortcuts.
 
 ## Documentation
 
+* [docs/FEATURE-MATRIX.md](docs/FEATURE-MATRIX.md): every feature with its real, evidence-based status.
+* [docs/ENGINE.md](docs/ENGINE.md): WebView2 today, the bundled-Chromium (CEF) prototype, and what the move still needs.
 * [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how the core, shell and webviews fit together.
 * [docs/BUILDING.md](docs/BUILDING.md): CI build, local build, tests.
 * [docs/VERIFY-WINDOWS.md](docs/VERIFY-WINDOWS.md): the manual checklist that proves rendering, tabs, import and profiles on real Windows.

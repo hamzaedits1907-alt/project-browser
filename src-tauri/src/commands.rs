@@ -1137,6 +1137,69 @@ pub struct AppInfo {
     pub update_configured: bool,
 }
 
+// ---- extensions (unpacked, through WebView2) -----------------------------------------
+
+const EXTENSION_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// Runs `f` on the UI thread (where WebView2 lives) and waits for its reply.
+async fn on_ui<T: Send + 'static>(app: &AppHandle, f: impl FnOnce(native::extensions::Reply<T>) + Send + 'static) -> Result<T> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.run_on_main_thread(move || f(tx))?;
+    match tokio::time::timeout(EXTENSION_TIMEOUT, rx).await {
+        Ok(Ok(r)) => r.map_err(Error::Msg),
+        _ => Err(Error::msg("WebView2 did not complete the extension request.")),
+    }
+}
+
+/// Checks that `dir` holds an unpacked extension (a manifest.json with a manifest version and a name) before WebView2
+/// is asked to load it. Returns the manifest version.
+pub fn check_unpacked_extension(dir: &std::path::Path) -> Result<u64> {
+    let text = std::fs::read_to_string(dir.join("manifest.json")).map_err(|_| Error::msg("That folder has no manifest.json."))?;
+    let manifest: serde_json::Value =
+        serde_json::from_str(text.trim_start_matches('\u{feff}')).map_err(|_| Error::msg("manifest.json is not valid JSON."))?;
+    let version = manifest.get("manifest_version").and_then(|v| v.as_u64()).ok_or_else(|| Error::msg("manifest.json has no manifest_version."))?;
+    if manifest.get("name").and_then(|v| v.as_str()).is_none_or(|n| n.trim().is_empty()) {
+        return Err(Error::msg("manifest.json has no name."));
+    }
+    if !(2..=3).contains(&version) {
+        return Err(Error::msg(format!("Manifest version {version} is not supported.")));
+    }
+    Ok(version)
+}
+
+#[tauri::command]
+pub async fn extensions_list(app: AppHandle) -> Result<Vec<native::extensions::ExtensionInfo>> {
+    on_ui(&app, native::extensions::list).await
+}
+
+/// Lets the user pick an unpacked extension's manifest.json and installs that folder. `None` when the dialog was closed.
+#[tauri::command]
+pub async fn extension_add(window: tauri::Window, app: AppHandle) -> Result<Option<native::extensions::ExtensionInfo>> {
+    let owner = window.hwnd().ok().map(|h| h.0 as isize).unwrap_or(0);
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        native::dialog::pick_file(owner, "Choose the extension's manifest.json", "Extension manifest", "manifest.json")
+    })
+    .await
+    .map_err(|e| Error::msg(e.to_string()))?;
+    let Some(manifest) = picked else { return Ok(None) };
+    let dir = manifest.parent().map(|p| p.to_path_buf()).ok_or_else(|| Error::msg("That file is not in a folder."))?;
+    check_unpacked_extension(&dir)?;
+    let folder = dir.display().to_string();
+    let added = on_ui(&app, move |reply| native::extensions::add(folder, reply)).await?;
+    log::info!("extension added ({} characters of id)", added.id.len());
+    Ok(Some(added))
+}
+
+#[tauri::command]
+pub async fn extension_remove(app: AppHandle, id: String) -> Result<()> {
+    on_ui(&app, move |reply| native::extensions::remove(id, reply)).await
+}
+
+#[tauri::command]
+pub async fn extension_set_enabled(app: AppHandle, id: String, enabled: bool) -> Result<()> {
+    on_ui(&app, move |reply| native::extensions::set_enabled(id, enabled, reply)).await
+}
+
 #[tauri::command]
 pub async fn default_browser_status() -> Result<crate::default_browser::DefaultBrowserStatus> {
     Ok(crate::default_browser::status())
@@ -1467,6 +1530,10 @@ macro_rules! all_commands {
             $crate::commands::ai_cancel,
             $crate::commands::app_info,
             $crate::commands::default_browser_status,
+            $crate::commands::extensions_list,
+            $crate::commands::extension_add,
+            $crate::commands::extension_remove,
+            $crate::commands::extension_set_enabled,
             $crate::commands::default_browser_open_settings,
             $crate::commands::update_check,
             $crate::commands::update_install,
@@ -1490,4 +1557,29 @@ macro_rules! all_commands {
             $crate::commands::shield_test,
         ]
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn folder_with(manifest: Option<&str>) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("pb-ext-test-{}-{}", std::process::id(), now_ms()));
+        std::fs::create_dir_all(&dir).unwrap();
+        if let Some(m) = manifest {
+            std::fs::write(dir.join("manifest.json"), m).unwrap();
+        }
+        dir
+    }
+
+    #[test]
+    fn unpacked_extensions_are_checked_before_webview2_sees_them() {
+        assert_eq!(check_unpacked_extension(&folder_with(Some(r#"{"manifest_version":3,"name":"Dark","version":"1"}"#))).unwrap(), 3);
+        assert_eq!(check_unpacked_extension(&folder_with(Some("\u{feff}{\"manifest_version\":2,\"name\":\"Old\"}"))).unwrap(), 2);
+        assert!(check_unpacked_extension(&folder_with(None)).is_err(), "no manifest");
+        assert!(check_unpacked_extension(&folder_with(Some("not json"))).is_err());
+        assert!(check_unpacked_extension(&folder_with(Some(r#"{"name":"x"}"#))).is_err(), "no manifest_version");
+        assert!(check_unpacked_extension(&folder_with(Some(r#"{"manifest_version":3,"name":"  "}"#))).is_err(), "no name");
+        assert!(check_unpacked_extension(&folder_with(Some(r#"{"manifest_version":4,"name":"x"}"#))).is_err());
+    }
 }

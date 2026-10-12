@@ -19,6 +19,7 @@ export const SECTION_META: SectionMeta[] = [
   { id: "privacy", label: "Privacy & security", icon: "shield", keywords: "clear data history cookies cache permissions camera location private", group: "Privacy" },
   { id: "shield", label: "Project Shield", icon: "shieldCheck", keywords: "ads ad blocker tracker blocking easylist easyprivacy filter lists allowlist exceptions", group: "Privacy" },
   { id: "tunnel", label: "Project Tunnel", icon: "globe", keywords: "vpn proxy socks http tunnel privacy ip address", group: "Privacy" },
+  { id: "extensions", label: "Extensions", icon: "layers", keywords: "extensions add-ons addons plugins unpacked manifest dark reader ublock", group: "Privacy" },
   { id: "passwords", label: "Passwords & autofill", icon: "key", keywords: "passwords logins sign in fill address autofill saved export csv", group: "Privacy" },
   { id: "profiles", label: "Profiles", icon: "user", keywords: "profile account switch", group: "You" },
   { id: "import", label: "Import data", icon: "import", keywords: "chrome edge brave bookmarks history migrate move passwords tabs", group: "You" },

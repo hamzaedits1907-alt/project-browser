@@ -393,6 +393,13 @@ export interface FillResult {
   fields: number;
 }
 
+/** An installed browser extension (native/extensions.rs). */
+export interface ExtensionInfo {
+  id: string;
+  name: string;
+  enabled: boolean;
+}
+
 /** Windows registration and default-browser state (default_browser.rs). */
 export interface DefaultBrowserStatus {
   registered: boolean;

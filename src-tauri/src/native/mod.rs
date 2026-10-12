@@ -6,6 +6,7 @@
 
 pub mod context_menu;
 pub mod dialog;
+pub mod extensions;
 pub mod metrics;
 
 use std::cell::RefCell;

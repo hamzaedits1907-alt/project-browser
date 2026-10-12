@@ -442,6 +442,13 @@ export function installMockBackend(): void {
         }
         case "default_browser_status":
           return { registered: true, registeredHere: true, defaultHttp: false, defaultHttps: false };
+        case "extensions_list":
+          return [{ id: "abcdefghijklmnopabcdefghijklmnop", name: "Dark Reader", enabled: true }];
+        case "extension_add":
+          return null;
+        case "extension_remove":
+        case "extension_set_enabled":
+          return null;
         case "default_browser_open_settings":
           return null;
         case "app_info":

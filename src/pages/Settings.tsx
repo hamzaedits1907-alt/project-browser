@@ -9,6 +9,7 @@ import { About } from "./settings/About";
 import { Appearance } from "./settings/Appearance";
 import { AiSettings } from "./settings/AiSettings";
 import { GamingSettings } from "./settings/GamingSettings";
+import { ExtensionsSettings } from "./settings/ExtensionsSettings";
 import { General } from "./settings/General";
 import { ImportSection } from "./settings/ImportSection";
 import { Passwords } from "./settings/Passwords";
@@ -28,6 +29,7 @@ const RENDER: Record<string, () => ReactNode> = {
   privacy: () => <Privacy />,
   shield: () => <ShieldSettings />,
   tunnel: () => <TunnelSettings />,
+  extensions: () => <ExtensionsSettings />,
   passwords: () => <Passwords />,
   profiles: () => <Profiles />,
   import: () => <ImportSection />,

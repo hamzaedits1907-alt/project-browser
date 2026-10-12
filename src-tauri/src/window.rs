@@ -86,6 +86,7 @@ pub fn build_shell_window(
         .background_color(tauri::window::Color(11, 13, 18, 255))
         .data_directory(profile.webview_dir())
         .additional_browser_args(&browser_args())
+        .browser_extensions_enabled(true)
         // The shell uses HTML5 drag-and-drop for tab reordering.
         .disable_drag_drop_handler();
     match geometry {
@@ -116,6 +117,7 @@ pub fn tab_webview_builder(app: &AppHandle, id: TabId, private: bool, profile: &
     WebviewBuilder::new(format!("tab-{id}"), WebviewUrl::External("about:blank".parse().expect("valid url")))
         .data_directory(data_dir.clone())
         .additional_browser_args(&browser_args())
+        .browser_extensions_enabled(true)
         .incognito(private)
         .devtools(true)
         .zoom_hotkeys_enabled(true)
@@ -145,6 +147,7 @@ pub fn tab_webview_builder(app: &AppHandle, id: TabId, private: bool, profile: &
                     .title(title)
                     .data_directory(data_dir.clone())
                     .additional_browser_args(&browser_args())
+                    .browser_extensions_enabled(true)
                     .incognito(private)
                     .disable_drag_drop_handler()
                     .on_navigation(|u| !is_blocked_tab_navigation(u))

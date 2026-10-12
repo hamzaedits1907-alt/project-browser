@@ -30,6 +30,29 @@ const MOCK_MODELS = [
   hints: { chat: kind === "embedding" || kind === "document" ? "no" : "yes", vision, tools: "unknown" },
 }));
 
+// Project Shield preview state: canned numbers that only exercise the interface.
+let shieldOn = true;
+let shieldSites: string[] = [];
+let shieldRules = "";
+let shieldLists = { easylist: true, easyprivacy: true };
+
+function shieldView(site?: string) {
+  const host = site ? site.replace(/^https?:\/\//, "").replace(/^www\./, "").split(/[/?#:]/)[0] ?? "" : "";
+  const list = (id: "easylist" | "easyprivacy", name: string, description: string, rules: number) => ({
+    id, name, description, homepage: "https://easylist.to/", license: "Dual-licensed CC BY-SA 3.0 and GPL v3, by the EasyList authors",
+    enabled: shieldLists[id], state: "ready", error: null, rules, fetchedAt: now - 3 * 60 * MIN, version: "202610121017",
+  });
+  return {
+    enabled: shieldOn,
+    lists: [list("easylist", "EasyList", "Advertisements.", 53618), list("easyprivacy", "EasyPrivacy", "Trackers and analytics.", 56234)],
+    userRules: shieldRules, userRulesAccepted: shieldRules.split("\n").filter((l) => l.trim() && !l.startsWith("!")).length,
+    disabledSites: shieldSites,
+    engine: { rules: 109877, unindexed: 6, stats: { blockRules: 99000, exceptionRules: 10877, cosmeticSkipped: 24685, unsupportedSkipped: 3177, malformedSkipped: 12 } },
+    blockedSession: 412, blockedLifetime: 18204, updating: false, now,
+    site: host ? { host, enabled: !shieldSites.includes(host), blocked: 37 } : null,
+  };
+}
+
 function tab(id: number, url: string, title: string, extra: Partial<Tab> = {}): Tab {
   return {
     id, url, title, favicon: null, pinned: false, private: false, loading: false, canGoBack: false, canGoForward: false, zoom: 1,
@@ -415,6 +438,27 @@ export function installMockBackend(): void {
           }, 250);
           return null;
         }
+        case "shield_state":
+          return shieldView(a.site as string | undefined);
+        case "shield_tab":
+          return { blocked: 14, hosts: [{ host: "securepubads.g.doubleclick.net", count: 6 }, { host: "www.google-analytics.com", count: 4 }, { host: "px.ads.linkedin.com", count: 4 }] };
+        case "shield_set": {
+          const p = a.patch as { enabled?: boolean; listId?: "easylist" | "easyprivacy"; listEnabled?: boolean; userRules?: string };
+          if (typeof p.enabled === "boolean") shieldOn = p.enabled;
+          if (p.listId && typeof p.listEnabled === "boolean") shieldLists = { ...shieldLists, [p.listId]: p.listEnabled };
+          if (typeof p.userRules === "string") shieldRules = p.userRules;
+          return shieldView();
+        }
+        case "shield_site": {
+          const host = String(a.host);
+          shieldSites = shieldSites.filter((h) => h !== host);
+          if (!a.enabled) shieldSites = [...shieldSites, host];
+          return shieldView(host);
+        }
+        case "shield_update":
+          return { updated: 1, unchanged: 1, failed: 0, alreadyRunning: false };
+        case "shield_test":
+          return String(a.url).includes("ads") ? "Blocked by EasyList." : "Allowed: no rule matches.";
         default:
           return null;
       }

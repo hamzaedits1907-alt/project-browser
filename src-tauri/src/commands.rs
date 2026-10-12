@@ -1144,6 +1144,100 @@ pub async fn update_install(app: AppHandle, updates: State<'_, crate::updates::U
     crate::updates::install(&app, &updates).await
 }
 
+// ---- Project Shield ----------------------------------------------------------------------
+
+fn running_shield() -> Result<&'static std::sync::Arc<crate::shield::Shield>> {
+    crate::shield::global().ok_or_else(|| Error::msg("Project Shield isn't running"))
+}
+
+async fn save_shield_config(s: &State<'_, AppState>, cfg: crate::shield::ShieldConfig) -> Result<()> {
+    s.ctl.call(move |c| c.db.kv_set(crate::shield::KV_KEY, &cfg)).await?
+}
+
+/// Everything the Shield settings page shows. `site` (an address or host) adds the state for that site.
+#[tauri::command]
+pub async fn shield_state(site: Option<String>) -> Result<crate::shield::ShieldView> {
+    Ok(running_shield()?.view(site.as_deref()))
+}
+
+/// What the Shield blocked in one tab since its page started loading.
+#[tauri::command]
+pub async fn shield_tab(tab_id: TabId) -> Result<crate::shield::TabShieldView> {
+    Ok(running_shield()?.tab_view(tab_id))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShieldPatch {
+    pub enabled: Option<bool>,
+    pub list_id: Option<String>,
+    pub list_enabled: Option<bool>,
+    pub user_rules: Option<String>,
+}
+
+/// Changes the Shield's global switch, a public list's switch, or the user's own rules.
+#[tauri::command]
+pub async fn shield_set(s: State<'_, AppState>, patch: ShieldPatch) -> Result<crate::shield::ShieldView> {
+    let shield = running_shield()?;
+    let mut cfg = shield.config();
+    if let Some(enabled) = patch.enabled {
+        cfg.enabled = enabled;
+    }
+    if let (Some(id), Some(on)) = (patch.list_id.as_deref(), patch.list_enabled) {
+        cfg.disabled_lists.retain(|d| d != id);
+        if !on {
+            cfg.disabled_lists.push(id.to_string());
+        }
+    }
+    if let Some(rules) = patch.user_rules {
+        cfg.user_rules = rules;
+    }
+    let cfg = shield.set_config(cfg);
+    save_shield_config(&s, cfg).await?;
+    if patch.list_enabled == Some(true) {
+        // A list that was never downloaded is fetched right away.
+        let shield = shield.clone();
+        tauri::async_runtime::spawn(async move {
+            shield.update_lists(false).await;
+        });
+    }
+    Ok(shield.view(None))
+}
+
+/// Turns the Shield off or on for one site (and its subdomains).
+#[tauri::command]
+pub async fn shield_site(s: State<'_, AppState>, host: String, enabled: bool) -> Result<crate::shield::ShieldView> {
+    let shield = running_shield()?;
+    let site = crate::shield::normalize_site(&host).ok_or_else(|| Error::msg("That isn't a site name"))?;
+    let mut cfg = shield.config();
+    cfg.disabled_sites.retain(|d| d != &site);
+    if !enabled {
+        cfg.disabled_sites.push(site.clone());
+    }
+    let cfg = shield.set_config(cfg);
+    save_shield_config(&s, cfg).await?;
+    Ok(shield.view(Some(&site)))
+}
+
+/// Looks for newer versions of the public lists (all of them when `force`, otherwise the old ones).
+#[tauri::command]
+pub async fn shield_update(force: bool) -> Result<crate::shield::UpdateSummary> {
+    let shield = running_shield()?;
+    let summary = shield.update_lists(force).await;
+    Ok(summary)
+}
+
+/// Asks the rule engine what it would do with one request, as the settings page's test box.
+#[tauri::command]
+pub async fn shield_test(url: String, page: String) -> Result<String> {
+    let url = url.trim();
+    if url::Url::parse(url).map(|u| !matches!(u.scheme(), "http" | "https")).unwrap_or(true) {
+        return Err(Error::msg("Enter a full web address, for example https://ads.example.com/banner.js"));
+    }
+    let page_host = crate::shield::normalize_site(&page).unwrap_or_default();
+    Ok(running_shield()?.explain(url, &page_host, crate::shield::rules::T_SCRIPT))
+}
+
 /// Every command, for the invoke handler and the ACL manifest in build.rs.
 #[macro_export]
 macro_rules! all_commands {
@@ -1225,6 +1319,12 @@ macro_rules! all_commands {
             $crate::commands::app_info,
             $crate::commands::update_check,
             $crate::commands::update_install,
+            $crate::commands::shield_state,
+            $crate::commands::shield_tab,
+            $crate::commands::shield_set,
+            $crate::commands::shield_site,
+            $crate::commands::shield_update,
+            $crate::commands::shield_test,
         ]
     };
 }

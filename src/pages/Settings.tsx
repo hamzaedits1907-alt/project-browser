@@ -14,6 +14,7 @@ import { Passwords } from "./settings/Passwords";
 import { PerformanceSettings } from "./settings/PerformanceSettings";
 import { Privacy } from "./settings/Privacy";
 import { Profiles } from "./settings/Profiles";
+import { ShieldSettings } from "./settings/ShieldSettings";
 import { Shortcuts } from "./settings/Shortcuts";
 import { SECTION_META, matchSections, resolveSection } from "./settingsIndex";
 
@@ -23,6 +24,7 @@ const RENDER: Record<string, () => ReactNode> = {
   performance: () => <PerformanceSettings />,
   gaming: () => <GamingSettings />,
   privacy: () => <Privacy />,
+  shield: () => <ShieldSettings />,
   passwords: () => <Passwords />,
   profiles: () => <Profiles />,
   import: () => <ImportSection />,

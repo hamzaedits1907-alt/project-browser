@@ -111,6 +111,13 @@ pub(crate) struct Layout {
     pub browser_fullscreen: bool,
 }
 
+/// Blocked-request counts per tab, sent to the shell a few times per second at most.
+#[derive(Debug, Clone, Serialize)]
+pub struct ShieldEvent {
+    pub tabs: HashMap<TabId, u32>,
+    pub total: u64,
+}
+
 pub(crate) struct View {
     pub webview: tauri::Webview,
     pub visible: bool,
@@ -261,6 +268,9 @@ pub struct Controller {
     dirty: Dirty,
     session_save_at: Option<Instant>,
     sleep_check_at: Instant,
+    /// When the next `pb:shield` event (blocked counts) is due.
+    shield_due: Option<Instant>,
+    shield_saved_at: Instant,
 }
 
 pub struct ControllerInit {
@@ -330,6 +340,8 @@ impl Controller {
             dirty: Dirty::default(),
             session_save_at: None,
             sleep_check_at: Instant::now() + Duration::from_secs(30),
+            shield_due: None,
+            shield_saved_at: Instant::now(),
         }
     }
 
@@ -369,6 +381,9 @@ impl Controller {
         if let Some(t) = self.perf.next_at {
             next = next.min(t);
         }
+        if let Some(t) = self.shield_due {
+            next = next.min(t);
+        }
         next.saturating_duration_since(now)
     }
 
@@ -384,6 +399,38 @@ impl Controller {
         }
         if self.perf.next_at.is_some_and(|t| t <= now) {
             self.perf_tick();
+        }
+        if self.shield_due.is_some_and(|t| t <= now) {
+            self.flush_shield();
+        }
+    }
+
+    /// The Shield blocked something: tell the UI soon, but at most a few times per second however busy a page is.
+    pub(crate) fn mark_shield(&mut self) {
+        if self.shield_due.is_none() {
+            self.shield_due = Some(Instant::now() + Duration::from_millis(400));
+        }
+    }
+
+    fn flush_shield(&mut self) {
+        self.shield_due = None;
+        let Some(shield) = crate::shield::global() else { return };
+        shield.clear_pending();
+        if self.shell_ready {
+            self.emit("pb:shield", ShieldEvent { tabs: shield.tab_counts(), total: shield.session_total() });
+        }
+        if self.shield_saved_at.elapsed() >= Duration::from_secs(30) {
+            self.shield_saved_at = Instant::now();
+            self.save_shield_counter();
+        }
+    }
+
+    /// Writes the Shield's lifetime counter if it moved. The rest of its configuration is saved when it is changed.
+    fn save_shield_counter(&self) {
+        if let Some(cfg) = crate::shield::global().and_then(|s| s.take_unsaved_config()) {
+            if let Err(e) = self.db.kv_set(crate::shield::KV_KEY, &cfg) {
+                log::warn!("could not save the Shield counter: {e}");
+            }
         }
     }
 
@@ -567,6 +614,7 @@ impl Controller {
     /// Persists everything that must survive an exit. Called on window close.
     pub fn prepare_exit(&mut self) {
         self.save_session();
+        self.save_shield_counter();
         let v = self.layout.viewport;
         if v.width > 0.0 && v.height > 0.0 && !self.layout.browser_fullscreen {
             let geom = self.window_geometry();

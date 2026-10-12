@@ -46,6 +46,8 @@ thread_local! {
     static DOWNLOADS: RefCell<HashMap<i64, ICoreWebView2DownloadOperation>> = RefCell::new(HashMap::new());
     static PERMISSIONS: RefCell<HashMap<u64, PendingPermission>> = RefCell::new(HashMap::new());
     static SHELL: RefCell<Option<TabCom>> = const { RefCell::new(None) };
+    /// Host of the page each tab is loading, for the Shield's first-party checks.
+    static TOP_HOST: RefCell<HashMap<TabId, String>> = RefCell::new(HashMap::new());
 }
 
 static NEXT_PERMISSION: AtomicU64 = AtomicU64::new(1);
@@ -253,6 +255,7 @@ unsafe fn install_tab_inner(id: TabId, pw: &PlatformWebview, ctl: &ControllerHan
         &NavigationStartingEventHandler::create(Box::new(move |_, args| {
             let Some(args) = args else { return Ok(()) };
             let uri = pwstr(|p| args.Uri(p));
+            note_top_navigation(id, &uri, &c);
             c.post(move |ctl| ctl.on_nav_starting(id, uri));
             Ok(())
         })),
@@ -418,8 +421,122 @@ unsafe fn install_tab_inner(id: TabId, pw: &PlatformWebview, ctl: &ControllerHan
 
     hook_accelerators(&controller, ctl)?;
 
+    if let Err(e) = hook_shield(&webview, &env, id, init.private, ctl) {
+        log::warn!("tab {id}: request blocking is unavailable for this tab: {e}");
+    }
+
     TABS.with(|t| t.borrow_mut().insert(id, TabCom { controller, webview: webview.clone(), env }));
     webview.Navigate(&HSTRING::from(init.url.as_str()))?;
+    Ok(())
+}
+
+// ---- Project Shield: request blocking ---------------------------------------------------------
+
+/// A page is starting to load in the tab: remember its host and start the tab's blocked count again.
+fn note_top_navigation(id: TabId, uri: &str, ctl: &ControllerHandle) {
+    TOP_HOST.with(|t| t.borrow_mut().insert(id, crate::shield::host_of_url(uri)));
+    if let Some(shield) = crate::shield::global() {
+        if shield.reset_tab(id) {
+            ctl.post(|c| c.mark_shield());
+        }
+    }
+}
+
+fn resource_kind(context: COREWEBVIEW2_WEB_RESOURCE_CONTEXT) -> u16 {
+    use crate::shield::rules::*;
+    match context {
+        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_SCRIPT => T_SCRIPT,
+        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_IMAGE => T_IMAGE,
+        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_STYLESHEET => T_STYLESHEET,
+        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_XML_HTTP_REQUEST | COREWEBVIEW2_WEB_RESOURCE_CONTEXT_FETCH => T_XHR,
+        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_MEDIA => T_MEDIA,
+        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_FONT => T_FONT,
+        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_PING | COREWEBVIEW2_WEB_RESOURCE_CONTEXT_CSP_VIOLATION_REPORT => T_PING,
+        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_WEBSOCKET => T_WEBSOCKET,
+        _ => T_OTHER,
+    }
+}
+
+/// Offers every sub-resource request and every sub-frame navigation of the tab to the Shield. A blocked
+/// request is answered with an empty 403 before it leaves the machine; a blocked frame navigation is cancelled.
+/// Main-frame page loads are never touched: WebView2 reports them with the same context as frames.
+unsafe fn hook_shield(
+    webview: &ICoreWebView2,
+    env: &ICoreWebView2Environment,
+    id: TabId,
+    private: bool,
+    ctl: &ControllerHandle,
+) -> windows::core::Result<()> {
+    use crate::shield::rules::{Verdict, T_SUBDOCUMENT};
+    let mut filtered = false;
+    if let Ok(w22) = webview.cast::<ICoreWebView2_22>() {
+        // Also covers requests made by dedicated, shared and service workers.
+        filtered = w22
+            .AddWebResourceRequestedFilterWithRequestSourceKinds(
+                windows::core::w!("*"),
+                COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
+                COREWEBVIEW2_WEB_RESOURCE_REQUEST_SOURCE_KINDS_ALL,
+            )
+            .is_ok();
+    }
+    if !filtered {
+        webview.AddWebResourceRequestedFilter(windows::core::w!("*"), COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL)?;
+    }
+
+    let mut token = 0i64;
+    let env = env.clone();
+    let c = ctl.clone();
+    webview.add_WebResourceRequested(
+        &WebResourceRequestedEventHandler::create(Box::new(move |_, args| {
+            let Some(args) = args else { return Ok(()) };
+            let Some(shield) = crate::shield::global() else { return Ok(()) };
+            if !shield.is_active() {
+                return Ok(());
+            }
+            let mut context = COREWEBVIEW2_WEB_RESOURCE_CONTEXT::default();
+            args.ResourceContext(&mut context)?;
+            if context == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT {
+                return Ok(());
+            }
+            let uri = pwstr(|p| args.Request().and_then(|r| r.Uri(p)));
+            let top = TOP_HOST.with(|t| t.borrow().get(&id).cloned()).unwrap_or_default();
+            if let Verdict::Block { .. } = shield.check(&uri, &top, resource_kind(context)).verdict {
+                let response = env.CreateWebResourceResponse(
+                    None::<&IStream>,
+                    403,
+                    windows::core::w!("Blocked by Project Shield"),
+                    windows::core::w!("Content-Type: text/plain"),
+                )?;
+                args.SetResponse(&response)?;
+                if shield.record_block(id, private, &top, &uri) {
+                    c.post(|ctl| ctl.mark_shield());
+                }
+            }
+            Ok(())
+        })),
+        &mut token,
+    )?;
+
+    let c = ctl.clone();
+    webview.add_FrameNavigationStarting(
+        &NavigationStartingEventHandler::create(Box::new(move |_, args| {
+            let Some(args) = args else { return Ok(()) };
+            let Some(shield) = crate::shield::global() else { return Ok(()) };
+            if !shield.is_active() {
+                return Ok(());
+            }
+            let uri = pwstr(|p| args.Uri(p));
+            let top = TOP_HOST.with(|t| t.borrow().get(&id).cloned()).unwrap_or_default();
+            if let Verdict::Block { .. } = shield.check(&uri, &top, T_SUBDOCUMENT).verdict {
+                args.SetCancel(true)?;
+                if shield.record_block(id, private, &top, &uri) {
+                    c.post(|ctl| ctl.mark_shield());
+                }
+            }
+            Ok(())
+        })),
+        &mut token,
+    )?;
     Ok(())
 }
 
@@ -454,6 +571,10 @@ pub fn install_shell(pw: PlatformWebview, ctl: ControllerHandle, devtools: bool)
 
 pub fn remove_tab(id: TabId) {
     TABS.with(|t| t.borrow_mut().remove(&id));
+    TOP_HOST.with(|t| t.borrow_mut().remove(&id));
+    if let Some(shield) = crate::shield::global() {
+        shield.forget_tab(id);
+    }
     FIND_HOOKED.with(|f| f.borrow_mut().remove(&id));
 }
 

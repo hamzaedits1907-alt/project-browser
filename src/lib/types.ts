@@ -536,3 +536,69 @@ export interface PageSnapshotView {
   totalChars: number;
   truncated: boolean;
 }
+
+// ---- Project Shield -----------------------------------------------------------------------------
+
+export type ShieldListState = "missing" | "ready" | "updating" | "failed";
+
+export interface ShieldList {
+  id: string;
+  name: string;
+  description: string;
+  homepage: string;
+  license: string;
+  enabled: boolean;
+  state: ShieldListState;
+  error: string | null;
+  rules: number;
+  fetchedAt: number | null;
+  version: string | null;
+}
+
+export interface ShieldSite {
+  host: string;
+  enabled: boolean;
+  /** Blocked on this site since the browser started (private tabs are not counted). */
+  blocked: number;
+}
+
+export interface ShieldEngineStats {
+  blockRules: number;
+  exceptionRules: number;
+  cosmeticSkipped: number;
+  unsupportedSkipped: number;
+  malformedSkipped: number;
+}
+
+export interface ShieldView {
+  enabled: boolean;
+  lists: ShieldList[];
+  userRules: string;
+  userRulesAccepted: number;
+  disabledSites: string[];
+  engine: { rules: number; unindexed: number; stats: ShieldEngineStats };
+  blockedSession: number;
+  blockedLifetime: number;
+  updating: boolean;
+  site: ShieldSite | null;
+  /** When the core made this view, in ms since 1970. */
+  now: number;
+}
+
+export interface ShieldTabView {
+  blocked: number;
+  hosts: { host: string; count: number }[];
+}
+
+export interface ShieldUpdateSummary {
+  updated: number;
+  unchanged: number;
+  failed: number;
+  alreadyRunning: boolean;
+}
+
+/** Blocked-request counts per tab id, sent a few times per second at most. */
+export interface ShieldEvent {
+  tabs: Record<string, number>;
+  total: number;
+}

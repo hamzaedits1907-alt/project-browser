@@ -23,6 +23,8 @@ export interface AppState {
   toasts: Toast[];
   /** Bumped whenever bookmarks change so pages can refetch. */
   bookmarksRev: number;
+  /** What Project Shield blocked, per tab id (tabs with nothing blocked are absent). */
+  shieldBlocked: Record<string, number>;
 }
 
 const EMPTY_BROWSER: BrowserState = {
@@ -47,6 +49,7 @@ let state: AppState = {
   find: null,
   toasts: [],
   bookmarksRev: 0,
+  shieldBlocked: {},
 };
 
 const listeners = new Set<() => void>();
@@ -140,6 +143,7 @@ export async function init(): Promise<void> {
       on("pb:prompts", (prompts) => set({ prompts })),
       on("pb:find", (find) => set({ find })),
       on("pb:bookmarks", () => set({ bookmarksRev: state.bookmarksRev + 1 })),
+      on("pb:shield", (e) => set({ shieldBlocked: e.tabs })),
       on("pb:ui", (e) => {
         if (e.kind === "toast") toast(e.message);
         else emitBus(e.kind);

@@ -39,6 +39,10 @@ import type {
   ProfileSummary,
   SearchEngine,
   Settings,
+  ShieldEvent,
+  ShieldTabView,
+  ShieldUpdateSummary,
+  ShieldView,
   SitePermission,
   SourceBrowser,
   Suggestion,
@@ -130,6 +134,12 @@ export const COMMANDS = [
   "app_info",
   "update_check",
   "update_install",
+  "shield_state",
+  "shield_tab",
+  "shield_set",
+  "shield_site",
+  "shield_update",
+  "shield_test",
 ] as const;
 
 export type CommandName = (typeof COMMANDS)[number];
@@ -253,6 +263,15 @@ export const api = {
   appInfo: () => call<AppInfo>("app_info"),
   updateCheck: () => call<UpdateStatus>("update_check"),
   updateInstall: () => call("update_install"),
+
+  /** `site` (an address or host) adds that site's state to the answer. */
+  shieldState: (site?: string) => call<ShieldView>("shield_state", { site }),
+  shieldTab: (tabId: TabId) => call<ShieldTabView>("shield_tab", { tabId }),
+  /** Omitted fields are kept. */
+  shieldSet: (patch: { enabled?: boolean; listId?: string; listEnabled?: boolean; userRules?: string }) => call<ShieldView>("shield_set", { patch }),
+  shieldSite: (host: string, enabled: boolean) => call<ShieldView>("shield_site", { host, enabled }),
+  shieldUpdate: (force: boolean) => call<ShieldUpdateSummary>("shield_update", { force }),
+  shieldTest: (url: string, page: string) => call<string>("shield_test", { url, page }),
 };
 
 /** Events emitted by the controller. Only the shell webview ever receives them. */
@@ -267,6 +286,7 @@ export interface EventMap {
   "pb:ui": UiEvent;
   "pb:ai": AiEvent;
   "pb:update": UpdateEvent;
+  "pb:shield": ShieldEvent;
 }
 
 export type EventName = keyof EventMap;

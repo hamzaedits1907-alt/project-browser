@@ -4,6 +4,8 @@ import { api } from "../../lib/ipc";
 import { activeTab, attempt, useStore } from "../../lib/store";
 import { openImportWizard } from "../../lib/ui";
 import { ai, toggleAi } from "../../features/ai/aiStore";
+import { badgeText } from "../../features/shield/shieldModel";
+import { ShieldPopover } from "../menus/ShieldPopover";
 import { DownloadsPopover } from "../menus/DownloadsPopover";
 import { MainMenu } from "../menus/MainMenu";
 import { Icon } from "../ui/Icon";
@@ -17,8 +19,11 @@ export function Toolbar() {
   const aiOpen = ai.use((s) => s.open);
   const menuRef = useRef<HTMLDivElement>(null);
   const dlRef = useRef<HTMLDivElement>(null);
+  const shieldRef = useRef<HTMLDivElement>(null);
+  const blocked = useStore((s) => (s.browser.activeId === null ? 0 : (s.shieldBlocked[String(s.browser.activeId)] ?? 0)));
   const [menuOpen, setMenuOpen] = useState(false);
   const [dlOpen, setDlOpen] = useState(false);
+  const [shieldOpen, setShieldOpen] = useState(false);
 
   const activeDownloads = downloads.filter((d) => d.state === "inprogress" || d.state === "paused").length;
   const web = !!tab && !tab.url.startsWith("browser://");
@@ -51,6 +56,12 @@ export function Toolbar() {
           <Icon name="bolt" size={16} filled={gaming} />
           <span>{gaming ? "Gaming" : "Game"}</span>
         </button>
+        {web && (
+          <div ref={shieldRef} className="tool-anchor">
+            <IconButton icon="shieldCheck" label="Project Shield: ads and trackers blocked on this page" active={shieldOpen} onClick={() => setShieldOpen((o) => !o)} />
+            {badgeText(blocked) !== "" && <span className="tool-badge">{badgeText(blocked)}</span>}
+          </div>
+        )}
         <IconButton icon="sparkle" label="AI assistant" active={aiOpen} onClick={toggleAi} />
         <div ref={dlRef} className="tool-anchor">
           <IconButton icon="download" label="Downloads (Ctrl+J)" active={dlOpen} onClick={() => setDlOpen((o) => !o)} />
@@ -61,6 +72,7 @@ export function Toolbar() {
         </div>
       </div>
 
+      <ShieldPopover open={shieldOpen && web} onClose={() => setShieldOpen(false)} anchor={shieldRef} />
       <DownloadsPopover open={dlOpen} onClose={() => setDlOpen(false)} anchor={dlRef} />
       <MainMenu open={menuOpen} onClose={() => setMenuOpen(false)} anchor={menuRef} onImport={openImportWizard} />
     </div>

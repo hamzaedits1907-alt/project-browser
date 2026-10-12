@@ -85,6 +85,12 @@ const COMMANDS: &[&str] = &[
     "app_info",
     "update_check",
     "update_install",
+    "shield_state",
+    "shield_tab",
+    "shield_set",
+    "shield_site",
+    "shield_update",
+    "shield_test",
 ];
 
 /// Test executables link the whole Tauri runtime when they use its mock app, and that runtime needs Common

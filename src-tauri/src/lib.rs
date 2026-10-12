@@ -14,6 +14,7 @@ pub mod navigation;
 pub mod profile;
 pub mod secrets;
 pub mod settings;
+pub mod shield;
 pub mod shortcuts;
 pub mod tabs;
 pub mod updates;
@@ -90,6 +91,10 @@ pub fn run() {
                 log::info!("startup: --gaming given, Gaming Mode is on for this session");
                 settings.gaming_mode = true;
             }
+            // The Shield must exist before the controller creates the first tab webview.
+            let shield_config: shield::ShieldConfig = db.kv_get(shield::KV_KEY)?.unwrap_or_default();
+            shield::init(data_root.join("shield"), shield_config).start();
+            log::info!("startup: Project Shield ready (starter rules active, stored lists loading)");
             let onboarded: bool = db.kv_get("onboarded")?.unwrap_or(false);
             let geometry: Option<WindowGeometry> = db.kv_get("window")?;
 

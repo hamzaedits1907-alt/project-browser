@@ -16,6 +16,7 @@ export const SECTION_META: SectionMeta[] = [
   { id: "performance", label: "Performance", icon: "gauge", keywords: "memory ram sleeping tabs cpu speed" },
   { id: "gaming", label: "Gaming Mode", icon: "gamepad", keywords: "game fps background tabs downloads" },
   { id: "privacy", label: "Privacy & security", icon: "shield", keywords: "clear data history cookies cache permissions camera location private" },
+  { id: "shield", label: "Project Shield", icon: "shieldCheck", keywords: "ads ad blocker tracker blocking easylist easyprivacy filter lists allowlist exceptions" },
   { id: "passwords", label: "Passwords & autofill", icon: "key", keywords: "passwords logins sign in fill address autofill saved export csv" },
   { id: "profiles", label: "Profiles", icon: "user", keywords: "profile account switch" },
   { id: "import", label: "Import data", icon: "import", keywords: "chrome edge brave bookmarks history migrate move passwords tabs" },

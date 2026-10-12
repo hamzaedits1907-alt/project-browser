@@ -95,6 +95,7 @@ impl Controller {
             if self.startup.first_page_ms.is_none() && is_recordable(&source) {
                 if let Some(start) = self.startup.process_start {
                     self.startup.first_page_ms = Some(now_ms() - start);
+                    log::info!("startup: first page loaded {} ms after process start", now_ms() - start);
                 }
             }
             if !private && is_recordable(&source) {

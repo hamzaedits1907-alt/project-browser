@@ -210,3 +210,35 @@ jobs:
           path: rust-test.log
           if-no-files-found: ignore
           retention-days: 7
+
+  # Measurements on the hosted runner (2-4 vCPUs, shared hardware): useful to compare builds and browsers run the same
+  # way on the same kind of machine, not as absolute numbers for a desktop PC. Informational: never blocks a build.
+  benchmark:
+    name: Benchmarks (informational)
+    runs-on: windows-latest
+    needs: installer
+    timeout-minutes: 45
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: project-browser-portable-exe
+          path: pb
+      - name: Startup (cold and warm)
+        shell: pwsh
+        run: ./scripts/startup-bench.ps1 -Exe pb/project-browser.exe -Runs 3 -Out bench-results
+      - name: Memory and CPU with 1, 5, 10 and 20 tabs (Project Browser)
+        shell: pwsh
+        run: ./scripts/benchmark.ps1 -Browser project-browser -Exe pb/project-browser.exe -Tabs 1,5,10,20 -LoadWait 25 -Settle 10 -Idle 30 -Out bench-results
+      - name: Same pages in Google Chrome (the runner's copy)
+        shell: pwsh
+        run: ./scripts/benchmark.ps1 -Browser chrome -Exe "C:\Program Files\Google\Chrome\Application\chrome.exe" -Tabs 1,5,10,20 -LoadWait 25 -Settle 10 -Idle 30 -Out bench-results
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: bench-results
+          if-no-files-found: ignore
+          retention-days: 30

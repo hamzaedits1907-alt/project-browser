@@ -48,7 +48,17 @@ $Pages = @(
   "https://developer.mozilla.org/en-US/docs/Web/HTML",
   "https://news.ycombinator.com/",
   "https://www.iana.org/",
-  "https://www.kernel.org/"
+  "https://www.kernel.org/",
+  "https://www.rust-lang.org/",
+  "https://www.python.org/",
+  "https://www.debian.org/",
+  "https://www.apache.org/",
+  "https://www.sqlite.org/",
+  "https://curl.se/",
+  "https://www.php.net/",
+  "https://go.dev/",
+  "https://www.openbsd.org/",
+  "https://www.postgresql.org/"
 )
 
 $cpus = [Environment]::ProcessorCount

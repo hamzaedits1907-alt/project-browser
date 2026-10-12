@@ -1,0 +1,50 @@
+<!doctype html>
+<!-- Engine capability test for the CEF prototype. Served over http://127.0.0.1 by the CI job so cookies and storage
+     behave as on a real site. The results end up in document.title ("PBTEST {json}"), which the host window shows as
+     its title, so the probe can read them from outside without any automation inside the engine. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PBTEST running</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; margin: 32px; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+  .ok { background: #d8f5df; } .no { background: #ffe0e0; }
+  div { padding: 10px 12px; border-radius: 8px; }
+  @container (min-width: 1px) { .cq { outline: 0; } }
+</style>
+</head>
+<body>
+<script>
+(async () => {
+  const r = {};
+  const t = async (name, fn) => { try { r[name] = await fn(); } catch (e) { r[name] = 'error:' + (e && e.message || e); } };
+  await t('ua', () => navigator.userAgent.match(/Chrome\/[\d.]+/)?.[0] || navigator.userAgent);
+  await t('js_modern', () => { const o = { a: { b: 1n } }; return o?.a?.b === 1n && [1, [2]].flat().length === 2 && typeof structuredClone === 'function'; });
+  await t('css_grid', () => CSS.supports('display', 'grid'));
+  await t('css_has', () => CSS.supports('selector(:has(a))'));
+  await t('css_container', () => CSS.supports('container-type', 'inline-size'));
+  await t('local_storage', () => { localStorage.setItem('pb', '1'); return localStorage.getItem('pb') === '1'; });
+  await t('cookies', () => { document.cookie = 'pbtest=1; path=/; max-age=60'; return document.cookie.includes('pbtest=1'); });
+  await t('indexeddb', () => new Promise((ok) => { const q = indexedDB.open('pbtest', 1); q.onsuccess = () => ok(true); q.onerror = () => ok(false); }));
+  await t('webgl2', () => !!document.createElement('canvas').getContext('webgl2'));
+  await t('webgpu', () => !!navigator.gpu);
+  await t('web_audio', () => typeof AudioContext === 'function' && new AudioContext().sampleRate > 0);
+  await t('video_h264', () => document.createElement('video').canPlayType('video/mp4; codecs="avc1.42E01E"') || 'no');
+  await t('video_vp9', () => document.createElement('video').canPlayType('video/webm; codecs="vp9"') || 'no');
+  await t('video_av1', () => document.createElement('video').canPlayType('video/mp4; codecs="av01.0.05M.08"') || 'no');
+  await t('mse_h264', () => !!window.MediaSource && MediaSource.isTypeSupported('video/mp4; codecs="avc1.42E01E"'));
+  await t('mse_vp9', () => !!window.MediaSource && MediaSource.isTypeSupported('video/webm; codecs="vp9"'));
+  await t('eme_widevine', () => navigator.requestMediaKeySystemAccess('com.widevine.alpha', [{ videoCapabilities: [{ contentType: 'video/webm; codecs="vp9"' }] }]).then(() => true, () => false));
+  await t('service_worker', () => 'serviceWorker' in navigator);
+  await t('wasm', () => typeof WebAssembly === 'object' && WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])));
+  for (const [k, v] of Object.entries(r)) {
+    const d = document.createElement('div');
+    d.className = v === true || (typeof v === 'string' && /probably|maybe|Chrome/.test(v)) ? 'ok' : 'no';
+    d.textContent = `${k}: ${v}`;
+    document.body.appendChild(d);
+  }
+  document.title = 'PBTEST ' + JSON.stringify(r);
+})();
+</script>
+</body>
+</html>

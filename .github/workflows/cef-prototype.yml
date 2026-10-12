@@ -1,0 +1,90 @@
+name: CEF engine prototype
+
+# Step 1 of moving Project Browser from the system's WebView2 to its own bundled Chromium (see docs/ENGINE.md).
+# Downloads a pinned, stable CEF build (Chromium Embedded Framework, Spotify's automated builds), compiles CEF's own
+# minimal embedding sample (cefsimple) against it with CMake and MSVC, runs it against real sites and an engine test
+# page, and reports what rendered, which media formats the bundled engine supports, how many processes it runs and
+# how large the distribution is. Nothing here ships to users.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "prototype/cef/**"
+      - "scripts/cef-probe.ps1"
+      - ".github/workflows/cef-prototype.yml"
+
+permissions:
+  contents: read
+
+env:
+  # Pinned: change deliberately, together with docs/ENGINE.md. Chromium 152 stable, October 2026.
+  CEF_VERSION: "152.0.13+g841e03d+chromium-152.0.7977.158"
+
+jobs:
+  prototype:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache the CEF distribution
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: cef
+          key: cef-${{ env.CEF_VERSION }}-windows64-standard
+
+      - name: Download CEF (standard distribution)
+        if: steps.cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $name = "cef_binary_$($env:CEF_VERSION)_windows64"
+          $url = "https://cef-builds.spotifycdn.com/" + [uri]::EscapeDataString("$name.tar.bz2")
+          Invoke-WebRequest -Uri $url -OutFile cef.tar.bz2
+          # The index publishes a SHA-1 for every file; check it before unpacking anything.
+          $index = Invoke-RestMethod "https://cef-builds.spotifycdn.com/index.json"
+          $entry = $index.windows64.versions | Where-Object { $_.cef_version -eq $env:CEF_VERSION } | Select-Object -First 1
+          $file = $entry.files | Where-Object { $_.type -eq "standard" } | Select-Object -First 1
+          $sha1 = (Get-FileHash cef.tar.bz2 -Algorithm SHA1).Hash.ToLower()
+          Write-Host "expected $($file.sha1), got $sha1"
+          if ($sha1 -ne $file.sha1) { throw "CEF download checksum mismatch" }
+          New-Item -ItemType Directory -Force cef | Out-Null
+          tar -xjf cef.tar.bz2 -C cef --strip-components=1
+          Remove-Item cef.tar.bz2
+
+      - name: Build cefsimple (CMake + MSVC)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force cef/build | Out-Null
+          cmake -S cef -B cef/build -G "Visual Studio 17 2022" -A x64
+          cmake --build cef/build --config Release --target cefsimple
+          Get-ChildItem cef/build/tests/cefsimple/Release | Select-Object Name, Length | Format-Table -AutoSize
+
+      - name: Distribution size
+        shell: pwsh
+        run: |
+          $dir = "cef/build/tests/cefsimple/Release"
+          $bytes = (Get-ChildItem $dir -Recurse -File | Measure-Object Length -Sum).Sum
+          "{0:N1} MB on disk for the runnable engine (exe, libcef.dll, resources, locales)" -f ($bytes / 1MB) | Tee-Object -FilePath size.txt
+          Compress-Archive -Path "$dir/*" -DestinationPath engine.zip -CompressionLevel Optimal
+          "{0:N1} MB compressed (zip)" -f ((Get-Item engine.zip).Length / 1MB) | Tee-Object -FilePath size.txt -Append
+
+      - name: Serve the engine test page
+        shell: pwsh
+        run: Start-Process python -ArgumentList "-m", "http.server", "8765", "--bind", "127.0.0.1", "--directory", "prototype/cef"
+
+      - name: Render real pages in the bundled engine
+        shell: pwsh
+        run: ./scripts/cef-probe.ps1 -Exe cef/build/tests/cefsimple/Release/cefsimple.exe -TestUrl http://127.0.0.1:8765/engine-test.html -ReportDir cef-report
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cef-prototype-report
+          path: |
+            cef-report
+            size.txt
+          if-no-files-found: ignore
+          retention-days: 30

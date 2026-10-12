@@ -45,7 +45,7 @@ impl SplitView {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", tag = "op")]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "op")]
 pub enum SplitOp {
     /// Splits `tab_id` (default: the active tab) with `with` (default: the nearest other web tab).
     Open {

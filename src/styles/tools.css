@@ -278,6 +278,7 @@
   font-family: Georgia, "Times New Roman", serif;
 }
 .reader-swatch {
+  corner-shape: round;
   width: 22px;
   height: 22px;
   border-radius: 50%;
@@ -597,6 +598,7 @@
   gap: 6px;
 }
 .media-play {
+  corner-shape: round;
   width: 44px;
   height: 44px;
   border-radius: 50%;
@@ -652,6 +654,7 @@
   justify-content: center;
 }
 .focus-ring {
+  corner-shape: round;
   --p: 0%;
   width: 132px;
   height: 132px;

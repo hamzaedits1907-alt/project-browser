@@ -75,7 +75,7 @@ export default function Focus() {
             {days.map((d, i) => (
               <div key={d} className="week-col" title={`${d}: ${formatDuration(dayTotals[i] ?? 0)}`}>
                 <div className="week-bar" style={{ height: `${((dayTotals[i] ?? 0) / maxDay) * 100}%` }} />
-                <span className="dim small">{new Date(d).toLocaleDateString(undefined, { weekday: "short" })}</span>
+                <span className="dim small">{new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { weekday: "short" })}</span>
               </div>
             ))}
           </div>

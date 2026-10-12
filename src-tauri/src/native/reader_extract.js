@@ -6,15 +6,16 @@
   const MAX_BLOCKS = 1500;
   const MAX_CHARS = 400000;
   const SKIP = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'SVG', 'CANVAS', 'IFRAME', 'OBJECT', 'EMBED', 'NAV',
-    'FOOTER', 'ASIDE', 'FORM', 'BUTTON', 'INPUT', 'TEXTAREA', 'SELECT', 'DIALOG', 'HEADER']);
-  const NOISE = /(^|[\s_-])(comment|share|social|related|promo|advert|sponsor|newsletter|subscribe|sidebar|footer|cookie|banner|popup|modal|breadcrumb|toolbar|menu|nav)([\s_-]|$)/i;
+    'FOOTER', 'ASIDE', 'FORM', 'BUTTON', 'INPUT', 'TEXTAREA', 'SELECT', 'DIALOG', 'HEADER', 'TABLE']);
+  const NOISE = /(^|[\s_-])(comment|share|social|related|promo|advert|sponsor|newsletter|subscribe|sidebar|footer|cookie|banner|popup|modal|breadcrumb|toolbar|menu|nav|infobox|navbox|metadata|toc|reflist|references|hatnote|mw-editsection|catlinks|ambox)([\s_-]|$)/i;
 
   const hidden = (el) => {
     if (el.hidden || el.getAttribute('aria-hidden') === 'true') return true;
     const s = getComputedStyle(el);
     return s.display === 'none' || s.visibility === 'hidden';
   };
-  const textOf = (el) => (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+  // Citation markers ([1], [edit]) are noise when read on their own or aloud.
+  const textOf = (el) => (el.innerText || el.textContent || '').replace(/\[(\d+|edit|citation needed)\]/gi, '').replace(/\s+/g, ' ').trim();
 
   // Score candidate containers by the amount of paragraph text directly inside them (a light Readability).
   const score = new Map();

@@ -9,6 +9,8 @@
   let hooked = null;
   let toast = null;
   let toastTimer = 0;
+  // timeupdate covers playback; seeked and playing cover a jump straight into a segment.
+  const EVENTS = ["timeupdate", "seeked", "playing"];
 
   const currentId = () => {
     try {
@@ -49,9 +51,9 @@
     toastTimer = setTimeout(() => toast && (toast.style.display = "none"), 4500);
   };
 
-  const check = (e) => {
-    const video = e.target;
-    if (!data.segments.length || currentId() !== data.videoId || video.seeking) return;
+  const check = () => {
+    const video = hooked;
+    if (!video || !data.segments.length || currentId() !== data.videoId || video.seeking) return;
     const t = video.currentTime;
     for (const seg of data.segments) {
       if (t >= seg.start && t < seg.end - 0.35 && !allowed.has(seg.start + ":" + seg.end)) {
@@ -65,8 +67,10 @@
   const hook = () => {
     const video = document.querySelector("video.html5-main-video") || document.querySelector("video");
     if (video && video !== hooked) {
-      if (hooked) hooked.removeEventListener("timeupdate", check);
-      video.addEventListener("timeupdate", check);
+      for (const ev of EVENTS) {
+        if (hooked) hooked.removeEventListener(ev, check);
+        video.addEventListener(ev, check);
+      }
       hooked = video;
     }
   };
@@ -76,6 +80,7 @@
     if (next.videoId !== data.videoId) allowed.clear();
     data = next;
     hook();
+    check();
   };
   setInterval(hook, 1500);
 })();

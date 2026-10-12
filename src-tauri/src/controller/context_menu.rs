@@ -70,6 +70,14 @@ impl Controller {
             self.close_context_menu(previous);
         }
         let (x, y) = menu_position(self.cursor_in_window(), reported, origin, area);
+        log::info!(
+            "context menu {}: {} target{}{}, {} WebView2 commands offered",
+            req.id,
+            req.target.kind,
+            if req.target.editable { " (editable)" } else { "" },
+            if req.target.link_url.is_some() { " (link)" } else { "" },
+            req.items.len()
+        );
         let private = tab_id.and_then(|id| self.tabs.get(id)).map(|t| t.private).unwrap_or(self.private_window);
         self.emit("pb:contextmenu", ContextMenuEvent { request_id: req.id, tab_id, x, y, private, target: req.target, items: req.items });
     }
@@ -86,6 +94,7 @@ impl Controller {
 
     /// The shell closed menu `id`, with one of WebView2's commands chosen or none.
     pub fn context_menu_done(&mut self, id: u64, command: Option<i32>) {
+        log::info!("context menu {id}: closed{}", if command.is_some() { " with a WebView2 command" } else { "" });
         if self.layout.context_menu == Some(id) {
             self.layout.context_menu = None;
         }

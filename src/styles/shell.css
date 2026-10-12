@@ -1764,3 +1764,6 @@
   display: flex;
   flex: none;
 }
+:root[data-tabs="pill"] .tab.in-group:not(.is-active) {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--group) 45%, transparent);
+}

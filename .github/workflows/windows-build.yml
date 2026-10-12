@@ -132,6 +132,22 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+      # Real mouse and keyboard input on the runner's desktop: loads a page, right-clicks it, tears a tab off into a
+      # new window, and captures the browser's own windows. Informational until it has proven stable on runners.
+      - name: Native UI probe (informational)
+        shell: pwsh
+        continue-on-error: true
+        run: ./scripts/ui-probe.ps1 -Exe src-tauri/target/release/project-browser.exe -ReportDir ui-probe
+
+      - name: Upload UI probe evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-ui-probe
+          path: ui-probe
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: List build output
         shell: pwsh
         run: Get-ChildItem -Recurse src-tauri/target/release/bundle | Where-Object { -not $_.PSIsContainer } | Select-Object FullName, Length

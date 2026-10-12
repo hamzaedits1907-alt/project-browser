@@ -1,4 +1,4 @@
-# Chrome feature parity (0.4.0)
+# Chrome feature parity (0.5.0)
 
 Project Browser is **not** equivalent to Chrome and does not claim to be. This matrix says, feature by feature, what exists,
 what has actually been checked, and what is missing or impossible on this engine (WebView2). Use it to decide what to build
@@ -29,11 +29,11 @@ found the download bug fixed in 0.4.0.
 | Window position and size restored | Built, unverified | Saved per window with the session. |
 | Restore all windows after a restart | Built, unverified | `session_windows`; old single-window sessions still load (tested). |
 | Move a tab to another or a new window | Built, unverified | The native webview is re-parented, so the page keeps running. Tab-model move is unit-tested. |
-| Drag a tab out into a new window / into another window | Built, unverified | Uses HTML5 drag and drop. Whether Chromium passes a custom drag type between two WebView2 windows has not been observed; the tab menu ("Move tab to…") does the same without dragging. |
+| Drag a tab out into a new window / into another window | Built, CI-probed | **0.5.0**: pointer capture in the shell plus `WindowFromPoint` in the core (no HTML5 drag types). Torn-off tabs open a window at the pointer; other windows show a drop marker and take the tab at that position. The CI UI probe tears a tab off with real mouse input. |
 | New tab, close, reopen closed tab | Tested | |
 | Pin / unpin, reorder | Tested | |
 | Duplicate, mute, loading indicator, tab search | Built, unverified | |
-| Tab groups and group colours | Missing, feasible | Not built. |
+| Tab groups and group colours | Tested (model) | **0.5.0**: name, nine colours, collapse, add/remove, ungroup, close; saved with the session. |
 | Sleeping tabs / unload | Tested | Beyond Chrome's defaults; see `docs/ARCHITECTURE.md`. |
 | Restore tabs after a crash | Built, unverified | The session is saved after changes (debounced 0.8 s) and on exit. |
 
@@ -47,7 +47,7 @@ found the download bug fixed in 0.4.0.
 | Zoom (per tab, Chrome's steps) | Tested (steps) | A default zoom setting is missing. |
 | Fullscreen (F11, page fullscreen) | Built, unverified | |
 | Print (Ctrl+P) | Platform default | WebView2's own print dialog; not wired to a menu item. |
-| Save page as | Platform default | Via the page's context menu (WebView2). |
+| Save page as, print, copy/paste, save image, picture in picture | Built, CI-probed | **0.5.0**: offered in Project Browser's own right-click menu; executed by WebView2 through `SelectedCommandId`. |
 | Downloads manager with progress, pause, resume, cancel | Built, unverified | **0.4.0 fixes the stuck download found in the 0.3.0 log**: a download is tied to the tab that started it, and closing that tab used to kill it and leave a row stuck on "in progress". Now the webview stays alive until the download ends, tabs opened only to download are closed, and a dead transfer is reported as interrupted. Every download is logged with its interrupt reason. |
 | Safe handling of downloaded programs | Tested | Executables and scripts need a second confirmation to open; Windows SmartScreen still applies. |
 | Picture in picture | Platform default | Chromium's own button on video pages. |
@@ -93,3 +93,14 @@ found the download bug fixed in 0.4.0.
 See `docs/BENCHMARK.md` for the method. **No new benchmark numbers are published for 0.4.0**: nothing could be run on the
 build PC. What changed for speed is listed in `docs/SHIELD.md` (the rule index) and the release notes; they are design
 facts, not measurements.
+
+## 0.5.0 additions
+
+| Capability | Status | Notes |
+|---|---|---|
+| Own right-click menu (page, link, image, selection, field, media) | Built, CI-probed | `native/context_menu.rs`; WebView2's menu never shows. |
+| Side panels (bookmarks, history, downloads, Shield) | Tested (frontend) | Docked next to the page. |
+| Element hiding (cosmetic filters) | Tested (engine) | Site-specific rules only; generic/procedural counted, not applied. |
+| Vertical tabs, themes, density, customizable toolbar and sidebar | Tested (frontend) | |
+| Extensions | Platform limit | Unchanged: WebView2's extension API is experimental and has no Web Store; not offered. |
+| Installable web apps (PWA) | Platform limit | WebView2 has no install API; pinned sidebar sites cover quick access. |

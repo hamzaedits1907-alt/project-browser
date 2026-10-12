@@ -493,6 +493,24 @@ unsafe fn install_tab_inner(id: TabId, pw: &PlatformWebview, ctl: &ControllerHan
         log::warn!("tab {id}: the browser's own right-click menu is unavailable for this tab: {e}");
     }
 
+    if let Ok(wv2) = webview.cast::<ICoreWebView2_2>() {
+        // Project Shield's element hiding: one stylesheet of the site's own hiding rules, added once the document exists.
+        wv2.add_DOMContentLoaded(
+            &DOMContentLoadedEventHandler::create(Box::new(move |sender, _| {
+                let Some(wv) = sender else { return Ok(()) };
+                let host = TOP_HOST.with(|t| t.borrow().get(&id).cloned()).unwrap_or_default();
+                let Some(css) = crate::shield::global().and_then(|s| s.cosmetic_css(&host)) else { return Ok(()) };
+                let Ok(text) = serde_json::to_string(&css) else { return Ok(()) };
+                let script = format!(
+                    "(()=>{{const s=document.createElement('style');s.dataset.projectShield='';s.textContent={text};(document.head||document.documentElement).appendChild(s);}})()"
+                );
+                let _ = wv.ExecuteScript(&HSTRING::from(script), &ExecuteScriptCompletedHandler::create(Box::new(|_, _| Ok(()))));
+                Ok(())
+            })),
+            &mut token,
+        )?;
+    }
+
     if let Err(e) = hook_shield(&webview, &env, id, init.private, ctl) {
         log::warn!("tab {id}: request blocking is unavailable for this tab: {e}");
     }

@@ -146,6 +146,19 @@ None of these has been seen working against NVIDIA; CI only runs mocked tests. M
 | T3 | Visit an IP-address check page | The proxy's address (if it is a forwarding proxy) | |
 | T4 | Stop the proxy and load a page | The page fails; it does not load directly | |
 
+## 0.5.0 checks
+
+| # | Do this | Expect | Result |
+|---|---|---|---|
+| U1 | Right-click a page, a link, an image, selected text, a text field, a video | Project Browser's menu (never the Microsoft one); Copy/Paste/Save image really work | |
+| U2 | Right-click a text field, choose Paste | The clipboard text lands in the field | |
+| U3 | Drag a tab down out of the strip | It becomes a new window at the pointer; the page keeps playing | |
+| U4 | Drag a tab from one window onto another window's tabs | A marker shows where; release puts it there | |
+| U5 | Group three tabs, rename, recolour, collapse; restart | The group comes back with its tabs | |
+| U6 | Settings → Appearance: try each theme, corners, density, vertical tabs | The whole window follows; nothing overlaps the page | |
+| U7 | Visit a news site with ads | Fewer empty ad boxes than 0.4.0 (element hiding) | |
+| U8 | Task Manager → Processes | "Project Browser" group with the WebView2 processes under it | |
+
 ## Known behaviour to expect (not defects)
 
 * A restored tab starts with only its last URL: **back/forward history is not restored**. WebView2 has no API to rebuild

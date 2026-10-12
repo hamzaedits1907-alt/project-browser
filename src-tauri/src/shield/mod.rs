@@ -12,6 +12,7 @@
 //!   no cosmetic (element-hiding) filtering in this version; those rules are counted and skipped.
 //! * The user can switch the Shield off everywhere or for one site. Nothing is recorded per URL: only counts.
 
+pub mod cosmetic;
 pub mod lists;
 pub mod rules;
 
@@ -245,6 +246,14 @@ impl Shield {
     }
 
     /// Decides one request. Pure with respect to counters: call [`Shield::record_block`] when acting on a block.
+    /// The element-hiding stylesheet for a page on `host`, when the Shield is on for it and has rules for it.
+    pub fn cosmetic_css(&self, host: &str) -> Option<String> {
+        if host.is_empty() || !self.on_for(host) {
+            return None;
+        }
+        self.engine.read().ok()?.cosmetic_css(host)
+    }
+
     pub fn check(&self, url: &str, top_host: &str, kind: u16) -> Decision {
         if !self.is_active() {
             return Decision { verdict: Verdict::Allow, note: Some("The Shield is switched off.") };
@@ -381,6 +390,7 @@ impl Shield {
             return;
         }
         let stats = engine.stats();
+        let cosmetic = engine.cosmetic_stats();
         let total = engine.rule_count();
         let fallback = engine.fallback_count();
         if let Ok(mut lists) = self.lists.lock() {
@@ -397,9 +407,11 @@ impl Shield {
             *built = (stats, total, fallback, user_rules);
         }
         log::info!(
-            "shield: rules ready ({total} rules, {fallback} unindexed, {} cosmetic and {} unsupported skipped)",
-            stats.cosmetic_skipped,
-            stats.unsupported_skipped
+            "shield: rules ready ({total} rules, {fallback} unindexed, {} unsupported skipped; cosmetic: {} site rules applied, {} generic and {} procedural not applied)",
+            stats.unsupported_skipped,
+            cosmetic.site_rules,
+            cosmetic.generic_skipped,
+            cosmetic.unsupported_skipped
         );
     }
 

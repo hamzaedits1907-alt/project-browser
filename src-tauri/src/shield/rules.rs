@@ -474,6 +474,7 @@ pub struct EngineStats {
 pub struct EngineBuilder {
     rules: Vec<Rule>,
     stats: EngineStats,
+    cosmetic: super::cosmetic::CosmeticIndex,
 }
 
 impl EngineBuilder {
@@ -487,7 +488,10 @@ impl EngineBuilder {
         for line in text.lines() {
             match parse_line(line, list) {
                 Parsed::Nothing => {}
-                Parsed::Skipped(Skip::Cosmetic) => self.stats.cosmetic_skipped += 1,
+                Parsed::Skipped(Skip::Cosmetic) => {
+                    self.stats.cosmetic_skipped += 1;
+                    self.cosmetic.add_line(line);
+                }
                 Parsed::Skipped(Skip::Unsupported) => self.stats.unsupported_skipped += 1,
                 Parsed::Skipped(Skip::Malformed) => self.stats.malformed_skipped += 1,
                 Parsed::Rule(r) => {
@@ -504,7 +508,7 @@ impl EngineBuilder {
     }
 
     pub fn build(self) -> Engine {
-        let EngineBuilder { rules, stats } = self;
+        let EngineBuilder { rules, stats, cosmetic } = self;
         // How many rules could be filed under each word: the rarest word wins, so buckets stay small. Words are
         // kept as 64-bit hashes; a collision only means one extra rule is checked, never a wrong answer.
         let mut freq: HashMap<u64, u32> = HashMap::new();
@@ -532,7 +536,7 @@ impl EngineBuilder {
             }
         }
         index.shrink_to_fit();
-        Engine { rules, index, fallback, stats }
+        Engine { rules, index, fallback, stats, cosmetic }
     }
 }
 
@@ -574,6 +578,7 @@ pub struct Engine {
     /// Rules with no usable word: tried for every request, so there must be few.
     fallback: Vec<u32>,
     stats: EngineStats,
+    cosmetic: super::cosmetic::CosmeticIndex,
 }
 
 impl Engine {
@@ -583,6 +588,15 @@ impl Engine {
 
     pub fn stats(&self) -> EngineStats {
         self.stats
+    }
+
+    /// The element-hiding stylesheet for a site (site-specific rules only; see `cosmetic.rs`).
+    pub fn cosmetic_css(&self, host: &str) -> Option<String> {
+        super::cosmetic::CosmeticIndex::stylesheet(&self.cosmetic.selectors_for(host))
+    }
+
+    pub fn cosmetic_stats(&self) -> super::cosmetic::CosmeticStats {
+        self.cosmetic.stats()
     }
 
     pub fn rule_count(&self) -> usize {

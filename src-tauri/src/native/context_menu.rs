@@ -187,6 +187,9 @@ unsafe fn read_target(t: &ICoreWebView2ContextMenuTarget) -> ContextTarget {
 }
 
 /// Replaces WebView2's menu on `webview`. Runtimes without the API (older than ICoreWebView2_11) keep the default menu.
+///
+/// # Safety
+/// Must run on the UI thread that owns `webview` (WebView2 COM objects are single-threaded).
 pub unsafe fn hook(webview: &ICoreWebView2, owner: MenuOwner, ctl: &ControllerHandle) -> windows::core::Result<()> {
     let Ok(wv11) = webview.cast::<ICoreWebView2_11>() else {
         log::warn!("this WebView2 runtime has no ContextMenuRequested; its own menu stays in use");

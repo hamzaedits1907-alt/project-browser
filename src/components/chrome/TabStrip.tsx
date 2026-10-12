@@ -50,6 +50,10 @@ export function TabStrip({ vertical = false }: { vertical?: boolean }) {
     el.scrollLeft += e.deltaY + e.deltaX;
   };
 
+  // Natural width of the horizontal strip: full-size tabs until the window runs out of room (then they shrink).
+  const visibleTabs = tabs.filter((t) => t.group === null || !groups.find((g) => g.id === t.group)?.collapsed);
+  const naturalWidth = visibleTabs.reduce((w, t) => w + (t.pinned ? 43 : 227), 0) + groups.length * 64 + 12;
+
   const counts = new Map<number, number>();
   for (const t of tabs) if (t.group !== null) counts.set(t.group, (counts.get(t.group) ?? 0) + 1);
 
@@ -100,6 +104,7 @@ export function TabStrip({ vertical = false }: { vertical?: boolean }) {
       <div
         ref={listRef}
         className={cx("tabs", foreign && foreign.before === null && "drop-at-end")}
+        style={vertical ? undefined : { width: naturalWidth }}
         onWheel={onWheel}
         onPointerMove={handlers.onPointerMove}
         onPointerUp={handlers.onPointerUp}

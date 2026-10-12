@@ -51,6 +51,7 @@ import type {
   UpdateEvent,
   UpdateStatus,
   Viewport,
+  WindowBrief,
 } from "./types";
 
 /**
@@ -134,6 +135,8 @@ export const COMMANDS = [
   "app_info",
   "update_check",
   "update_install",
+  "windows_list",
+  "tab_to_window",
   "shield_state",
   "shield_tab",
   "shield_set",
@@ -271,6 +274,10 @@ export const api = {
   shieldSet: (patch: { enabled?: boolean; listId?: string; listEnabled?: boolean; userRules?: string }) => call<ShieldView>("shield_set", { patch }),
   shieldSite: (host: string, enabled: boolean) => call<ShieldView>("shield_site", { host, enabled }),
   shieldUpdate: (force: boolean) => call<ShieldUpdateSummary>("shield_update", { force }),
+  /** All browser windows (the asking window is marked `current`). */
+  windowsList: () => call<WindowBrief[]>("windows_list"),
+  /** Moves a tab to the window `target`, or to a new window. The page keeps running. Resolves to the window's label. */
+  tabToWindow: (id: TabId, target?: string) => call<string>("tab_to_window", { id, target }),
   shieldTest: (url: string, page: string) => call<string>("shield_test", { url, page }),
 };
 

@@ -9,12 +9,20 @@ export interface ShortcutGroup {
 
 export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
+    title: "Windows",
+    items: [
+      { keys: ["Ctrl", "N"], label: "New window" },
+      { keys: ["Ctrl", "Shift", "N"], label: "New private window" },
+      { keys: ["Ctrl", "Shift", "W"], label: "Close window" },
+      { keys: ["Alt", "F4"], label: "Close window (the last one closes the browser)" },
+    ],
+  },
+  {
     title: "Tabs",
     items: [
       { keys: ["Ctrl", "T"], label: "New tab" },
-      { keys: ["Ctrl", "Shift", "N"], label: "New private tab" },
       { keys: ["Ctrl", "W"], label: "Close tab" },
-      { keys: ["Ctrl", "Shift", "T"], label: "Reopen closed tab" },
+      { keys: ["Ctrl", "Shift", "T"], label: "Reopen closed tab or window" },
       { keys: ["Ctrl", "Tab"], label: "Next tab" },
       { keys: ["Ctrl", "Shift", "Tab"], label: "Previous tab" },
       { keys: ["Ctrl", "1-8"], label: "Go to tab by position" },

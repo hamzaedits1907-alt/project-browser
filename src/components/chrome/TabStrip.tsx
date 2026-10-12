@@ -3,6 +3,7 @@ import type { DragEvent, MouseEvent } from "react";
 
 import { api } from "../../lib/ipc";
 import { attempt, useStore } from "../../lib/store";
+import { useLoad } from "../../lib/useLoad";
 import { clampSlot, moveTargetIndex, slotForPointer } from "../../lib/tabs";
 import type { Tab } from "../../lib/types";
 import { IconButton } from "../ui/controls";
@@ -36,10 +37,17 @@ export function TabStrip() {
     setDragId(tab.id);
   }, []);
 
-  const onDragEnd = useCallback(() => {
-    setDragId(null);
-    setSlot(null);
-  }, []);
+  const onDragEnd = useCallback(
+    (e?: DragEvent) => {
+      // A drop nobody accepted means the tab was dragged out of the strip: it becomes a window of its own.
+      if (e && dragId !== null && e.dataTransfer.dropEffect === "none" && tabs.length > 1) {
+        void attempt(() => api.tabToWindow(dragId), "Could not open a new window");
+      }
+      setDragId(null);
+      setSlot(null);
+    },
+    [dragId, tabs.length],
+  );
 
   const rects = () =>
     [...(listRef.current?.querySelectorAll<HTMLElement>("[data-tab-id]") ?? [])].map((el) => {
@@ -47,7 +55,15 @@ export function TabStrip() {
       return { left: r.left, width: r.width };
     });
 
+  const foreignTab = (e: DragEvent): boolean => dragId === null && e.dataTransfer.types.includes("text/x-pb-tab");
+
   const onDragOver = (e: DragEvent) => {
+    if (foreignTab(e)) {
+      // A tab dragged here from another window: accept it.
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      return;
+    }
     if (dragId === null) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
@@ -58,6 +74,16 @@ export function TabStrip() {
 
   const onDrop = (e: DragEvent) => {
     e.preventDefault();
+    if (foreignTab(e)) {
+      const id = Number(e.dataTransfer.getData("text/x-pb-tab"));
+      if (Number.isFinite(id) && id > 0) {
+        void attempt(async () => {
+          const me = (await api.windowsList()).find((w) => w.current);
+          if (me) await api.tabToWindow(id, me.label);
+        }, "Could not move the tab");
+      }
+      return;
+    }
     const dragged = tabs.find((t) => t.id === dragId);
     const from = tabs.findIndex((t) => t.id === dragId);
     if (dragged && from >= 0 && slot !== null) {
@@ -86,6 +112,9 @@ export function TabStrip() {
 
 function TabContextMenu({ menu, onClose, tabCount, closedCount, activeId }: { menu: MenuState | null; onClose: () => void; tabCount: number; closedCount: number; activeId: number | null }) {
   const tab = menu?.tab;
+  const windowCount = useStore((s) => s.browser.windowCount);
+  // The window list is fetched when the menu opens, so it is never out of date.
+  const others = useLoad(() => api.windowsList(), menu && windowCount > 1 ? `${tab?.id}:${windowCount}` : null).data?.filter((w) => !w.current && (!w.private || !!tab?.private)) ?? [];
   const point = menu ? { x: menu.x, y: menu.y } : null;
   const canSleep = !!tab && tab.id !== activeId && tab.lifecycle === "live";
   return (
@@ -103,12 +132,28 @@ function TabContextMenu({ menu, onClose, tabCount, closedCount, activeId }: { me
             <MenuItem icon="star" filledIcon={tab.bookmarked} label={tab.bookmarked ? "Remove bookmark" : "Bookmark this tab"} onSelect={() => void attempt(() => api.bookmarkToggle(tab.id))} />
           )}
           <MenuSeparator />
+          <MenuItem
+            icon="layers"
+            label="Move tab to a new window"
+            disabled={tabCount < 2}
+            onSelect={() => void attempt(() => api.tabToWindow(tab.id), "Could not open a new window")}
+          />
+          {others.map((w) => (
+            <MenuItem
+              key={w.label}
+              icon={w.private ? "incognito" : "layers"}
+              label={`Move to: ${w.title || "New tab"}`}
+              hint={`${w.tabCount} ${w.tabCount === 1 ? "tab" : "tabs"}`}
+              onSelect={() => void attempt(() => api.tabToWindow(tab.id, w.label), "Could not move the tab")}
+            />
+          ))}
+          <MenuSeparator />
           {canSleep && <MenuItem icon="moon" label="Put to sleep" onSelect={() => void attempt(() => api.tabSleep(tab.id, false))} />}
           {canSleep && <MenuItem icon="trash" label="Unload (free all memory)" onSelect={() => void attempt(() => api.tabSleep(tab.id, true))} />}
           {canSleep && <MenuSeparator />}
           <MenuItem icon="close" label="Close tab" hint="Ctrl+W" onSelect={() => void attempt(() => api.tabClose(tab.id))} />
           <MenuItem icon="layers" label="Close other tabs" disabled={tabCount < 2} onSelect={() => void attempt(() => api.tabCloseOthers(tab.id))} />
-          <MenuItem icon="history" label="Reopen closed tab" hint="Ctrl+Shift+T" disabled={closedCount === 0} onSelect={() => void attempt(() => api.tabReopen())} />
+          <MenuItem icon="history" label="Reopen closed tab or window" hint="Ctrl+Shift+T" disabled={closedCount === 0} onSelect={() => void attempt(() => api.tabReopen())} />
         </div>
       )}
     </Popover>

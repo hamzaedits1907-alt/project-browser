@@ -141,6 +141,7 @@ impl Controller {
         let shell_renderer: Option<u32> =
             snap.shell_frame.and_then(|sf| snap.renderer_frames.iter().find(|(_, frames)| frames.contains(&sf)).map(|(pid, _)| *pid));
 
+        let all_tabs = self.all_tabs();
         let mut procs: Vec<(u32, &'static str)> = vec![(host_pid, "host")];
         procs.extend(snap.processes.iter().copied().filter(|(pid, _)| *pid != host_pid));
 
@@ -160,7 +161,7 @@ impl Controller {
                 "renderer" if !tab_ids.is_empty() => {
                     let titles: Vec<String> = tab_ids
                         .iter()
-                        .filter_map(|id| self.tabs.get(*id))
+                        .filter_map(|id| all_tabs.iter().find(|t| t.id == *id))
                         .map(|t| if t.title.is_empty() { crate::navigation::host_of(&t.url).unwrap_or_default() } else { t.title.clone() })
                         .collect();
                     format!("Tab: {}", titles.join(", "))
@@ -181,21 +182,23 @@ impl Controller {
                 tab_stats.push(TabStat { id: *id, memory: p.memory, cpu: p.cpu, shared, heavy });
             }
         }
-        let mut heavy_changed = false;
         let heavy_ids: HashSet<TabId> = tab_stats.iter().filter(|t| t.heavy).map(|t| t.id).collect();
-        let ids: Vec<TabId> = self.tabs.tabs().iter().map(|t| t.id).collect();
-        for id in ids {
-            if let Some(t) = self.tabs.get_mut(id) {
-                let heavy = heavy_ids.contains(&id);
-                if t.heavy != heavy {
-                    t.heavy = heavy;
-                    heavy_changed = true;
+        self.each_window(|c| {
+            let mut heavy_changed = false;
+            let ids: Vec<TabId> = c.tabs.tabs().iter().map(|t| t.id).collect();
+            for id in ids {
+                if let Some(t) = c.tabs.get_mut(id) {
+                    let heavy = heavy_ids.contains(&id);
+                    if t.heavy != heavy {
+                        t.heavy = heavy;
+                        heavy_changed = true;
+                    }
                 }
             }
-        }
-        if heavy_changed {
-            self.mark_state();
-        }
+            if heavy_changed {
+                c.mark_state();
+            }
+        });
 
         if self.perf.gpu.is_none() && !self.perf.gpu_failed {
             self.perf.gpu = GpuSampler::new();
@@ -206,7 +209,7 @@ impl Controller {
         let shell_memory = stats.iter().filter(|p| p.kind == "host").map(|p| p.memory).sum();
         let total_memory: u64 = stats.iter().map(|p| p.memory).sum();
         let total_cpu = if stats.iter().any(|p| p.cpu.is_some()) { Some(stats.iter().filter_map(|p| p.cpu).sum()) } else { None };
-        let tabs = self.tabs.tabs();
+        let tabs = &all_tabs;
         let sample = PerfSample {
             timestamp: now_ms(),
             total_memory,
@@ -225,7 +228,7 @@ impl Controller {
             gaming: self.settings.gaming_mode,
         };
         if !self.perf.subscribers.is_empty() {
-            self.emit("pb:perf", &sample);
+            self.emit_all("pb:perf", &sample);
         }
         self.perf.last = Some(sample);
         self.apply_memory_pressure(total_memory);

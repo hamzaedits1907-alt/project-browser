@@ -15,7 +15,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 use tauri_plugin_updater::{Update, Updater, UpdaterExt};
 
 use crate::commands::AppState;
@@ -187,7 +187,7 @@ pub async fn check(app: &AppHandle, state: &UpdateState) -> Result<UpdateStatus>
 }
 
 fn emit(app: &AppHandle, ev: UpdateEvent) {
-    let _ = app.emit_to("main", "pb:update", ev);
+    crate::window::emit_to_shells(app, "pb:update", ev);
 }
 
 /// Downloads the update the user was shown, verifies its signature and hands it to the installer.

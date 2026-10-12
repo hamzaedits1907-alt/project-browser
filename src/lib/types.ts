@@ -39,6 +39,9 @@ export interface BrowserState {
   fullscreen: boolean;
   browserFullscreen: boolean;
   gaming: boolean;
+  /** This window holds private tabs only and is never saved. */
+  privateWindow: boolean;
+  windowCount: number;
 }
 
 export type SearchEngine = "google" | "bing" | "duckduckgo" | "brave" | "startpage" | "ecosia";
@@ -463,6 +466,11 @@ export interface Viewport {
 export type BrowserCommand =
   | { type: "newTab" }
   | { type: "newPrivateTab" }
+  | { type: "newWindow" }
+  | { type: "newPrivateWindow" }
+  | { type: "closeWindow" }
+  | { type: "reopenWindow" }
+  | { type: "quit" }
   | { type: "closeTab" }
   | { type: "reopenTab" }
   | { type: "nextTab" }
@@ -601,4 +609,16 @@ export interface ShieldUpdateSummary {
 export interface ShieldEvent {
   tabs: Record<string, number>;
   total: number;
+}
+
+// ---- Windows --------------------------------------------------------------------------------
+
+/** One browser window, as the "move to window" menu lists it. */
+export interface WindowBrief {
+  label: string;
+  title: string;
+  private: boolean;
+  tabCount: number;
+  /** The window that asked. */
+  current: boolean;
 }

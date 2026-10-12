@@ -857,8 +857,16 @@ mod tests {
 
     #[test]
     fn matching_is_case_insensitive() {
-        let e = engine("||Ads.Example.COM^\n/BANNER/\n");
+        let e = engine("||Ads.Example.COM^\n/BANNER/ad.gif\n");
         assert!(blocked(&e, "HTTPS://ADS.EXAMPLE.COM/X", "s.org", T_IMAGE));
-        assert!(blocked(&e, "https://s.org/Banner/x.png", "s.org", T_IMAGE));
+        assert!(blocked(&e, "https://s.org/Banner/AD.gif", "s.org", T_IMAGE));
+    }
+
+    #[test]
+    fn a_rule_enclosed_in_slashes_is_a_regular_expression_and_is_skipped() {
+        // That is what the format defines: a path rule is written /banner/*, never /banner/.
+        assert!(matches!(parse_line("/banner/", 0), Parsed::Skipped(Skip::Unsupported)));
+        assert!(matches!(parse_line("/ad[0-9]+/", 0), Parsed::Skipped(Skip::Unsupported)));
+        assert!(matches!(parse_line("/banner/*", 0), Parsed::Rule(_)));
     }
 }

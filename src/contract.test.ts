@@ -53,7 +53,10 @@ describe("command registry", () => {
     const cap = JSON.parse(read("src-tauri/capabilities/shell.json")) as { webviews: string[]; permissions: string[]; local: boolean; remote?: unknown; windows?: unknown };
     const allowed = cap.permissions.filter((p) => p.startsWith("allow-")).map((p) => p.slice("allow-".length).replace(/-/g, "_"));
     expect(sorted(allowed)).toEqual(sorted(rust));
-    expect(cap.webviews).toEqual(["main"]);
+    // Only the browser windows' own shell webviews: "main" and the extra windows "win-<n>". Tab webviews ("tab-<n>") and
+    // popups ("popup-<n>") show remote content and must never match.
+    expect(cap.webviews).toEqual(["main", "win-*"]);
+    for (const label of ["tab-1", "tab-12", "popup-1"]) expect(cap.webviews.some((w) => new RegExp("^" + w.replace("*", ".*") + "$").test(label))).toBe(false);
     expect(cap.local).toBe(true);
     expect(cap.remote).toBeUndefined();
     expect(cap.windows).toBeUndefined();

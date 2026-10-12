@@ -1,6 +1,8 @@
 import { useRef, useState } from "react";
 
+import { useStore } from "../../lib/store";
 import { TabSearch } from "../menus/TabSearch";
+import { Icon } from "../ui/Icon";
 import { IconButton } from "../ui/controls";
 import { TabStrip } from "./TabStrip";
 import { WindowControls } from "./WindowControls";
@@ -8,6 +10,7 @@ import { WindowControls } from "./WindowControls";
 export function TitleBar() {
   const searchRef = useRef<HTMLDivElement>(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const privateWindow = useStore((s) => s.browser.privateWindow);
   return (
     <div className="titlebar" data-tauri-drag-region>
       <div className="brand" data-tauri-drag-region aria-hidden="true">
@@ -24,6 +27,11 @@ export function TitleBar() {
       </div>
       <TabStrip />
       <div className="drag-fill" data-tauri-drag-region />
+      {privateWindow && (
+        <div className="private-badge" role="status" title="Nothing in this window is saved: no history, cookies or sessions outlive it.">
+          <Icon name="incognito" size={15} /> Private
+        </div>
+      )}
       <div ref={searchRef} className="titlebar-tools">
         <IconButton icon="chevronDown" label="Search tabs" size={16} active={searchOpen} onClick={() => setSearchOpen((o) => !o)} />
       </div>

@@ -3,6 +3,9 @@
 //! This module holds no webview handles; the controller maps tab ids to
 //! webviews. Keeping it pure lets the trickiest browser-state rules be tested.
 
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 
 pub type TabId = u64;
@@ -134,11 +137,29 @@ pub struct TabStrip {
     active: Option<TabId>,
     closed: Vec<ClosedTab>,
     next_id: TabId,
+    /// Shared by all windows of the browser so a tab id names one tab everywhere.
+    shared_ids: Option<Arc<AtomicU64>>,
 }
 
 impl TabStrip {
     pub fn new() -> Self {
         TabStrip { next_id: 1, ..Default::default() }
+    }
+
+    /// A strip whose ids come from a counter shared with the other windows.
+    pub fn with_shared_ids(ids: Arc<AtomicU64>) -> Self {
+        TabStrip { next_id: 1, shared_ids: Some(ids), ..Default::default() }
+    }
+
+    fn alloc_id(&mut self) -> TabId {
+        match &self.shared_ids {
+            Some(ids) => ids.fetch_add(1, Ordering::SeqCst),
+            None => {
+                let id = self.next_id;
+                self.next_id += 1;
+                id
+            }
+        }
     }
 
     pub fn tabs(&self) -> &[Tab] {
@@ -185,8 +206,7 @@ impl TabStrip {
     /// from another tab go right after the opener (after its earlier children),
     /// everything else goes to the end.
     pub fn create(&mut self, spec: NewTab, now: i64) -> TabId {
-        let id = self.next_id;
-        self.next_id += 1;
+        let id = self.alloc_id();
         let mut tab = Tab::new(id, spec.url, spec.pinned, spec.private);
         tab.opener = spec.opener;
         tab.title = spec.title.unwrap_or_default();
@@ -228,9 +248,29 @@ impl TabStrip {
     /// Removes a tab and picks the next active tab: the opener if this was a
     /// freshly opened child, else the right neighbour, else the left one.
     pub fn close(&mut self, id: TabId, now: i64) -> Option<Tab> {
+        self.remove(id, now, true)
+    }
+
+    /// Takes a tab out of the strip to put it into another window. Unlike `close`, it is not remembered for reopening.
+    pub fn detach(&mut self, id: TabId, now: i64) -> Option<Tab> {
+        self.remove(id, now, false)
+    }
+
+    /// Puts a tab that came from another window into this strip (pinned tabs join the pinned group, others go last).
+    pub fn attach(&mut self, mut tab: Tab, activate: bool, now: i64) {
+        tab.opener = None;
+        let id = tab.id;
+        let index = if tab.pinned { self.pinned_count() } else { self.tabs.len() };
+        self.tabs.insert(index, tab);
+        if activate || self.active.is_none() {
+            self.activate(id, now);
+        }
+    }
+
+    fn remove(&mut self, id: TabId, now: i64, remember: bool) -> Option<Tab> {
         let index = self.index_of(id)?;
         let tab = self.tabs.remove(index);
-        if !tab.private && !(tab.url == crate::navigation::NEW_TAB_URL && tab.title.is_empty()) {
+        if remember && !tab.private && !(tab.url == crate::navigation::NEW_TAB_URL && tab.title.is_empty()) {
             self.closed.push(ClosedTab { url: tab.url.clone(), title: tab.title.clone(), favicon: tab.favicon.clone(), pinned: tab.pinned, index });
             if self.closed.len() > MAX_CLOSED {
                 self.closed.remove(0);
@@ -333,6 +373,62 @@ mod tests {
 
     fn urls(s: &TabStrip) -> Vec<String> {
         s.tabs().iter().map(|t| t.url.clone()).collect()
+    }
+
+    #[test]
+    fn strips_sharing_a_counter_never_hand_out_the_same_id() {
+        let ids = Arc::new(AtomicU64::new(1));
+        let mut a = TabStrip::with_shared_ids(ids.clone());
+        let mut b = TabStrip::with_shared_ids(ids);
+        let seen = [a.create(spec("a1"), 0), b.create(spec("b1"), 0), a.create(spec("a2"), 0), b.create(spec("b2"), 0)];
+        let mut sorted = seen.to_vec();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), 4, "{seen:?}");
+        // Strips created with `new` keep counting from 1, as before.
+        assert_eq!(TabStrip::new().create(spec("x"), 0), 1);
+    }
+
+    #[test]
+    fn a_tab_can_move_between_strips_with_its_state_and_without_being_remembered_as_closed() {
+        let ids = Arc::new(AtomicU64::new(1));
+        let mut from = TabStrip::with_shared_ids(ids.clone());
+        let mut to = TabStrip::with_shared_ids(ids);
+        let a = from.create(spec("a"), 0);
+        let b = from.create(spec("b"), 0);
+        let c = from.create(spec("c"), 0);
+        from.get_mut(b).unwrap().title = "Bee".into();
+        from.get_mut(b).unwrap().zoom = 1.5;
+        from.activate(b, 1);
+
+        let moved = from.detach(b, 2).unwrap();
+        assert_eq!((moved.id, moved.title.as_str(), moved.zoom), (b, "Bee", 1.5));
+        assert!(from.closed().is_empty(), "moving is not closing");
+        assert_eq!(from.active_id(), Some(c), "the neighbour takes over in the window the tab left");
+        assert_eq!(urls(&from), ["a", "c"]);
+
+        to.create(spec("x"), 0);
+        to.attach(moved, true, 3);
+        assert_eq!(urls(&to), ["x", "b"]);
+        assert_eq!(to.active_id(), Some(b));
+        assert_eq!(to.get(b).unwrap().title, "Bee");
+        assert!(from.get(a).is_some() && from.get(b).is_none());
+    }
+
+    #[test]
+    fn attached_pinned_tabs_join_the_pinned_group_and_openers_are_dropped() {
+        let mut s = TabStrip::new();
+        let p = s.create(NewTab { url: "pinned".into(), pinned: true, activate: true, ..Default::default() }, 0);
+        s.create(spec("plain"), 0);
+        let mut foreign = Tab::new(99, "pin2".into(), true, false);
+        foreign.opener = Some(p);
+        s.attach(foreign, false, 1);
+        assert_eq!(urls(&s), ["pinned", "pin2", "plain"]);
+        assert_eq!(s.get(99).unwrap().opener, None);
+        assert_eq!(s.active_id(), Some(p), "attaching without activate keeps the current tab");
+        let mut empty = TabStrip::new();
+        empty.attach(Tab::new(7, "only".into(), false, false), false, 1);
+        assert_eq!(empty.active_id(), Some(7), "an empty strip always has an active tab");
     }
 
     #[test]

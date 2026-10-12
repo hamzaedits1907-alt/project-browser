@@ -19,9 +19,12 @@ mod gaming;
 mod perf;
 mod sleep_policy;
 mod tabs;
+mod window_set;
 
 use std::collections::HashMap;
+use std::sync::atomic::AtomicU64;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -38,6 +41,7 @@ pub use downloads::DownloadCommand;
 pub use perf::PerfSample;
 pub use sleep_policy::Reason;
 pub use tabs::ZoomMode;
+pub use window_set::WindowBrief;
 
 type Job = Box<dyn FnOnce(&mut Controller) + Send>;
 
@@ -60,6 +64,40 @@ impl ControllerHandle {
             let _ = tx.send(f(c));
         });
         rx.await.map_err(|_| Error::msg("browser controller is not running"))
+    }
+
+    /// Fire-and-forget, run with the window that owns tab `tab` selected (see `windows.rs`).
+    pub fn post_tab(&self, tab: TabId, f: impl FnOnce(&mut Controller) + Send + 'static) {
+        self.post(move |c| {
+            c.select_tab_window(tab);
+            f(c)
+        });
+    }
+
+    /// Fire-and-forget, run with window `label` selected.
+    pub fn post_window(&self, label: String, f: impl FnOnce(&mut Controller) + Send + 'static) {
+        self.post(move |c| {
+            c.select_window(&label);
+            f(c)
+        });
+    }
+
+    /// Like `call`, with window `label` selected. Commands from a shell window use this so they act on that window.
+    pub async fn call_in<T: Send + 'static>(&self, label: String, f: impl FnOnce(&mut Controller) -> T + Send + 'static) -> Result<T> {
+        self.call(move |c| {
+            c.select_window(&label);
+            f(c)
+        })
+        .await
+    }
+
+    /// Like `call`, with the window that owns tab `tab` selected.
+    pub async fn call_tab<T: Send + 'static>(&self, tab: TabId, f: impl FnOnce(&mut Controller) -> T + Send + 'static) -> Result<T> {
+        self.call(move |c| {
+            c.select_tab_window(tab);
+            f(c)
+        })
+        .await
     }
 
     /// Blocking variant with a timeout; only used during shutdown.
@@ -163,6 +201,9 @@ pub struct BrowserState {
     pub fullscreen: bool,
     pub browser_fullscreen: bool,
     pub gaming: bool,
+    /// This window holds private tabs only.
+    pub private_window: bool,
+    pub window_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -174,11 +215,14 @@ struct SessionTab {
     favicon: Option<String>,
 }
 
+/// One window's saved tabs. Sessions written before multi-window support have no `geometry`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct Session {
     tabs: Vec<SessionTab>,
     active: usize,
+    #[serde(default)]
+    geometry: Option<WindowGeometry>,
 }
 
 /// Which saved tabs to recreate on startup, and which of them is selected.
@@ -218,6 +262,18 @@ fn plan_restore(session: Session, startup: crate::settings::StartupBehavior) -> 
     RestorePlan { tabs, active }
 }
 
+/// Where the main window was when the browser last closed: its entry in the saved window list, else the size saved
+/// by earlier versions.
+pub fn saved_main_geometry(db: &Db) -> Option<WindowGeometry> {
+    let sessions: Vec<Session> = db.kv_get("session_windows").ok().flatten().unwrap_or_default();
+    sessions.into_iter().next().and_then(|s| s.geometry).or_else(|| db.kv_get("window").ok().flatten())
+}
+
+fn plan_restore_with_geometry(session: Session, startup: crate::settings::StartupBehavior) -> (RestorePlan, Option<WindowGeometry>) {
+    let geometry = session.geometry.clone();
+    (plan_restore(session, startup), geometry)
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub enum UiEvent {
@@ -234,6 +290,12 @@ struct Dirty {
     find: bool,
     settings: bool,
     bookmarks: bool,
+}
+
+impl Dirty {
+    fn any(&self) -> bool {
+        self.state || self.downloads || self.prompts || self.find || self.settings || self.bookmarks
+    }
 }
 
 pub struct Controller {
@@ -255,6 +317,23 @@ pub struct Controller {
     pub(crate) startup: StartupMetrics,
     pub(crate) first_run: bool,
     pub(crate) shell_ready: bool,
+    /// Label of the window whose state is in `tabs`, `views`, `layout`, `find`, `shell_ready` and `dirty` right now.
+    /// Every entry point that belongs to a window selects it first (see `windows.rs`).
+    pub(crate) current: String,
+    /// The state of every other window.
+    pub(crate) windows: HashMap<String, window_set::WindowState>,
+    /// All window labels in the order they were created (the current one included).
+    pub(crate) window_order: Vec<String>,
+    /// The current window holds private tabs only and is never saved.
+    pub(crate) private_window: bool,
+    /// Tab ids are handed out from one counter for all windows.
+    pub(crate) tab_ids: Arc<AtomicU64>,
+    pub(crate) next_window: u32,
+    pub(crate) closed_windows: Vec<window_set::ClosedWindow>,
+    /// The window that last had keyboard focus; toasts and links opened from outside go there.
+    pub(crate) last_focused: String,
+    /// What the last "close" was, so that Ctrl+Shift+T reopens the right thing.
+    pub(crate) last_close_was_window: bool,
     /// Download id -> the tab that started it (a running download blocks sleeping/unloading that tab).
     pub(crate) download_tabs: HashMap<i64, TabId>,
     /// Bumped each time a tab becomes active; a suspend answer from an older epoch is ignored.
@@ -266,6 +345,8 @@ pub struct Controller {
     pending_urls: Vec<String>,
     load_all: bool,
     dirty: Dirty,
+    /// Changes that concern every window (downloads, settings, bookmarks).
+    gdirty: Dirty,
     session_save_at: Option<Instant>,
     sleep_check_at: Instant,
     /// When the next `pb:shield` event (blocked counts) is due.
@@ -313,6 +394,8 @@ impl Controller {
         }
         let downloads = init.db.downloads_list(DOWNLOAD_HISTORY_LIMIT).unwrap_or_default();
         crate::native::set_download_dir(init.settings.download_dir.as_ref().map(Into::into));
+        let tab_ids = Arc::new(AtomicU64::new(1));
+        let main = crate::window::SHELL_LABEL.to_string();
         Controller {
             app: init.app,
             handle,
@@ -320,7 +403,7 @@ impl Controller {
             profiles: init.profiles,
             db: init.db,
             settings: init.settings,
-            tabs: TabStrip::new(),
+            tabs: TabStrip::with_shared_ids(tab_ids.clone()),
             views: HashMap::new(),
             lingering: HashMap::new(),
             layout: Layout::default(),
@@ -331,6 +414,15 @@ impl Controller {
             startup: StartupMetrics { process_start: init.process_start, ..Default::default() },
             first_run: init.first_run,
             shell_ready: false,
+            current: main.clone(),
+            windows: HashMap::new(),
+            window_order: vec![main.clone()],
+            private_window: false,
+            tab_ids,
+            next_window: 2,
+            closed_windows: Vec::new(),
+            last_focused: main,
+            last_close_was_window: false,
             download_tabs: HashMap::new(),
             epochs: HashMap::new(),
             dirty_until: HashMap::new(),
@@ -338,6 +430,7 @@ impl Controller {
             pending_urls: init.startup_urls,
             load_all: init.load_all,
             dirty: Dirty::default(),
+            gdirty: Dirty::default(),
             session_save_at: None,
             sleep_check_at: Instant::now() + Duration::from_secs(30),
             shield_due: None,
@@ -363,7 +456,7 @@ impl Controller {
                 Err(RecvTimeoutError::Disconnected) => break,
             }
             self.run_timers();
-            self.reconcile_views();
+            self.each_window(|c| c.reconcile_views());
             self.flush();
         }
         self.save_session();
@@ -417,7 +510,7 @@ impl Controller {
         let Some(shield) = crate::shield::global() else { return };
         shield.clear_pending();
         if self.shell_ready {
-            self.emit("pb:shield", ShieldEvent { tabs: shield.tab_counts(), total: shield.session_total() });
+            self.emit_all("pb:shield", ShieldEvent { tabs: shield.tab_counts(), total: shield.session_total() });
         }
         if self.shield_saved_at.elapsed() >= Duration::from_secs(30) {
             self.shield_saved_at = Instant::now();
@@ -448,7 +541,7 @@ impl Controller {
     }
 
     pub(crate) fn mark_downloads(&mut self) {
-        self.dirty.downloads = true;
+        self.gdirty.downloads = true;
     }
 
     pub(crate) fn mark_prompts(&mut self) {
@@ -460,18 +553,27 @@ impl Controller {
     }
 
     pub(crate) fn mark_settings(&mut self) {
-        self.dirty.settings = true;
+        self.gdirty.settings = true;
     }
 
     pub(crate) fn mark_bookmarks(&mut self) {
-        self.dirty.bookmarks = true;
+        self.gdirty.bookmarks = true;
     }
 
-    /// Sends events only to the shell webview ("main"). Never broadcast: tab
-    /// webviews host untrusted content.
+    /// Sends an event to the current window's shell webview. Events only ever go to shell webviews, never broadcast:
+    /// tab webviews host untrusted content.
     pub(crate) fn emit<S: Serialize + Clone>(&self, event: &str, payload: S) {
-        if let Err(e) = self.app.emit_to("main", event, payload) {
+        if let Err(e) = self.app.emit_to(self.current.as_str(), event, payload) {
             log::warn!("emit {event} failed: {e}");
+        }
+    }
+
+    /// Sends an event to every window's shell webview.
+    pub(crate) fn emit_all<S: Serialize + Clone>(&self, event: &str, payload: S) {
+        for label in &self.window_order {
+            if let Err(e) = self.app.emit_to(label.as_str(), event, payload.clone()) {
+                log::warn!("emit {event} to {label} failed: {e}");
+            }
         }
     }
 
@@ -479,11 +581,33 @@ impl Controller {
         self.emit("pb:ui", event);
     }
 
+    /// Shows a message in the window the user last used.
     pub(crate) fn toast(&self, message: impl Into<String>) {
-        self.ui(UiEvent::Toast { message: message.into() });
+        let target = if self.window_order.contains(&self.last_focused) { &self.last_focused } else { &self.current };
+        if let Err(e) = self.app.emit_to(target.as_str(), "pb:ui", UiEvent::Toast { message: message.into() }) {
+            log::warn!("toast failed: {e}");
+        }
     }
 
+    /// Sends every pending change to the window it concerns. Changes that concern all windows reach all of them.
     fn flush(&mut self) {
+        let global = std::mem::take(&mut self.gdirty);
+        if self.windows.is_empty() {
+            self.flush_current(&global);
+            return;
+        }
+        let everywhere = global.any();
+        let keep = self.current.clone();
+        for label in self.window_order.clone() {
+            let pending = if label == self.current { self.dirty.any() } else { self.windows.get(&label).is_some_and(|w| w.dirty.any()) };
+            if (everywhere || pending) && self.select_window(&label) {
+                self.flush_current(&global);
+            }
+        }
+        self.select_window(&keep);
+    }
+
+    fn flush_current(&mut self, global: &Dirty) {
         if !self.shell_ready {
             return;
         }
@@ -491,21 +615,26 @@ impl Controller {
         if d.state {
             self.emit("pb:state", self.snapshot());
         }
-        if d.downloads {
+        if d.downloads || global.downloads {
             self.emit("pb:downloads", &self.downloads);
         }
         if d.prompts {
-            self.emit("pb:prompts", &self.prompts);
+            self.emit("pb:prompts", self.window_prompts());
         }
         if d.find {
             self.emit("pb:find", &self.find);
         }
-        if d.settings {
+        if d.settings || global.settings {
             self.emit("pb:settings", &self.settings);
         }
-        if d.bookmarks {
+        if d.bookmarks || global.bookmarks {
             self.emit("pb:bookmarks", ());
         }
+    }
+
+    /// The permission prompts that belong to the current window's tabs.
+    pub(crate) fn window_prompts(&self) -> Vec<PermissionPrompt> {
+        self.prompts.iter().filter(|p| self.tabs.get(p.tab_id).is_some()).cloned().collect()
     }
 
     pub fn snapshot(&self) -> BrowserState {
@@ -516,12 +645,18 @@ impl Controller {
             fullscreen: self.layout.browser_fullscreen || self.layout.element_fullscreen.is_some(),
             browser_fullscreen: self.layout.browser_fullscreen,
             gaming: self.settings.gaming_mode,
+            private_window: self.private_window,
+            window_count: self.window_order.len(),
         }
     }
 
     // ---- session ------------------------------------------------------------------
 
-    fn save_session(&mut self) {
+    /// The saved form of the current window, or `None` for a private window or one with nothing worth saving.
+    fn window_session(&self) -> Option<Session> {
+        if self.private_window {
+            return None;
+        }
         let mut session = Session::default();
         for t in self.tabs.tabs().iter().filter(|t| !t.private) {
             if Some(t.id) == self.tabs.active_id() {
@@ -530,15 +665,37 @@ impl Controller {
             let url = t.error.as_ref().map(|e| e.url.clone()).unwrap_or_else(|| t.url.clone());
             session.tabs.push(SessionTab { url, title: t.title.clone(), pinned: t.pinned, favicon: t.favicon.clone() });
         }
-        if let Err(e) = self.db.kv_set("session", &session) {
-            log::error!("failed to save session: {e}");
+        let v = self.layout.viewport;
+        if v.width > 0.0 && v.height > 0.0 {
+            session.geometry = Some(self.window_geometry());
+        }
+        Some(session)
+    }
+
+    pub(crate) fn save_session(&mut self) {
+        let keep = self.current.clone();
+        let mut sessions = Vec::new();
+        for label in self.window_order.clone() {
+            if self.select_window(&label) {
+                if let Some(s) = self.window_session() {
+                    sessions.push(s);
+                }
+            }
+        }
+        self.select_window(&keep);
+        // Older versions read the first window from "session"; keep it current so a downgrade still finds its tabs.
+        if let Some(first) = sessions.first() {
+            if let Err(e) = self.db.kv_set("session", first) {
+                log::error!("failed to save session: {e}");
+            }
+        }
+        if let Err(e) = self.db.kv_set("session_windows", &sessions) {
+            log::error!("failed to save the window list: {e}");
         }
     }
 
-    fn restore_session(&mut self) {
-        let now = now_ms();
-        let session: Option<Session> = self.db.kv_get("session").ok().flatten();
-        let plan = plan_restore(session.unwrap_or_default(), self.settings.startup);
+    /// Creates the tabs of one saved window in the current window. Returns how many were restored.
+    fn restore_window_tabs(&mut self, plan: RestorePlan, now: i64) -> usize {
         let mut restored = 0;
         let mut active = None;
         for (i, st) in plan.tabs.into_iter().enumerate() {
@@ -556,6 +713,35 @@ impl Controller {
         if let Some(a) = active {
             self.tabs.activate(a, now);
         }
+        restored
+    }
+
+    fn restore_session(&mut self) {
+        let now = now_ms();
+        let mut sessions: Vec<Session> = self.db.kv_get("session_windows").ok().flatten().unwrap_or_default();
+        if sessions.is_empty() {
+            if let Some(legacy) = self.db.kv_get::<Session>("session").ok().flatten() {
+                sessions.push(legacy);
+            }
+        }
+        let mut plans: Vec<(RestorePlan, Option<WindowGeometry>)> =
+            sessions.into_iter().map(|s| plan_restore_with_geometry(s, self.settings.startup)).collect();
+        let first = if plans.is_empty() { None } else { Some(plans.remove(0)) };
+        let mut restored = match first {
+            Some((plan, _)) => self.restore_window_tabs(plan, now),
+            None => 0,
+        };
+        // The other saved windows come back as windows of their own.
+        for (plan, geometry) in plans {
+            if plan.tabs.is_empty() {
+                continue;
+            }
+            let tabs = plan.tabs;
+            let active = plan.active.unwrap_or(0);
+            if self.open_window(window_set::WindowSpec { tabs, active, geometry, private: false, empty: false }).is_some() {
+                restored += 1;
+            }
+        }
         let mut opened_from_args = 0;
         let load_all = self.load_all;
         for url in std::mem::take(&mut self.pending_urls) {
@@ -565,10 +751,10 @@ impl Controller {
             opened_from_args += 1;
         }
         let start_on_new_tab = self.settings.startup == crate::settings::StartupBehavior::NewTab && opened_from_args == 0;
-        if restored + opened_from_args == 0 || start_on_new_tab {
+        if self.tabs.is_empty() || restored + opened_from_args == 0 || start_on_new_tab {
             self.new_tab(false, false);
         }
-        log::info!("session restored with {} tabs", self.tabs.len());
+        log::info!("session restored with {} windows", self.window_order.len());
     }
 
     // ---- shell lifecycle ----------------------------------------------------------
@@ -576,11 +762,11 @@ impl Controller {
     pub fn on_shell_ready(&mut self) -> Bootstrap {
         if !self.shell_ready {
             self.shell_ready = true;
-            if let Some(start) = self.startup.process_start {
+            if let (Some(start), None) = (self.startup.process_start, self.startup.shell_ready_ms) {
                 self.startup.shell_ready_ms = Some(now_ms() - start);
                 log::info!("startup: shell UI ready {} ms after process start", now_ms() - start);
             }
-            if let Some(w) = self.app.get_webview_window("main") {
+            if let Some(w) = self.app.get_webview_window(&self.current) {
                 let _ = w.show();
                 let _ = w.set_focus();
             }
@@ -592,7 +778,7 @@ impl Controller {
             profile: self.profile.meta.clone(),
             first_run: self.first_run,
             downloads: self.downloads.clone(),
-            prompts: self.prompts.clone(),
+            prompts: self.window_prompts(),
             version: self.app.package_info().version.to_string(),
         }
     }
@@ -615,11 +801,16 @@ impl Controller {
     pub fn prepare_exit(&mut self) {
         self.save_session();
         self.save_shield_counter();
-        let v = self.layout.viewport;
-        if v.width > 0.0 && v.height > 0.0 && !self.layout.browser_fullscreen {
-            let geom = self.window_geometry();
-            let _ = self.db.kv_set("window", &geom);
+        // Older versions (and the very first window of this one) read the main window's size from "window".
+        let keep = self.current.clone();
+        if self.select_window(crate::window::SHELL_LABEL) {
+            let v = self.layout.viewport;
+            if v.width > 0.0 && v.height > 0.0 && !self.layout.browser_fullscreen {
+                let geom = self.window_geometry();
+                let _ = self.db.kv_set("window", &geom);
+            }
         }
+        self.select_window(&keep);
     }
 
     pub fn complete_first_run(&mut self, profile_name: Option<String>, search: Option<crate::navigation::SearchEngine>) -> Result<()> {
@@ -666,7 +857,7 @@ impl Controller {
             crate::native::set_download_dir(next.download_dir.as_ref().map(Into::into));
         }
         if prev.save_passwords != next.save_passwords || prev.autofill != next.autofill {
-            let private: Vec<TabId> = self.tabs.tabs().iter().filter(|t| t.private).map(|t| t.id).collect();
+            let private: Vec<TabId> = self.all_tabs().iter().filter(|t| t.private).map(|t| t.id).collect();
             let (sp, af) = (next.save_passwords, next.autofill);
             let _ = self.app.run_on_main_thread(move || crate::native::apply_tab_settings(sp, af, private));
         }
@@ -717,6 +908,7 @@ mod tests {
                 st("browser://settings", false),
             ],
             active: 2,
+            geometry: None,
         }
     }
 

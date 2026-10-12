@@ -64,6 +64,10 @@ impl Controller {
 
     /// Periodic check that puts idle background tabs to sleep.
     pub(crate) fn sleep_tick(&mut self) {
+        self.each_window(|c| c.sleep_tick_window());
+    }
+
+    fn sleep_tick_window(&mut self) {
         let now = now_ms();
         let timeout_ms = if self.settings.gaming_mode { GAMING_BACKGROUND_GRACE_MS } else { self.settings.sleep_after_minutes as i64 * 60_000 };
         let action = if self.settings.gaming_mode { self.settings.gaming_background_action } else { BackgroundTabAction::Sleep };
@@ -117,7 +121,7 @@ impl Controller {
         let ctl = self.handle.clone();
         tauri::async_runtime::spawn(async move {
             let dirty = tokio::time::timeout(DIRTY_CHECK_TIMEOUT, rx).await.ok().and_then(|r| r.ok()).flatten().unwrap_or(true);
-            ctl.post(move |c| c.finish_unload(id, dirty, reason));
+            ctl.post_tab(id, move |c| c.finish_unload(id, dirty, reason));
         });
     }
 
@@ -177,18 +181,21 @@ impl Controller {
         if limit == 0 {
             return;
         }
-        let facts = self.tab_facts();
-        match sleep_policy::pressure_action(&facts, total_bytes, limit, self.settings.protect_pinned_tabs) {
-            Some(PressureAction::Sleep(id)) => {
-                log::info!("memory limit: {} MB in use, limit {limit} MB: sleeping tab {id}", total_bytes / (1024 * 1024));
-                self.suspend(id);
+        // One step per window and sample; each window gives up its own least recently used tab.
+        self.each_window(|c| {
+            let facts = c.tab_facts();
+            match sleep_policy::pressure_action(&facts, total_bytes, limit, c.settings.protect_pinned_tabs) {
+                Some(PressureAction::Sleep(id)) => {
+                    log::info!("memory limit: {} MB in use, limit {limit} MB: sleeping tab {id}", total_bytes / (1024 * 1024));
+                    c.suspend(id);
+                }
+                Some(PressureAction::Unload(id)) => {
+                    log::info!("memory limit: {} MB in use, limit {limit} MB: unloading sleeping tab {id}", total_bytes / (1024 * 1024));
+                    c.request_unload(id, Reason::Auto);
+                }
+                None => {}
             }
-            Some(PressureAction::Unload(id)) => {
-                log::info!("memory limit: {} MB in use, limit {limit} MB: unloading sleeping tab {id}", total_bytes / (1024 * 1024));
-                self.request_unload(id, Reason::Auto);
-            }
-            None => {}
-        }
+        });
     }
 
     /// Called when `id` stops being the active tab.
@@ -200,6 +207,14 @@ impl Controller {
 
     /// Applies or reverts Gaming Mode side effects.
     pub(crate) fn apply_gaming(&mut self, on: bool) {
+        self.each_window(|c| c.apply_gaming_tabs(on));
+        self.apply_gaming_downloads(on);
+        self.perf_reschedule();
+        self.each_window(|c| c.mark_state());
+    }
+
+    /// Gaming Mode's effect on the background tabs of the current window.
+    fn apply_gaming_tabs(&mut self, on: bool) {
         let background: Vec<TabId> = self.views.keys().copied().filter(|id| Some(*id) != self.tabs.active_id()).collect();
         if on {
             if self.settings.gaming_low_memory_target {
@@ -212,6 +227,16 @@ impl Controller {
             for id in background {
                 self.put_to_sleep(id, action, Reason::Auto);
             }
+        } else {
+            for id in background {
+                let _ = self.app.run_on_main_thread(move || native::set_memory_target(id, false));
+            }
+        }
+    }
+
+    /// Gaming Mode's effect on downloads (once, not per window).
+    fn apply_gaming_downloads(&mut self, on: bool) {
+        if on {
             if self.settings.gaming_pause_downloads {
                 for d in self.downloads.iter_mut().filter(|d| d.state == crate::db::downloads::DownloadState::InProgress) {
                     d.paused_by_gaming = true;
@@ -223,9 +248,6 @@ impl Controller {
             }
             self.sleep_check_at = std::time::Instant::now() + self.sleep_check_interval();
         } else {
-            for id in background {
-                let _ = self.app.run_on_main_thread(move || native::set_memory_target(id, false));
-            }
             for d in self.downloads.iter_mut().filter(|d| d.paused_by_gaming) {
                 d.paused_by_gaming = false;
                 let id = d.id;
@@ -234,7 +256,5 @@ impl Controller {
             }
             self.mark_downloads();
         }
-        self.perf_reschedule();
-        self.mark_state();
     }
 }

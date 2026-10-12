@@ -14,7 +14,7 @@ interface TabItemProps {
   dragging: boolean;
   onContextMenu: (tab: Tab, e: MouseEvent) => void;
   onDragStart: (tab: Tab, e: DragEvent) => void;
-  onDragEnd: () => void;
+  onDragEnd: (e: DragEvent) => void;
 }
 
 export function TabItem({ tab, active, dragging, onContextMenu, onDragStart, onDragEnd }: TabItemProps) {
@@ -36,7 +36,7 @@ export function TabItem({ tab, active, dragging, onContextMenu, onDragStart, onD
       title={status.length ? `${title}\n${status.join(" · ")}` : title}
       draggable
       onDragStart={(e) => onDragStart(tab, e)}
-      onDragEnd={onDragEnd}
+      onDragEnd={(e) => onDragEnd(e)}
       onPointerDown={(e) => {
         if (e.button === 0) void attempt(() => api.tabActivate(tab.id));
       }}

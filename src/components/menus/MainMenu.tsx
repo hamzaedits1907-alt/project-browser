@@ -6,7 +6,6 @@ import type { BrowserCommand } from "../../lib/types";
 import { toggleAi } from "../../features/ai/aiStore";
 import { update } from "../../features/update/updateStore";
 import { writeLocal } from "../../lib/storage";
-import { closeWindow } from "../../lib/window";
 import { IconButton } from "../ui/controls";
 import { MenuHeading, MenuItem, MenuSeparator, Popover } from "../ui/Popover";
 
@@ -14,7 +13,6 @@ const run = (command: BrowserCommand) => void attempt(() => api.runCommand(comma
 
 export function MainMenu({ open, onClose, anchor, onImport }: { open: boolean; onClose: () => void; anchor: RefObject<HTMLElement | null>; onImport: () => void }) {
   const tab = useStore(activeTab);
-  const closedCount = useStore((s) => s.browser.closedCount);
   const showBar = useStore((s) => s.settings.showBookmarksBar);
   const gaming = useStore((s) => s.settings.gamingMode);
   const web = !!tab && !tab.url.startsWith("browser://");
@@ -37,8 +35,10 @@ export function MainMenu({ open, onClose, anchor, onImport }: { open: boolean; o
           </>
         )}
         <MenuItem icon="plus" label="New tab" hint="Ctrl+T" onSelect={() => run({ type: "newTab" })} />
-        <MenuItem icon="incognito" label="New private tab" hint="Ctrl+Shift+N" onSelect={() => run({ type: "newPrivateTab" })} />
-        <MenuItem icon="history" label="Reopen closed tab" hint="Ctrl+Shift+T" disabled={closedCount === 0} onSelect={() => run({ type: "reopenTab" })} />
+        <MenuItem icon="layers" label="New window" hint="Ctrl+N" onSelect={() => run({ type: "newWindow" })} />
+        <MenuItem icon="incognito" label="New private window" hint="Ctrl+Shift+N" onSelect={() => run({ type: "newPrivateWindow" })} />
+        <MenuItem icon="incognito" label="New private tab" onSelect={() => run({ type: "newPrivateTab" })} />
+        <MenuItem icon="history" label="Reopen closed tab or window" hint="Ctrl+Shift+T" onSelect={() => run({ type: "reopenTab" })} />
         <MenuSeparator />
         <MenuItem icon="bolt" label={gaming ? "Turn off Gaming Mode" : "Turn on Gaming Mode"} hint="Ctrl+Shift+G" checked={gaming} onSelect={() => run({ type: "toggleGamingMode" })} />
         <MenuItem icon="gamepad" label="Gaming dashboard" hint="Ctrl+Shift+D" onSelect={() => run({ type: "openGaming" })} />
@@ -69,7 +69,8 @@ export function MainMenu({ open, onClose, anchor, onImport }: { open: boolean; o
         <MenuItem icon="search" label="Find in page…" hint="Ctrl+F" disabled={!web} onSelect={() => run({ type: "find" })} />
         <MenuSeparator />
         <MenuItem icon="settings" label="Settings" hint="Ctrl+," onSelect={() => run({ type: "openSettings" })} />
-        <MenuItem icon="close" label="Exit" onSelect={() => void closeWindow()} />
+        <MenuItem icon="close" label="Close window" hint="Ctrl+Shift+W" onSelect={() => run({ type: "closeWindow" })} />
+        <MenuItem icon="close" label="Exit (close all windows)" onSelect={() => run({ type: "quit" })} />
       </div>
     </Popover>
   );

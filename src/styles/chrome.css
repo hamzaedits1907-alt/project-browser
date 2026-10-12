@@ -158,3 +158,5 @@
 @keyframes toast-in { from { opacity: 0; transform: translateY(-14px) scale(0.96); } }
 .omni-key { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 14px; color: var(--accent); flex: none; transition: color var(--t-fast), background var(--t-fast); }
 .omni-key:hover, .omni-key.is-on { background: var(--bg-4); color: var(--accent-hi); }
+
+.private-badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; margin-right: 6px; border-radius: 999px; background: rgb(157 123 255 / 0.18); color: var(--text-1); font: 600 12px var(--font-display); white-space: nowrap; }

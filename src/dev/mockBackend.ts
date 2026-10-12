@@ -125,6 +125,8 @@ export function installMockBackend(): void {
     fullscreen: false,
     browserFullscreen: false,
     gaming: settings.gamingMode,
+    privateWindow: params.get("privatewindow") === "1",
+    windowCount: params.get("windows") === "2" ? 2 : 1,
   };
   let bookmarks: Bookmark[] = [
     { id: 1, parentId: null, kind: "folder", title: "Bookmarks bar", url: null, position: 0, createdAt: now },
@@ -438,6 +440,13 @@ export function installMockBackend(): void {
           }, 250);
           return null;
         }
+        case "windows_list":
+          return [
+            { label: "main", title: "GitHub", private: false, tabCount: 4, current: true },
+            { label: "win-2", title: "Steam", private: false, tabCount: 2, current: false },
+          ];
+        case "tab_to_window":
+          return a.target ?? "win-3";
         case "shield_state":
           return shieldView(a.site as string | undefined);
         case "shield_tab":

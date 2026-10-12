@@ -54,9 +54,7 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             if let Some(state) = app.try_state::<AppState>() {
                 for url in urls_from_args(&argv) {
-                    state.ctl.post(move |c| {
-                        c.open_url(url, true);
-                    });
+                    state.ctl.post(move |c| c.open_url_in_focused_window(url));
                 }
             }
             if let Some(w) = app.get_webview_window(window::SHELL_LABEL) {
@@ -96,9 +94,9 @@ pub fn run() {
             shield::init(data_root.join("shield"), shield_config).start();
             log::info!("startup: Project Shield ready (starter rules active, stored lists loading)");
             let onboarded: bool = db.kv_get("onboarded")?.unwrap_or(false);
-            let geometry: Option<WindowGeometry> = db.kv_get("window")?;
+            let geometry: Option<WindowGeometry> = controller::saved_main_geometry(&db);
 
-            let shell = window::build_shell_window(&handle, &profile, geometry)?;
+            let shell = window::build_shell_window(&handle, &profile, window::SHELL_LABEL, geometry, false)?;
             log::info!("startup: shell window and WebView2 controller created (window hidden)");
 
             let ctl = Controller::spawn(ControllerInit {
@@ -116,7 +114,7 @@ pub fn run() {
             log::info!("startup: controller thread started");
             let shell_ctl = ctl.clone();
             let devtools = cfg!(debug_assertions);
-            shell.with_webview(move |pw| native::install_shell(pw, shell_ctl, devtools))?;
+            shell.with_webview(move |pw| native::install_shell(pw, shell_ctl, devtools, window::SHELL_LABEL.to_string()))?;
 
             // Safety net: show the window even if the UI never reports ready.
             let fallback = shell.clone();
@@ -133,15 +131,27 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if window.label() == window::SHELL_LABEL {
-                if let WindowEvent::CloseRequested { .. } = event {
-                    if let Some(state) = window.try_state::<AppState>() {
-                        // Bounded wait: never hang the UI thread on exit.
+            let label = window.label().to_string();
+            if !window::is_shell_label(&label) {
+                return;
+            }
+            let Some(state) = window.try_state::<AppState>() else { return };
+            match event {
+                WindowEvent::CloseRequested { api, .. } => {
+                    if window::shell_count() <= 1 {
+                        // The last window: save everything and quit. Bounded wait: never hang the UI thread on exit.
                         state.ctl.call_blocking(Duration::from_secs(2), |c| c.prepare_exit());
+                        // Popup windows belong to the browser; close them with it.
+                        window.app_handle().exit(0);
+                    } else {
+                        // Other windows stay open. The controller saves this one for "reopen closed window", keeps the
+                        // webviews that still serve a running download, then closes it.
+                        api.prevent_close();
+                        state.ctl.post(move |c| c.close_window(&label));
                     }
-                    // Popup windows belong to the browser; close them with it.
-                    window.app_handle().exit(0);
                 }
+                WindowEvent::Focused(true) => state.ctl.post(move |c| c.last_focused = label),
+                _ => {}
             }
         })
         .invoke_handler(all_commands!())

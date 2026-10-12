@@ -45,7 +45,8 @@ thread_local! {
     static FIND_HOOKED: RefCell<std::collections::HashSet<TabId>> = RefCell::new(Default::default());
     static DOWNLOADS: RefCell<HashMap<i64, ICoreWebView2DownloadOperation>> = RefCell::new(HashMap::new());
     static PERMISSIONS: RefCell<HashMap<u64, PendingPermission>> = RefCell::new(HashMap::new());
-    static SHELL: RefCell<Option<TabCom>> = const { RefCell::new(None) };
+    /// The shell webview of every browser window, by window label.
+    static SHELLS: RefCell<HashMap<String, TabCom>> = RefCell::new(HashMap::new());
     /// Host of the page each tab is loading, for the Shield's first-party checks.
     static TOP_HOST: RefCell<HashMap<TabId, String>> = RefCell::new(HashMap::new());
 }
@@ -161,6 +162,14 @@ fn next_download_id() -> i64 {
     NEXT_DOWNLOAD.fetch_add(1, Ordering::SeqCst)
 }
 
+/// A shell webview to ask profile-wide things of (every window shares the profile). The main window's when it exists.
+fn any_shell() -> Option<TabCom> {
+    SHELLS.with(|s| {
+        let shells = s.borrow();
+        shells.get(crate::window::SHELL_LABEL).or_else(|| shells.values().next()).cloned()
+    })
+}
+
 fn tab_com(id: TabId) -> Option<TabCom> {
     TABS.with(|t| t.borrow().get(&id).cloned())
 }
@@ -186,8 +195,15 @@ pub fn current_mods() -> Mods {
     Mods { ctrl: key_down(0x11), shift: key_down(0x10), alt: key_down(0x12) }
 }
 
+/// Which webview a shortcut was typed into, so it acts on that webview's window.
+#[derive(Clone)]
+enum AccelOrigin {
+    Tab(TabId),
+    Shell(String),
+}
+
 /// Routes browser shortcuts typed into any webview to the controller.
-unsafe fn hook_accelerators(controller: &ICoreWebView2Controller, ctl: &ControllerHandle) -> windows::core::Result<()> {
+unsafe fn hook_accelerators(controller: &ICoreWebView2Controller, ctl: &ControllerHandle, origin: AccelOrigin) -> windows::core::Result<()> {
     let ctl = ctl.clone();
     let mut token = 0i64;
     controller.add_AcceleratorKeyPressed(
@@ -202,7 +218,10 @@ unsafe fn hook_accelerators(controller: &ICoreWebView2Controller, ctl: &Controll
             args.VirtualKey(&mut vk)?;
             if let Some(cmd) = map_key(vk, current_mods()) {
                 args.SetHandled(true)?;
-                ctl.post(move |c| c.run_command(cmd));
+                match &origin {
+                    AccelOrigin::Tab(id) => ctl.post_tab(*id, move |c| c.run_command(cmd)),
+                    AccelOrigin::Shell(label) => ctl.post_window(label.clone(), move |c| c.run_command(cmd)),
+                }
             }
             Ok(())
         })),
@@ -225,7 +244,7 @@ pub fn install_tab(id: TabId, pw: PlatformWebview, ctl: ControllerHandle, init: 
         Err(e) => {
             log::error!("failed to initialise tab {id}: {e}");
             let msg = e.message().to_string();
-            ctl.post(move |c| c.on_native_error(id, msg));
+            ctl.post_tab(id, move |c| c.on_native_error(id, msg));
         }
     }
 }
@@ -256,7 +275,7 @@ unsafe fn install_tab_inner(id: TabId, pw: &PlatformWebview, ctl: &ControllerHan
             let Some(args) = args else { return Ok(()) };
             let uri = pwstr(|p| args.Uri(p));
             note_top_navigation(id, &uri, &c);
-            c.post(move |ctl| ctl.on_nav_starting(id, uri));
+            c.post_tab(id, move |ctl| ctl.on_nav_starting(id, uri));
             Ok(())
         })),
         &mut token,
@@ -268,7 +287,7 @@ unsafe fn install_tab_inner(id: TabId, pw: &PlatformWebview, ctl: &ControllerHan
             let (Some(wv), Some(args)) = (sender, args) else { return Ok(()) };
             let uri = pwstr(|p| wv.Source(p));
             let new_doc = read_bool(|b| args.IsNewDocument(b));
-            c.post(move |ctl| ctl.on_source_changed(id, uri, new_doc));
+            c.post_tab(id, move |ctl| ctl.on_source_changed(id, uri, new_doc));
             Ok(())
         })),
         &mut token,
@@ -280,7 +299,7 @@ unsafe fn install_tab_inner(id: TabId, pw: &PlatformWebview, ctl: &ControllerHan
             let Some(wv) = sender else { return Ok(()) };
             let back = read_bool(|b| wv.CanGoBack(b));
             let fwd = read_bool(|b| wv.CanGoForward(b));
-            c.post(move |ctl| ctl.on_history_changed(id, back, fwd));
+            c.post_tab(id, move |ctl| ctl.on_history_changed(id, back, fwd));
             Ok(())
         })),
         &mut token,
@@ -296,7 +315,7 @@ unsafe fn install_tab_inner(id: TabId, pw: &PlatformWebview, ctl: &ControllerHan
             let error = (!success).then(|| web_error(status));
             let source = pwstr(|p| wv.Source(p));
             let title = pwstr(|p| wv.DocumentTitle(p));
-            c.post(move |ctl| ctl.on_nav_completed(id, success, error, source, title));
+            c.post_tab(id, move |ctl| ctl.on_nav_completed(id, success, error, source, title));
             Ok(())
         })),
         &mut token,
@@ -307,7 +326,7 @@ unsafe fn install_tab_inner(id: TabId, pw: &PlatformWebview, ctl: &ControllerHan
         &DocumentTitleChangedEventHandler::create(Box::new(move |sender, _| {
             let Some(wv) = sender else { return Ok(()) };
             let title = pwstr(|p| wv.DocumentTitle(p));
-            c.post(move |ctl| ctl.on_title(id, title));
+            c.post_tab(id, move |ctl| ctl.on_title(id, title));
             Ok(())
         })),
         &mut token,
@@ -318,7 +337,7 @@ unsafe fn install_tab_inner(id: TabId, pw: &PlatformWebview, ctl: &ControllerHan
         &ContainsFullScreenElementChangedEventHandler::create(Box::new(move |sender, _| {
             let Some(wv) = sender else { return Ok(()) };
             let fs = read_bool(|b| wv.ContainsFullScreenElement(b));
-            c.post(move |ctl| ctl.on_fullscreen_element(id, fs));
+            c.post_tab(id, move |ctl| ctl.on_fullscreen_element(id, fs));
             Ok(())
         })),
         &mut token,
@@ -327,7 +346,7 @@ unsafe fn install_tab_inner(id: TabId, pw: &PlatformWebview, ctl: &ControllerHan
     let c = ctl.clone();
     webview.add_ProcessFailed(
         &ProcessFailedEventHandler::create(Box::new(move |_, _| {
-            c.post(move |ctl| ctl.on_crashed(id));
+            c.post_tab(id, move |ctl| ctl.on_crashed(id));
             Ok(())
         })),
         &mut token,
@@ -348,7 +367,7 @@ unsafe fn install_tab_inner(id: TabId, pw: &PlatformWebview, ctl: &ControllerHan
             let uri = pwstr(|p| args.Uri(p));
             let req = NEXT_PERMISSION.fetch_add(1, Ordering::SeqCst);
             PERMISSIONS.with(|p| p.borrow_mut().insert(req, PendingPermission { args: args.clone(), deferral }));
-            c.post(move |ctl| ctl.on_permission_request(req, id, uri, kind));
+            c.post_tab(id, move |ctl| ctl.on_permission_request(req, id, uri, kind));
             Ok(())
         })),
         &mut token,
@@ -371,7 +390,7 @@ unsafe fn install_tab_inner(id: TabId, pw: &PlatformWebview, ctl: &ControllerHan
             let Some(wv8) = sender.and_then(|s| s.cast::<ICoreWebView2_8>().ok()) else { return Ok(()) };
             let playing = read_bool(|b| wv8.IsDocumentPlayingAudio(b));
             let muted = read_bool(|b| wv8.IsMuted(b));
-            c.post(move |ctl| ctl.on_audio(id, playing, muted));
+            c.post_tab(id, move |ctl| ctl.on_audio(id, playing, muted));
             Ok(())
         };
         let h2 = audio_handler.clone();
@@ -387,7 +406,7 @@ unsafe fn install_tab_inner(id: TabId, pw: &PlatformWebview, ctl: &ControllerHan
         wv14.add_ServerCertificateErrorDetected(
             &ServerCertificateErrorDetectedEventHandler::create(Box::new(move |_, _| {
                 // Leave the default action: WebView2 shows its TLS interstitial.
-                c.post(move |ctl| ctl.on_cert_error(id));
+                c.post_tab(id, move |ctl| ctl.on_cert_error(id));
                 Ok(())
             })),
             &mut token,
@@ -400,7 +419,7 @@ unsafe fn install_tab_inner(id: TabId, pw: &PlatformWebview, ctl: &ControllerHan
             &FaviconChangedEventHandler::create(Box::new(move |sender, _| {
                 let Some(wv15) = sender.and_then(|s| s.cast::<ICoreWebView2_15>().ok()) else { return Ok(()) };
                 let uri = pwstr(|p| wv15.FaviconUri(p));
-                c.post(move |ctl| ctl.on_favicon(id, uri));
+                c.post_tab(id, move |ctl| ctl.on_favicon(id, uri));
                 Ok(())
             })),
             &mut token,
@@ -413,13 +432,13 @@ unsafe fn install_tab_inner(id: TabId, pw: &PlatformWebview, ctl: &ControllerHan
             let Some(ctrl) = sender else { return Ok(()) };
             let mut z = 1.0;
             ctrl.ZoomFactor(&mut z)?;
-            c.post(move |ctl| ctl.on_zoom(id, z));
+            c.post_tab(id, move |ctl| ctl.on_zoom(id, z));
             Ok(())
         })),
         &mut token,
     )?;
 
-    hook_accelerators(&controller, ctl)?;
+    hook_accelerators(&controller, ctl, AccelOrigin::Tab(id))?;
 
     if let Err(e) = hook_shield(&webview, &env, id, init.private, ctl) {
         log::warn!("tab {id}: request blocking is unavailable for this tab: {e}");
@@ -542,7 +561,7 @@ unsafe fn hook_shield(
 
 /// Shell webview: browser accelerators (F5, Ctrl+F, Ctrl+P...) must not act on
 /// the UI itself, and browser shortcuts are routed like in tabs.
-pub fn install_shell(pw: PlatformWebview, ctl: ControllerHandle, devtools: bool) {
+pub fn install_shell(pw: PlatformWebview, ctl: ControllerHandle, devtools: bool, label: String) {
     let result: windows::core::Result<()> = unsafe {
         (|| {
             let controller = pw.controller();
@@ -558,15 +577,20 @@ pub fn install_shell(pw: PlatformWebview, ctl: ControllerHandle, devtools: bool)
                 s4.SetIsPasswordAutosaveEnabled(false)?;
                 s4.SetIsGeneralAutofillEnabled(false)?;
             }
-            hook_accelerators(&controller, &ctl)?;
-            SHELL.with(|s| *s.borrow_mut() = Some(TabCom { controller, webview, env: pw.environment() }));
+            hook_accelerators(&controller, &ctl, AccelOrigin::Shell(label.clone()))?;
+            SHELLS.with(|s| s.borrow_mut().insert(label.clone(), TabCom { controller, webview, env: pw.environment() }));
             Ok(())
         })()
     };
     match result {
-        Ok(()) => log::info!("startup: shell webview configured"),
-        Err(e) => log::error!("failed to configure shell webview: {e}"),
+        Ok(()) => log::info!("shell webview of window {label} configured"),
+        Err(e) => log::error!("failed to configure the shell webview of window {label}: {e}"),
     }
+}
+
+/// A window is gone: forget its shell webview.
+pub fn remove_shell(label: &str) {
+    SHELLS.with(|s| s.borrow_mut().remove(label));
 }
 
 pub fn remove_tab(id: TabId) {
@@ -817,7 +841,7 @@ pub fn report_source(id: TabId, ctl: ControllerHandle) {
     let Some(t) = tab_com(id) else { return };
     let uri = unsafe { pwstr(|p| t.webview.Source(p)) };
     if !uri.is_empty() {
-        ctl.post(move |c| c.on_source_changed(id, uri, true));
+        ctl.post_tab(id, move |c| c.on_source_changed(id, uri, true));
     }
 }
 
@@ -882,19 +906,19 @@ pub fn set_muted(id: TabId, muted: bool) {
 /// Suspends a hidden tab's renderer (WebView2 requires the webview to be hidden).
 pub fn try_suspend(id: TabId, ctl: ControllerHandle, epoch: u64) {
     let Some(wv3) = tab_com(id).and_then(|t| t.webview.cast::<ICoreWebView2_3>().ok()) else {
-        ctl.post(move |c| c.on_suspended(id, false, epoch));
+        ctl.post_tab(id, move |c| c.on_suspended(id, false, epoch));
         return;
     };
     let c = ctl.clone();
     let r = unsafe {
         wv3.TrySuspend(&TrySuspendCompletedHandler::create(Box::new(move |res, ok| {
             let ok = res.is_ok() && ok;
-            c.post(move |ctl| ctl.on_suspended(id, ok, epoch));
+            c.post_tab(id, move |ctl| ctl.on_suspended(id, ok, epoch));
             Ok(())
         })))
     };
     if r.is_err() {
-        ctl.post(move |c| c.on_suspended(id, false, epoch));
+        ctl.post_tab(id, move |c| c.on_suspended(id, false, epoch));
     }
 }
 
@@ -969,7 +993,7 @@ pub fn find_start(id: TabId, text: String, case_sensitive: bool, ctl: Controller
     };
     if let Err(e) = result {
         log::warn!("find unavailable: {e}");
-        ctl.post(move |c| c.on_find_unavailable(id));
+        ctl.post_tab(id, move |c| c.on_find_unavailable(id));
     }
 }
 
@@ -979,7 +1003,7 @@ fn post_find(find: &ICoreWebView2Find, id: TabId, ctl: &ControllerHandle) {
         let _ = find.MatchCount(&mut count);
         let _ = find.ActiveMatchIndex(&mut active);
     }
-    ctl.post(move |c| c.on_find_update(id, count, active));
+    ctl.post_tab(id, move |c| c.on_find_update(id, count, active));
 }
 
 pub fn find_step(id: TabId, forward: bool) {
@@ -1127,7 +1151,7 @@ pub struct ClearKinds {
 
 /// Clears profile data through WebView2. Replies `true` on success.
 pub fn clear_browsing_data(kinds: ClearKinds, reply: tokio::sync::oneshot::Sender<bool>) {
-    let Some(shell) = SHELL.with(|s| s.borrow().clone()) else {
+    let Some(shell) = any_shell() else {
         let _ = reply.send(false);
         return;
     };
@@ -1198,7 +1222,7 @@ fn main_frame_id(webview: &ICoreWebView2) -> Option<u32> {
 
 /// Enumerates WebView2 processes and which tab frames each renderer hosts.
 pub fn collect_processes(ctl: ControllerHandle) {
-    let Some(shell) = SHELL.with(|s| s.borrow().clone()) else {
+    let Some(shell) = any_shell() else {
         ctl.post(|c| c.on_process_snapshot(ProcSnapshot::default()));
         return;
     };

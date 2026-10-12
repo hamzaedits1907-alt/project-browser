@@ -11,6 +11,11 @@ use serde::{Deserialize, Serialize};
 pub enum Command {
     NewTab,
     NewPrivateTab,
+    NewWindow,
+    NewPrivateWindow,
+    CloseWindow,
+    ReopenWindow,
+    Quit,
     CloseTab,
     ReopenTab,
     NextTab,
@@ -78,7 +83,9 @@ pub fn map_key(vk: u32, m: Mods) -> Option<Command> {
     match (ctrl, shift, alt, vk) {
         (true, false, false, k) if k == key(b'T') => Some(NewTab),
         (true, true, false, k) if k == key(b'T') => Some(ReopenTab),
-        (true, true, false, k) if k == key(b'N') => Some(NewPrivateTab),
+        (true, false, false, k) if k == key(b'N') => Some(NewWindow),
+        (true, true, false, k) if k == key(b'N') => Some(NewPrivateWindow),
+        (true, true, false, k) if k == key(b'W') => Some(CloseWindow),
         (true, false, false, k) if k == key(b'W') || k == VK_F4 => Some(CloseTab),
         (true, false, false, VK_TAB) | (true, false, false, VK_NEXT) => Some(NextTab),
         (true, true, false, VK_TAB) | (true, false, false, VK_PRIOR) => Some(PrevTab),
@@ -143,7 +150,15 @@ mod tests {
         assert_eq!(map_key(VK_TAB, CS), Some(Command::PrevTab));
         assert_eq!(map_key(key(b'3'), C), Some(Command::SelectTab(3)));
         assert_eq!(map_key(key(b'9'), C), Some(Command::SelectTab(9)));
-        assert_eq!(map_key(key(b'N'), CS), Some(Command::NewPrivateTab));
+        assert_eq!(map_key(key(b'N'), CS), Some(Command::NewPrivateWindow));
+    }
+
+    #[test]
+    fn window_shortcuts() {
+        assert_eq!(map_key(key(b'N'), C), Some(Command::NewWindow));
+        assert_eq!(map_key(key(b'N'), CS), Some(Command::NewPrivateWindow));
+        assert_eq!(map_key(key(b'W'), CS), Some(Command::CloseWindow));
+        assert_eq!(map_key(key(b'W'), C), Some(Command::CloseTab), "Ctrl+W still closes only the tab");
     }
 
     #[test]

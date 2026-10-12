@@ -85,6 +85,8 @@ const COMMANDS: &[&str] = &[
     "app_info",
     "update_check",
     "update_install",
+    "windows_list",
+    "tab_to_window",
     "shield_state",
     "shield_tab",
     "shield_set",

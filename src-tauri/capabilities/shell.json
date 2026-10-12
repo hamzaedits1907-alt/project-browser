@@ -3,7 +3,8 @@
   "identifier": "shell",
   "description": "Browser shell UI only. Tab webviews load remote content and get no capabilities.",
   "webviews": [
-    "main"
+    "main",
+    "win-*"
   ],
   "local": true,
   "permissions": [
@@ -91,6 +92,8 @@
     "allow-app-info",
     "allow-update-check",
     "allow-update-install",
+    "allow-windows-list",
+    "allow-tab-to-window",
     "allow-shield-state",
     "allow-shield-tab",
     "allow-shield-set",

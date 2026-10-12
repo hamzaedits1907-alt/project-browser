@@ -220,6 +220,7 @@ impl Controller {
     pub fn respond_prompt(&mut self, req: u64, allow: bool, remember: bool) {
         let Some(pos) = self.prompts.iter().position(|p| p.id == req) else { return };
         let prompt = self.prompts.remove(pos);
+        self.select_tab_window(prompt.tab_id);
         let private = self.tabs.get(prompt.tab_id).map(|t| t.private).unwrap_or(true);
         if remember && !private {
             if let Err(e) = self.db.permission_set(&prompt.origin, &prompt.kind, allow, now_ms()) {

@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 
 use crate::db::Db;
 use crate::error::{now_ms, Error, Result};
@@ -1012,7 +1012,8 @@ struct AiEvent {
 }
 
 fn emit(app: &AppHandle, request_id: &str, kind: &'static str, text: String, state: Option<ConnectionState>) {
-    let _ = app.emit_to("main", "pb:ai", AiEvent { request_id: request_id.to_string(), kind, text, state });
+    // Every window gets it; each assistant panel ignores replies to requests it did not make.
+    crate::window::emit_to_shells(app, "pb:ai", AiEvent { request_id: request_id.to_string(), kind, text, state });
 }
 
 /// Why the assistant cannot chat with this model right now, if that is already clear from its name.

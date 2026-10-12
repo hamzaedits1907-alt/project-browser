@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 
 use crate::ai::{self, AiConfigView, AiState, ChatMessage, ModelsResponse, NvidiaApi, PageSnapshot, ProbeResult, TestResult};
-use crate::controller::{Bootstrap, ContentRect, ControllerHandle, PerfSample, Viewport};
+use crate::controller::{Bootstrap, ContentRect, ControllerHandle, PerfSample, Viewport, WindowBrief};
 use crate::controller::{DownloadCommand, ZoomMode};
 use crate::db::bookmarks::Bookmark;
 use crate::db::downloads::Download;
@@ -41,20 +41,20 @@ pub struct AppState {
 // ---- shell lifecycle & layout ----------------------------------------------------
 
 #[tauri::command]
-pub async fn shell_ready(s: State<'_, AppState>) -> Result<Bootstrap> {
-    s.ctl.call(|c| c.on_shell_ready()).await
+pub async fn shell_ready(window: tauri::Window, s: State<'_, AppState>) -> Result<Bootstrap> {
+    s.ctl.call_in(window.label().to_string(), |c| c.on_shell_ready()).await
 }
 
 #[tauri::command]
-pub async fn set_layout(s: State<'_, AppState>, content: ContentRect, viewport: Viewport) -> Result<()> {
-    s.ctl.call(move |c| c.set_layout(content, viewport)).await
+pub async fn set_layout(window: tauri::Window, s: State<'_, AppState>, content: ContentRect, viewport: Viewport) -> Result<()> {
+    s.ctl.call_in(window.label().to_string(), move |c| c.set_layout(content, viewport)).await
 }
 
 /// Hides the page while the shell draws menus over it, returning a snapshot of
 /// the page to show underneath (native webviews always render above the shell).
 #[tauri::command]
-pub async fn overlay_open(app: AppHandle, s: State<'_, AppState>) -> Result<Option<String>> {
-    let tab = s.ctl.call(|c| c.active_live_tab()).await?;
+pub async fn overlay_open(window: tauri::Window, app: AppHandle, s: State<'_, AppState>) -> Result<Option<String>> {
+    let tab = s.ctl.call_in(window.label().to_string(), |c| c.active_live_tab()).await?;
     let snapshot = match tab {
         Some(id) => {
             let (tx, rx) = tokio::sync::oneshot::channel();
@@ -64,27 +64,33 @@ pub async fn overlay_open(app: AppHandle, s: State<'_, AppState>) -> Result<Opti
         }
         None => None,
     };
-    s.ctl.call(|c| c.set_overlay(true, false)).await?;
+    s.ctl.call_in(window.label().to_string(), |c| c.set_overlay(true, false)).await?;
     Ok(snapshot)
 }
 
 #[tauri::command]
-pub async fn overlay_close(s: State<'_, AppState>, focus_page: Option<bool>) -> Result<()> {
+pub async fn overlay_close(window: tauri::Window, s: State<'_, AppState>, focus_page: Option<bool>) -> Result<()> {
     let focus_page = focus_page.unwrap_or(true);
-    s.ctl.call(move |c| c.set_overlay(false, focus_page)).await
+    s.ctl.call_in(window.label().to_string(), move |c| c.set_overlay(false, focus_page)).await
 }
 
 #[tauri::command]
-pub async fn run_command(s: State<'_, AppState>, command: Command) -> Result<()> {
-    s.ctl.call(move |c| c.run_command(command)).await
+pub async fn run_command(window: tauri::Window, s: State<'_, AppState>, command: Command) -> Result<()> {
+    s.ctl.call_in(window.label().to_string(), move |c| c.run_command(command)).await
 }
 
 // ---- tabs & navigation -----------------------------------------------------------
 
 #[tauri::command]
-pub async fn tab_new(s: State<'_, AppState>, url: Option<String>, private: Option<bool>, background: Option<bool>) -> Result<()> {
+pub async fn tab_new(
+    window: tauri::Window,
+    s: State<'_, AppState>,
+    url: Option<String>,
+    private: Option<bool>,
+    background: Option<bool>,
+) -> Result<()> {
     s.ctl
-        .call(move |c| match url {
+        .call_in(window.label().to_string(), move |c| match url {
             Some(u) if !u.trim().is_empty() => {
                 c.open_url_as(u, !background.unwrap_or(false), private.unwrap_or(false));
             }
@@ -97,54 +103,54 @@ pub async fn tab_new(s: State<'_, AppState>, url: Option<String>, private: Optio
 
 #[tauri::command]
 pub async fn tab_close(s: State<'_, AppState>, id: TabId) -> Result<()> {
-    s.ctl.call(move |c| c.close_tab(id)).await
+    s.ctl.call_tab(id, move |c| c.close_tab(id)).await
 }
 
 #[tauri::command]
 pub async fn tab_close_others(s: State<'_, AppState>, id: TabId) -> Result<()> {
-    s.ctl.call(move |c| c.close_other_tabs(id)).await
+    s.ctl.call_tab(id, move |c| c.close_other_tabs(id)).await
 }
 
 #[tauri::command]
 pub async fn tab_activate(s: State<'_, AppState>, id: TabId) -> Result<()> {
-    s.ctl.call(move |c| c.activate(id)).await
+    s.ctl.call_tab(id, move |c| c.activate(id)).await
 }
 
 #[tauri::command]
-pub async fn tab_reopen(s: State<'_, AppState>) -> Result<()> {
-    s.ctl.call(|c| c.reopen_closed()).await
+pub async fn tab_reopen(window: tauri::Window, s: State<'_, AppState>) -> Result<()> {
+    s.ctl.call_in(window.label().to_string(), |c| c.run_command(Command::ReopenTab)).await
 }
 
 #[tauri::command]
 pub async fn tab_pin(s: State<'_, AppState>, id: TabId, pinned: bool) -> Result<()> {
-    s.ctl.call(move |c| c.set_pinned(id, pinned)).await
+    s.ctl.call_tab(id, move |c| c.set_pinned(id, pinned)).await
 }
 
 #[tauri::command]
 pub async fn tab_move(s: State<'_, AppState>, id: TabId, index: usize) -> Result<()> {
-    s.ctl.call(move |c| c.move_tab(id, index)).await
+    s.ctl.call_tab(id, move |c| c.move_tab(id, index)).await
 }
 
 #[tauri::command]
 pub async fn tab_mute(s: State<'_, AppState>, id: TabId, muted: bool) -> Result<()> {
-    s.ctl.call(move |c| c.set_muted(id, muted)).await
+    s.ctl.call_tab(id, move |c| c.set_muted(id, muted)).await
 }
 
 #[tauri::command]
 pub async fn tab_sleep(s: State<'_, AppState>, id: TabId, unload: Option<bool>) -> Result<()> {
     let action = if unload.unwrap_or(false) { BackgroundTabAction::Unload } else { BackgroundTabAction::Sleep };
-    s.ctl.call(move |c| c.put_to_sleep(id, action, crate::controller::Reason::Manual)).await
+    s.ctl.call_tab(id, move |c| c.put_to_sleep(id, action, crate::controller::Reason::Manual)).await
 }
 
 #[tauri::command]
 pub async fn tab_duplicate(s: State<'_, AppState>, id: TabId) -> Result<()> {
-    s.ctl.call(move |c| c.duplicate_tab(id)).await
+    s.ctl.call_tab(id, move |c| c.duplicate_tab(id)).await
 }
 
 #[tauri::command]
-pub async fn navigate(s: State<'_, AppState>, id: Option<TabId>, input: String) -> Result<()> {
+pub async fn navigate(window: tauri::Window, s: State<'_, AppState>, id: Option<TabId>, input: String) -> Result<()> {
     s.ctl
-        .call(move |c| {
+        .call_in(window.label().to_string(), move |c| {
             if let Some(id) = id.or(c.tabs.active_id()) {
                 c.navigate(id, input);
             }
@@ -153,7 +159,7 @@ pub async fn navigate(s: State<'_, AppState>, id: Option<TabId>, input: String) 
 }
 
 #[tauri::command]
-pub async fn nav(s: State<'_, AppState>, id: Option<TabId>, action: String) -> Result<()> {
+pub async fn nav(window: tauri::Window, s: State<'_, AppState>, id: Option<TabId>, action: String) -> Result<()> {
     let action = match action.as_str() {
         "back" => NavAction::Back,
         "forward" => NavAction::Forward,
@@ -163,7 +169,7 @@ pub async fn nav(s: State<'_, AppState>, id: Option<TabId>, action: String) -> R
         other => return Err(Error::msg(format!("unknown navigation action {other}"))),
     };
     s.ctl
-        .call(move |c| {
+        .call_in(window.label().to_string(), move |c| {
             if let Some(id) = id.or(c.tabs.active_id()) {
                 c.nav_action(id, action);
             }
@@ -172,7 +178,7 @@ pub async fn nav(s: State<'_, AppState>, id: Option<TabId>, action: String) -> R
 }
 
 #[tauri::command]
-pub async fn zoom(s: State<'_, AppState>, id: Option<TabId>, mode: String, factor: Option<f64>) -> Result<()> {
+pub async fn zoom(window: tauri::Window, s: State<'_, AppState>, id: Option<TabId>, mode: String, factor: Option<f64>) -> Result<()> {
     let mode = match (mode.as_str(), factor) {
         ("in", _) => ZoomMode::In,
         ("out", _) => ZoomMode::Out,
@@ -181,7 +187,7 @@ pub async fn zoom(s: State<'_, AppState>, id: Option<TabId>, mode: String, facto
         _ => return Err(Error::msg("invalid zoom mode")),
     };
     s.ctl
-        .call(move |c| {
+        .call_in(window.label().to_string(), move |c| {
             if let Some(id) = id.or(c.tabs.active_id()) {
                 c.zoom(id, mode);
             }
@@ -190,18 +196,18 @@ pub async fn zoom(s: State<'_, AppState>, id: Option<TabId>, mode: String, facto
 }
 
 #[tauri::command]
-pub async fn find_query(s: State<'_, AppState>, query: String, case_sensitive: bool) -> Result<()> {
-    s.ctl.call(move |c| c.find_query(query, case_sensitive)).await
+pub async fn find_query(window: tauri::Window, s: State<'_, AppState>, query: String, case_sensitive: bool) -> Result<()> {
+    s.ctl.call_in(window.label().to_string(), move |c| c.find_query(query, case_sensitive)).await
 }
 
 #[tauri::command]
-pub async fn find_step(s: State<'_, AppState>, forward: bool) -> Result<()> {
-    s.ctl.call(move |c| c.find_step(forward)).await
+pub async fn find_step(window: tauri::Window, s: State<'_, AppState>, forward: bool) -> Result<()> {
+    s.ctl.call_in(window.label().to_string(), move |c| c.find_step(forward)).await
 }
 
 #[tauri::command]
-pub async fn find_close(s: State<'_, AppState>) -> Result<()> {
-    s.ctl.call(|c| c.close_find()).await
+pub async fn find_close(window: tauri::Window, s: State<'_, AppState>) -> Result<()> {
+    s.ctl.call_in(window.label().to_string(), |c| c.close_find()).await
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -214,9 +220,9 @@ pub struct Suggestion {
 }
 
 #[tauri::command]
-pub async fn suggest(s: State<'_, AppState>, input: String) -> Result<Vec<Suggestion>> {
+pub async fn suggest(window: tauri::Window, s: State<'_, AppState>, input: String) -> Result<Vec<Suggestion>> {
     s.ctl
-        .call(move |c| -> Result<Vec<Suggestion>> {
+        .call_in(window.label().to_string(), move |c| -> Result<Vec<Suggestion>> {
             let text = input.trim();
             if text.is_empty() {
                 return Ok(Vec::new());
@@ -377,7 +383,7 @@ pub async fn bookmark_delete(s: State<'_, AppState>, id: i64) -> Result<()> {
 
 #[tauri::command]
 pub async fn bookmark_toggle(s: State<'_, AppState>, tab_id: TabId) -> Result<()> {
-    s.ctl.call(move |c| c.toggle_bookmark(tab_id)).await
+    s.ctl.call_tab(tab_id, move |c| c.toggle_bookmark(tab_id)).await
 }
 
 // ---- downloads --------------------------------------------------------------------
@@ -630,8 +636,8 @@ pub async fn import_run(
 /// Opens the Windows file dialog so the user can choose the password export they made in their old browser,
 /// and reports what the file contains (counts only). Nothing is stored yet. The path stays in the core.
 #[tauri::command]
-pub async fn passwords_pick_file(app: AppHandle, vault_state: State<'_, VaultState>) -> Result<Option<ExportPreview>> {
-    let owner = app.get_webview_window(crate::window::SHELL_LABEL).and_then(|w| w.hwnd().ok()).map(|h| h.0 as isize).unwrap_or(0);
+pub async fn passwords_pick_file(window: tauri::Window, vault_state: State<'_, VaultState>) -> Result<Option<ExportPreview>> {
+    let owner = window.hwnd().ok().map(|h| h.0 as isize).unwrap_or(0);
     let picked =
         tauri::async_runtime::spawn_blocking(move || native::dialog::pick_file(owner, "Choose the exported passwords file", "CSV files", "*.csv"))
             .await
@@ -707,7 +713,7 @@ pub struct FillOptions {
 #[tauri::command]
 pub async fn fill_options(s: State<'_, AppState>, tab_id: TabId) -> Result<FillOptions> {
     s.ctl
-        .call(move |c| -> Result<FillOptions> {
+        .call_tab(tab_id, move |c| -> Result<FillOptions> {
             let url = c.tabs.get(tab_id).map(|t| t.url.clone()).unwrap_or_default();
             let fillable = crate::vault::origin_of(&url).is_some_and(|o| crate::vault::fill_allowed(&o));
             let logins = crate::vault::logins_for_page(&c.db, &url)?;
@@ -756,7 +762,7 @@ pub async fn fill_login(
     let sealer = vault_state.sealer.clone();
     let script = s
         .ctl
-        .call(move |c| -> Result<String> {
+        .call_tab(tab_id, move |c| -> Result<String> {
             let origin = fill_target(c, tab_id)?;
             let rec = c.db.login_get(login_id)?.ok_or_else(|| Error::msg("That saved login no longer exists."))?;
             if rec.origin != origin {
@@ -782,7 +788,7 @@ pub async fn fill_profile(
     let sealer = vault_state.sealer.clone();
     let script = s
         .ctl
-        .call(move |c| -> Result<String> {
+        .call_tab(tab_id, move |c| -> Result<String> {
             let origin = fill_target(c, tab_id)?;
             let fields = crate::vault::open_profile(&c.db, sealer.as_ref(), profile_id)?;
             Ok(crate::vault::profile_fill_script(&origin, &fields))
@@ -962,6 +968,7 @@ fn spawn_chat(app: AppHandle, ai_state: &AiState, job: ai::ChatJob) {
 /// Starts a streamed reply; text arrives as `pb:ai` events keyed by `request_id`.
 #[tauri::command]
 pub async fn ai_chat(
+    window: tauri::Window,
     app: AppHandle,
     s: State<'_, AppState>,
     ai_state: State<'_, AiState>,
@@ -978,7 +985,12 @@ pub async fn ai_chat(
 
     let mut system = ai::system_prompt(None, "", "");
     if include_page {
-        let info = s.ctl.call(|c| c.active_live_tab().and_then(|id| c.tabs.get(id).map(|t| (id, t.private, t.title.clone(), t.url.clone())))).await?;
+        let info = s
+            .ctl
+            .call_in(window.label().to_string(), |c| {
+                c.active_live_tab().and_then(|id| c.tabs.get(id).map(|t| (id, t.private, t.title.clone(), t.url.clone())))
+            })
+            .await?;
         let Some((id, private, title, url)) = info else {
             return Err(Error::msg("There is no web page open in this tab to share"));
         };
@@ -1023,7 +1035,7 @@ pub async fn ai_ask(
 pub async fn ai_page_snapshot(app: AppHandle, s: State<'_, AppState>, tab_id: TabId, max_chars: Option<u32>) -> Result<ai::PageSnapshotView> {
     let (title, url, limit) = s
         .ctl
-        .call(move |c| -> Result<(String, String, u32)> {
+        .call_tab(tab_id, move |c| -> Result<(String, String, u32)> {
             let tab = c.tabs.get(tab_id).ok_or_else(|| Error::msg("That tab is no longer open."))?;
             if let Some(why) = ai::page_read_blocker(tab.private, &tab.url, tab.lifecycle, c.tab_has_view(tab_id)) {
                 return Err(Error::msg(why));
@@ -1044,7 +1056,7 @@ pub async fn page_style(app: AppHandle, s: State<'_, AppState>, tab_id: TabId, c
         ai::check_page_css(css)?;
     }
     s.ctl
-        .call(move |c| -> Result<()> {
+        .call_tab(tab_id, move |c| -> Result<()> {
             if c.active_tab_with_view() != Some(tab_id) {
                 return Err(Error::msg("Switch to the page you want to change first."));
             }
@@ -1142,6 +1154,21 @@ pub async fn update_check(app: AppHandle, updates: State<'_, crate::updates::Upd
 #[tauri::command]
 pub async fn update_install(app: AppHandle, updates: State<'_, crate::updates::UpdateState>) -> Result<()> {
     crate::updates::install(&app, &updates).await
+}
+
+// ---- windows -------------------------------------------------------------------------------
+
+/// All browser windows, for the "move to window" menu. `current` marks the window that asked.
+#[tauri::command]
+pub async fn windows_list(window: tauri::Window, s: State<'_, AppState>) -> Result<Vec<WindowBrief>> {
+    let label = window.label().to_string();
+    s.ctl.call(move |c| c.windows_brief(&label)).await
+}
+
+/// Moves a tab to another window (`target` is its label) or to a new one (`None`). The page keeps running.
+#[tauri::command]
+pub async fn tab_to_window(s: State<'_, AppState>, id: TabId, target: Option<String>) -> Result<String> {
+    s.ctl.call(move |c| c.move_tab_to_window(id, target)).await?
 }
 
 // ---- Project Shield ----------------------------------------------------------------------
@@ -1319,6 +1346,8 @@ macro_rules! all_commands {
             $crate::commands::app_info,
             $crate::commands::update_check,
             $crate::commands::update_install,
+            $crate::commands::windows_list,
+            $crate::commands::tab_to_window,
             $crate::commands::shield_state,
             $crate::commands::shield_tab,
             $crate::commands::shield_set,

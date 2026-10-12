@@ -53,6 +53,7 @@ impl Controller {
     }
 
     pub fn new_tab(&mut self, private: bool, focus_omnibox: bool) -> TabId {
+        let private = self.tab_is_private(private);
         let id = self.tabs.create(NewTab { url: NEW_TAB_URL.into(), private, activate: true, ..Default::default() }, now_ms());
         self.refresh_tab_meta(id);
         self.after_activation();
@@ -71,6 +72,7 @@ impl Controller {
     /// Opens `input` in a new tab; `private` makes it a private tab (nothing recorded, no shared profile data).
     pub fn open_url_as(&mut self, input: String, activate: bool, private: bool) -> Option<TabId> {
         let resolved = resolve_input(&input, &self.settings.search_template())?;
+        let private = self.tab_is_private(private);
         let id = self.tabs.create(NewTab { url: resolved.into_url(), activate, private, ..Default::default() }, now_ms());
         self.refresh_tab_meta(id);
         if activate {
@@ -87,7 +89,7 @@ impl Controller {
         if url::Url::parse(&url).map(|u| navigation::is_blocked_tab_navigation(&u)).unwrap_or(true) {
             return;
         }
-        let private = self.tabs.get(opener).map(|t| t.private).unwrap_or(false);
+        let private = self.tab_is_private(self.tabs.get(opener).map(|t| t.private).unwrap_or(false));
         let id = self.tabs.create(NewTab { url, private, activate: !background, opener: Some(opener), ..Default::default() }, now_ms());
         self.refresh_tab_meta(id);
         if background {
@@ -101,16 +103,17 @@ impl Controller {
     /// Switches to an existing tab showing `url`, or opens one.
     pub fn open_internal(&mut self, page: &str) {
         let url = format!("browser://{page}");
-        if let Some(id) = self.tabs.tabs().iter().find(|t| t.url == url && !t.private).map(|t| t.id) {
+        let private = self.private_window;
+        if let Some(id) = self.tabs.tabs().iter().find(|t| t.url == url && t.private == private).map(|t| t.id) {
             self.activate(id);
             return;
         }
         // Reuse the current tab if it's an empty new-tab page.
-        if let Some(active) = self.tabs.active().filter(|t| t.url == NEW_TAB_URL && !t.private).map(|t| t.id) {
+        if let Some(active) = self.tabs.active().filter(|t| t.url == NEW_TAB_URL && t.private == private).map(|t| t.id) {
             self.navigate(active, url);
             return;
         }
-        let id = self.tabs.create(NewTab { url, activate: true, ..Default::default() }, now_ms());
+        let id = self.tabs.create(NewTab { url, activate: true, private, ..Default::default() }, now_ms());
         self.refresh_tab_meta(id);
         self.after_activation();
         self.mark_session();
@@ -162,7 +165,7 @@ impl Controller {
     }
 
     pub(crate) fn focus_shell(&self) {
-        if let Some(w) = self.app.get_webview("main") {
+        if let Some(w) = self.app.get_webview(&self.current) {
             let _ = w.set_focus();
         }
     }
@@ -173,6 +176,7 @@ impl Controller {
     }
 
     pub fn close_tab(&mut self, id: TabId) {
+        self.last_close_was_window = false;
         if self.tabs.len() == 1 && self.tabs.get(id).is_some() {
             // Keep the window open: replace the last tab with a new-tab page.
             self.new_tab(false, true);
@@ -351,7 +355,7 @@ impl Controller {
         if is_internal(&tab.url) {
             return;
         }
-        let Some(window) = self.app.get_window("main") else { return };
+        let Some(window) = self.app.get_window(&self.current) else { return };
         let rect = self.layout.content.unwrap_or_default();
         let builder = crate::window::tab_webview_builder(&self.app, id, tab.private, &self.profile, self.handle.clone());
         let created = window.add_child(builder, LogicalPosition::new(rect.x, rect.y), LogicalSize::new(rect.width.max(1.0), rect.height.max(1.0)));
@@ -533,7 +537,7 @@ impl Controller {
 
     pub(crate) fn apply_window_fullscreen(&self) {
         let want = self.layout.browser_fullscreen || self.layout.element_fullscreen.is_some();
-        if let Some(w) = self.app.get_window("main") {
+        if let Some(w) = self.app.get_window(&self.current) {
             let _ = w.set_fullscreen(want);
         }
     }
@@ -554,7 +558,33 @@ impl Controller {
                     self.close_tab(a);
                 }
             }
-            Command::ReopenTab => self.reopen_closed(),
+            Command::ReopenTab => {
+                if self.last_close_was_window && !self.closed_windows.is_empty() {
+                    self.reopen_window();
+                } else {
+                    self.reopen_closed();
+                }
+            }
+            Command::NewWindow => {
+                self.new_window(false);
+            }
+            Command::NewPrivateWindow => {
+                self.new_window(true);
+            }
+            Command::ReopenWindow => {
+                if !self.reopen_window() {
+                    self.toast("There is no closed window to reopen.");
+                }
+            }
+            Command::CloseWindow => {
+                if let Some(w) = self.app.get_window(&self.current) {
+                    let _ = w.close();
+                }
+            }
+            Command::Quit => {
+                self.prepare_exit();
+                self.app.exit(0);
+            }
             Command::NextTab | Command::PrevTab => {
                 let prev = active;
                 if let Some(id) = self.tabs.cycle(cmd == Command::NextTab, now_ms()) {
@@ -672,12 +702,14 @@ impl Controller {
 
     /// Bookmarks changed: refresh star state on every tab and tell the shell.
     pub(crate) fn on_bookmarks_changed(&mut self) {
-        let ids: Vec<TabId> = self.tabs.tabs().iter().map(|t| t.id).collect();
-        for id in ids {
-            self.refresh_tab_meta(id);
-        }
+        self.each_window(|c| {
+            let ids: Vec<TabId> = c.tabs.tabs().iter().map(|t| t.id).collect();
+            for id in ids {
+                c.refresh_tab_meta(id);
+            }
+            c.mark_state();
+        });
         self.mark_bookmarks();
-        self.mark_state();
     }
 }
 

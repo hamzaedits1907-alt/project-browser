@@ -85,10 +85,9 @@ pub fn parse(line: &str) -> Option<Cosmetic> {
     }
     let (sites, selector, allow) = if let Some(i) = line.find("#@#") {
         (&line[..i], &line[i + 3..], true)
-    } else if let Some(i) = line.find("##") {
-        (&line[..i], &line[i + 2..], false)
     } else {
-        return None;
+        let i = line.find("##")?;
+        (&line[..i], &line[i + 2..], false)
     };
     let selector = selector.trim();
     if !usable_selector(selector) {

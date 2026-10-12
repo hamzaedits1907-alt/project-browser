@@ -26,7 +26,7 @@ vi.mock("../../lib/ipc", async (original) => {
   };
 });
 
-import { ai, connect, loadAiConfig, loadModels, probeFeature, removeKey, resetAiStoreForTests, saveKeyUnchecked, selectModel, sendMessage, testSaved } from "./aiStore";
+import { ai, loadAiConfig, loadModels, probeFeature, removeKey, resetAiStoreForTests, saveKey, selectModel, sendMessage, testSaved } from "./aiStore";
 
 const KEY = "nvapi-super-secret-key-1234567890";
 
@@ -135,83 +135,82 @@ describe("choosing a model", () => {
   });
 });
 
-describe("connecting with a key", () => {
-  it("checks the key first, saves it only when NVIDIA accepts it, then loads the models", async () => {
-    api.aiTest.mockResolvedValue(test());
+describe("saving a key", () => {
+  it("only stores the key: no test, no model list, no model choice is needed first", async () => {
     api.aiConfigSet.mockResolvedValue(config({ hasKey: true }));
-    api.aiModels.mockResolvedValue(models());
-    const order: string[] = [];
-    api.aiTest.mockImplementation(async () => (order.push("test"), test()));
-    api.aiConfigSet.mockImplementation(async () => (order.push("save"), config({ hasKey: true })));
-    api.aiModels.mockImplementation(async () => (order.push("models"), models()));
-
-    const result = await connect(KEY);
-    expect(result?.keyOk).toBe(true);
-    expect(order).toEqual(["test", "save", "models"]);
-    expect(api.aiTest).toHaveBeenCalledWith(KEY);
+    expect(await saveKey(KEY)).toBe(true);
+    expect(api.aiConfigSet).toHaveBeenCalledTimes(1);
     expect(api.aiConfigSet).toHaveBeenCalledWith({ apiKey: KEY });
-    expect(ai.get().models.phase).toBe("ready");
-  });
-
-  it("does not save a key NVIDIA rejects", async () => {
-    api.aiTest.mockResolvedValue(test({ state: "invalidKey", keyOk: false, message: "NVIDIA rejected the API key." }));
-    const result = await connect(KEY);
-    expect(result?.state).toBe("invalidKey");
-    expect(api.aiConfigSet).not.toHaveBeenCalled();
-    expect(ai.get().connection).toMatchObject({ phase: "done", result: { state: "invalidKey" } });
-  });
-
-  it("does not save a key that could not be checked (network down, rate limited)", async () => {
-    for (const state of ["network", "timeout", "rateLimited", "serverError"] as const) {
-      api.aiTest.mockResolvedValue(test({ state, keyOk: false, message: state }));
-      await connect(KEY);
-    }
-    expect(api.aiConfigSet).not.toHaveBeenCalled();
-  });
-
-  it("can save a key the network wouldn't let NVIDIA check, but only after such a failure and never one NVIDIA rejected", async () => {
-    api.aiTest.mockResolvedValue(test({ state: "network", keyOk: false, message: "Couldn't reach NVIDIA." }));
-    await connect(KEY);
-    expect(api.aiConfigSet).not.toHaveBeenCalled();
-    api.aiConfigSet.mockResolvedValue(config({ hasKey: true }));
-    api.aiModels.mockResolvedValue(models({ state: "network", models: [], message: "offline" }));
-    expect(await saveKeyUnchecked(KEY)).toBe(true);
-    expect(api.aiConfigSet).toHaveBeenCalledWith({ apiKey: KEY });
+    expect(api.aiTest).not.toHaveBeenCalled();
+    expect(api.aiModels).not.toHaveBeenCalled();
     expect(ai.get().config?.hasKey).toBe(true);
-    expect(JSON.stringify(ai.get())).not.toContain(KEY);
-
-    api.aiConfigSet.mockClear();
-    api.aiTest.mockResolvedValue(test({ state: "invalidKey", keyOk: false }));
-    await connect(KEY);
-    expect(await saveKeyUnchecked(KEY)).toBe(false);
-    expect(api.aiConfigSet).not.toHaveBeenCalled();
-    expect(ai.get().connection.error).toContain("rejected");
   });
 
-  it("saves a working key even when the previously chosen model is gone, and says so", async () => {
-    api.aiTest.mockResolvedValue(test({ state: "modelUnavailable", keyOk: true, message: "Your key works, but “old/model” isn't usable for chat." }));
+  it("keeps the key when the model catalog cannot be loaded (offline, provider down)", async () => {
+    api.aiConfigSet.mockResolvedValue(config({ hasKey: true }));
+    expect(await saveKey(KEY)).toBe(true);
+    for (const state of ["network", "timeout", "serverError", "rateLimited"] as const) {
+      api.aiModels.mockResolvedValue(models({ state, models: [], message: state }));
+      await loadModels(true);
+      expect(ai.get().models.phase).toBe("error");
+      expect(ai.get().config?.hasKey).toBe(true);
+    }
+    api.aiModels.mockRejectedValue("offline");
+    await loadModels(true);
+    expect(ai.get().config?.hasKey).toBe(true);
+    expect(api.aiConfigSet).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the key when the previously selected model is retired or no model answers", async () => {
     api.aiConfigSet.mockResolvedValue(config({ hasKey: true, model: "old/model" }));
-    api.aiModels.mockResolvedValue(models());
-    await connect(KEY);
-    expect(api.aiConfigSet).toHaveBeenCalledWith({ apiKey: KEY });
-    expect(ai.get().connection.result?.state).toBe("modelUnavailable");
+    api.aiConfigGet.mockResolvedValue(config({ hasKey: true, model: "old/model" }));
+    expect(await saveKey(KEY)).toBe(true);
+    api.aiTest.mockResolvedValue(test({ state: "modelUnavailable", keyOk: false, message: "retired" }));
+    await testSaved();
+    api.aiTest.mockResolvedValue(test({ state: "unconfirmed", keyOk: false, message: "none answered" }));
+    await testSaved();
+    expect(ai.get().config?.hasKey).toBe(true);
+    expect(api.aiConfigSet).toHaveBeenCalledTimes(1);
   });
 
-  it("shows validation problems (a key that is not shaped like a key) as an error", async () => {
-    api.aiTest.mockRejectedValue("That looks like an OpenAI or Anthropic key. This browser only works with NVIDIA keys, which start with nvapi-.");
-    expect(await connect("sk-abc")).toBeNull();
+  it("an authentication failure from a later test does not delete the saved key either", async () => {
+    api.aiConfigSet.mockResolvedValue(config({ hasKey: true }));
+    api.aiConfigGet.mockResolvedValue(config({ hasKey: true }));
+    await saveKey(KEY);
+    api.aiTest.mockResolvedValue(test({ state: "invalidKey", keyOk: false, message: "rejected" }));
+    await testSaved();
+    expect(ai.get().connection.result?.state).toBe("invalidKey");
+    expect(ai.get().config?.hasKey).toBe(true);
+  });
+
+  it("a key that is not shaped like a key is refused with the reason, and nothing is stored", async () => {
+    api.aiConfigSet.mockRejectedValue("That looks like an OpenAI or Anthropic key. This browser only works with NVIDIA keys, which start with nvapi-.");
+    expect(await saveKey("sk-abc")).toBe(false);
     expect(ai.get().connection.error).toContain("NVIDIA keys");
-    expect(api.aiConfigSet).not.toHaveBeenCalled();
+    expect(ai.get().config).toBeNull();
+  });
+
+  it("a failing credential store is reported and does not pretend a key exists", async () => {
+    api.aiConfigSet.mockRejectedValue("The Windows Credential Manager refused the key");
+    expect(await saveKey(KEY)).toBe(false);
+    expect(ai.get().connection.error).toContain("Credential Manager");
+  });
+
+  it("works from a never-configured state with no model chosen", async () => {
+    api.aiConfigGet.mockResolvedValue(config());
+    await loadAiConfig();
+    expect(ai.get().config).toMatchObject({ hasKey: false, model: "" });
+    api.aiConfigSet.mockResolvedValue(config({ hasKey: true }));
+    expect(await saveKey(KEY)).toBe(true);
+    expect(ai.get().config).toMatchObject({ hasKey: true, model: "" });
   });
 
   it("never keeps the key in the store", async () => {
-    api.aiTest.mockResolvedValue(test());
     api.aiConfigSet.mockResolvedValue(config({ hasKey: true }));
-    api.aiModels.mockResolvedValue(models());
-    await connect(KEY);
+    await saveKey(KEY);
     expect(JSON.stringify(ai.get())).not.toContain(KEY);
-    api.aiTest.mockResolvedValue(test({ state: "invalidKey", keyOk: false }));
-    await connect(KEY);
+    api.aiConfigSet.mockRejectedValue("failed");
+    await saveKey(KEY);
     expect(JSON.stringify(ai.get())).not.toContain(KEY);
   });
 });

@@ -87,7 +87,7 @@ pub fn resolve_input(input: &str, search_template: &str) -> Option<Resolved> {
         return Some(Resolved::Web(search_url(search_template, q)));
     }
 
-    if text.len() >= 10 && text[..10].eq_ignore_ascii_case("browser://") {
+    if text.get(..10).is_some_and(|p| p.eq_ignore_ascii_case("browser://")) {
         return Some(match internal_page(&text.to_ascii_lowercase()) {
             Some(page) => Resolved::Internal(format!("browser://{page}")),
             None => Resolved::Web(search_url(search_template, text)),
@@ -200,6 +200,14 @@ mod tests {
         match resolve_input(input, G) {
             Some(Resolved::Web(u)) => u,
             other => panic!("expected web url for {input:?}, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn non_ascii_text_near_the_scheme_length_does_not_panic() {
+        // Regression: slicing the first 10 bytes split a multi-byte character and crashed the app.
+        for input in ["schönheit und mehr", "çalışma saati", "ärger ärger ärger", "日本語のテキスト入力"] {
+            assert!(matches!(resolve_input(input, G), Some(Resolved::Web(_))), "{input}");
         }
     }
 

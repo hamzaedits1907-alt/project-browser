@@ -407,10 +407,17 @@ impl Controller {
         self.suspend_cooldown.remove(&id);
         self.dirty_until.remove(&id);
         if let Some(view) = self.views.remove(&id) {
-            log::info!("tab {id}: webview destroyed");
             let _ = self.app.run_on_main_thread(move || native::remove_tab(id));
-            if let Err(e) = view.webview.close() {
-                log::warn!("closing webview for tab {id} failed: {e}");
+            if self.tabs.get(id).is_none() && self.tab_has_active_download(id) {
+                // The tab is gone but a download it started is running; closing its webview would cut the download off.
+                log::info!("tab {id}: closed, its webview stays hidden until its download finishes");
+                let _ = view.webview.hide();
+                self.lingering.insert(id, View { visible: false, bounds: None, ..view });
+            } else {
+                log::info!("tab {id}: webview destroyed");
+                if let Err(e) = view.webview.close() {
+                    log::warn!("closing webview for tab {id} failed: {e}");
+                }
             }
         }
         if let Some(t) = self.tabs.get_mut(id) {

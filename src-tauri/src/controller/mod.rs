@@ -238,6 +238,8 @@ pub struct Controller {
     pub(crate) settings: Settings,
     pub(crate) tabs: TabStrip,
     pub(crate) views: HashMap<TabId, View>,
+    /// Webviews of closed tabs that are kept (hidden) until the downloads they started are over.
+    pub(crate) lingering: HashMap<TabId, View>,
     pub(crate) layout: Layout,
     pub(crate) downloads: Vec<Download>,
     pub(crate) prompts: Vec<PermissionPrompt>,
@@ -310,6 +312,7 @@ impl Controller {
             settings: init.settings,
             tabs: TabStrip::new(),
             views: HashMap::new(),
+            lingering: HashMap::new(),
             layout: Layout::default(),
             downloads,
             prompts: Vec::new(),

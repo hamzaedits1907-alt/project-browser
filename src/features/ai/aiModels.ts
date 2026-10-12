@@ -146,6 +146,8 @@ export function stateView(state: ConnectionState): StateView {
       return { tone: "warn", headline: "Model not available" };
     case "modelRejected":
       return { tone: "warn", headline: "Model not supported" };
+    case "unconfirmed":
+      return { tone: "warn", headline: "Key not confirmed yet" };
     default:
       return { tone: "warn", headline: "Something went wrong" };
   }

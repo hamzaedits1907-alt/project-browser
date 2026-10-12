@@ -151,7 +151,7 @@ describe("capability gates", () => {
 });
 
 describe("connection states", () => {
-  const ALL: ConnectionState[] = ["ok", "noKey", "invalidKey", "rateLimited", "network", "timeout", "serverError", "badResponse", "empty", "modelUnavailable", "modelRejected", "other"];
+  const ALL: ConnectionState[] = ["ok", "noKey", "invalidKey", "rateLimited", "network", "timeout", "serverError", "badResponse", "empty", "modelUnavailable", "modelRejected", "unconfirmed", "other"];
 
   it("every state has its own headline and only 'ok' is good", () => {
     const headlines = new Set(ALL.map((s) => stateView(s).headline));
@@ -239,6 +239,6 @@ describe("the setup state machine", () => {
 
   it("treats only failures that say nothing about the key as transient", () => {
     for (const s of ["network", "timeout", "rateLimited", "serverError", "badResponse", "other"] as const) expect(isTransientFailure(s)).toBe(true);
-    for (const s of ["invalidKey", "ok", "noKey", "modelUnavailable", "modelRejected", "empty"] as const) expect(isTransientFailure(s)).toBe(false);
+    for (const s of ["invalidKey", "ok", "noKey", "modelUnavailable", "modelRejected", "empty", "unconfirmed"] as const) expect(isTransientFailure(s)).toBe(false);
   });
 });

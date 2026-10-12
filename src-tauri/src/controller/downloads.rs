@@ -59,7 +59,8 @@ impl Controller {
         if self.settings.gaming_mode && self.settings.gaming_pause_downloads {
             d.paused_by_gaming = true;
             let id = d.id;
-            let _ = self.app.run_on_main_thread(move || native::download_action(id, DownloadAction::Pause));
+            let h = self.handle.clone();
+            let _ = self.app.run_on_main_thread(move || native::download_action(id, DownloadAction::Pause, h));
             self.toast(format!("{} queued until Gaming Mode ends", d.filename));
         } else {
             self.toast(format!("Downloading {}", d.filename));
@@ -70,10 +71,47 @@ impl Controller {
         }
         self.downloads.insert(0, d);
         self.mark_downloads();
-        // A link that turned into a download leaves the tab on its previous page.
-        if let Some(t) = tab.and_then(|t| self.tabs.get_mut(t)) {
-            t.loading = false;
+        if let Some(tab) = tab {
+            self.settle_download_tab(tab);
+        }
+    }
+
+    /// A tab whose only purpose was the download (a fresh tab that never showed a page) is closed, as other browsers do.
+    /// Its webview stays alive, hidden, until the transfer is over: WebView2 ties a download to the webview that started
+    /// it, and closing that webview cuts the transfer off. Any other tab stays on the page it was showing.
+    fn settle_download_tab(&mut self, id: TabId) {
+        let Some(t) = self.tabs.get_mut(id) else { return };
+        t.loading = false;
+        let only_for_download = !t.can_go_back && t.title.trim().is_empty() && !t.pinned;
+        let url = t.url.clone();
+        if only_for_download {
+            log::info!("tab {id}: closed, it existed only to start a download");
+            self.close_tab(id);
+            // Reopening a closed tab must not start the download again.
+            if self.tabs.closed().last().is_some_and(|c| c.url == url) {
+                let _ = self.tabs.pop_closed();
+            }
+        } else {
+            let h = self.handle.clone();
+            let _ = self.app.run_on_main_thread(move || native::report_source(id, h));
             self.mark_state();
+        }
+    }
+
+    pub(crate) fn tab_has_active_download(&self, tab: TabId) -> bool {
+        self.download_tabs.iter().any(|(did, tid)| *tid == tab && self.downloads.iter().any(|d| d.id == *did && d.state.is_active()))
+    }
+
+    /// Closes the webview of a closed tab once none of its downloads is still running.
+    pub(crate) fn release_lingering(&mut self, tab: TabId) {
+        if self.tab_has_active_download(tab) {
+            return;
+        }
+        if let Some(view) = self.lingering.remove(&tab) {
+            log::info!("tab {tab}: its downloads are over, closing the hidden webview");
+            if let Err(e) = view.webview.close() {
+                log::warn!("closing the webview of tab {tab} failed: {e}");
+            }
         }
     }
 
@@ -113,30 +151,34 @@ impl Controller {
             }
         }
         let snapshot = d.clone();
-        if !snapshot.state.is_active() {
-            self.download_tabs.remove(&id);
-        }
+        let owner = if snapshot.state.is_active() { None } else { self.download_tabs.remove(&id) };
         if snapshot.state == DownloadState::Completed {
             self.toast(format!("{} downloaded", snapshot.filename));
         }
         self.persist_download(&snapshot, false);
         self.mark_downloads();
+        if let Some(tab) = owner {
+            self.release_lingering(tab);
+        }
     }
 
     pub fn download_command(&mut self, id: i64, cmd: DownloadCommand) -> Result<()> {
         let d = self.downloads.iter().find(|d| d.id == id).cloned().ok_or_else(|| Error::msg("download not found"))?;
         match cmd {
             DownloadCommand::Pause => {
-                let _ = self.app.run_on_main_thread(move || native::download_action(id, DownloadAction::Pause));
+                let h = self.handle.clone();
+                let _ = self.app.run_on_main_thread(move || native::download_action(id, DownloadAction::Pause, h));
             }
             DownloadCommand::Resume => {
                 if let Some(x) = self.downloads.iter_mut().find(|x| x.id == id) {
                     x.paused_by_gaming = false;
                 }
-                let _ = self.app.run_on_main_thread(move || native::download_action(id, DownloadAction::Resume));
+                let h = self.handle.clone();
+                let _ = self.app.run_on_main_thread(move || native::download_action(id, DownloadAction::Resume, h));
             }
             DownloadCommand::Cancel => {
-                let _ = self.app.run_on_main_thread(move || native::download_action(id, DownloadAction::Cancel));
+                let h = self.handle.clone();
+                let _ = self.app.run_on_main_thread(move || native::download_action(id, DownloadAction::Cancel, h));
             }
             DownloadCommand::Open | DownloadCommand::OpenConfirmed => {
                 if d.state != DownloadState::Completed {
@@ -162,7 +204,8 @@ impl Controller {
             }
             DownloadCommand::Remove => {
                 if d.state.is_active() {
-                    let _ = self.app.run_on_main_thread(move || native::download_action(id, DownloadAction::Cancel));
+                    let h = self.handle.clone();
+                    let _ = self.app.run_on_main_thread(move || native::download_action(id, DownloadAction::Cancel, h));
                 }
                 self.downloads.retain(|x| x.id != id);
                 self.db.download_remove(id)?;

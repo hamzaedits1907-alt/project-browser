@@ -216,7 +216,8 @@ impl Controller {
                 for d in self.downloads.iter_mut().filter(|d| d.state == crate::db::downloads::DownloadState::InProgress) {
                     d.paused_by_gaming = true;
                     let id = d.id;
-                    let _ = self.app.run_on_main_thread(move || native::download_action(id, DownloadAction::Pause));
+                    let h = self.handle.clone();
+                    let _ = self.app.run_on_main_thread(move || native::download_action(id, DownloadAction::Pause, h));
                 }
                 self.mark_downloads();
             }
@@ -228,7 +229,8 @@ impl Controller {
             for d in self.downloads.iter_mut().filter(|d| d.paused_by_gaming) {
                 d.paused_by_gaming = false;
                 let id = d.id;
-                let _ = self.app.run_on_main_thread(move || native::download_action(id, DownloadAction::Resume));
+                let h = self.handle.clone();
+                let _ = self.app.run_on_main_thread(move || native::download_action(id, DownloadAction::Resume, h));
             }
             self.mark_downloads();
         }

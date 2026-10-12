@@ -1,7 +1,7 @@
 import { createStore } from "../../lib/createStore";
 import { api, errorMessage, on } from "../../lib/ipc";
 import type { AiChatMessage, AiConfigView, AiFeature, AiProbeResult, AiTestResult, ConnectionState, ModelInfo } from "../../lib/types";
-import { isModelProblem, isTransientFailure } from "./aiModels";
+import { isModelProblem } from "./aiModels";
 
 export interface AiMessage extends AiChatMessage {
   id: number;
@@ -151,48 +151,19 @@ export async function selectModel(id: string): Promise<boolean> {
 }
 
 /**
- * Checks a key the user just typed and, if NVIDIA accepts it, saves it to Windows Credential Manager and loads
- * the models. A key NVIDIA rejects (or that could not be checked) is not saved. The key is only a parameter
- * here: it is never put into the store.
+ * Saves a key the user typed to Windows Credential Manager. This is only storage: it needs no network, no model list and
+ * no model choice, so it works offline, with a retired model selected, or before anything has ever been configured. Whether
+ * NVIDIA accepts the key is a separate step ({@link testSaved}). The key is only a parameter here: it is never put into the
+ * store. Only a key that is not shaped like a key, or a credential store failure, makes this fail.
  */
-export async function connect(key: string): Promise<AiTestResult | null> {
-  ai.set({ connection: { phase: "testing", result: null, error: null } });
-  let result: AiTestResult;
-  try {
-    result = await api.aiTest(key);
-  } catch (e) {
-    ai.set({ connection: { phase: "done", result: null, error: errorMessage(e) } });
-    return null;
-  }
-  ai.set({ connection: { phase: "done", result, error: null } });
-  if (!result.keyOk) return result;
+export async function saveKey(key: string): Promise<boolean> {
+  ai.set({ connection: NO_CONNECTION });
   try {
     const config = await api.aiConfigSet({ apiKey: key });
-    ai.set({ config, models: NO_MODELS });
-    await loadModels(true);
-  } catch (e) {
-    ai.set({ connection: { phase: "done", result, error: errorMessage(e) } });
-  }
-  return result;
-}
-
-/**
- * Saves a key without NVIDIA having confirmed it. Offered only when the check failed for a reason that says nothing
- * about the key (the network is down, NVIDIA is rate limiting). A key NVIDIA actively rejected is never saved this way.
- */
-export async function saveKeyUnchecked(key: string): Promise<boolean> {
-  const last = ai.get().connection.result;
-  if (last && !isTransientFailure(last.state)) {
-    ai.set({ connection: { phase: "done", result: last, error: "That key was rejected, so it wasn't saved." } });
-    return false;
-  }
-  try {
-    const config = await api.aiConfigSet({ apiKey: key });
-    ai.set({ config, models: NO_MODELS, connection: { phase: "idle", result: null, error: null } });
-    await loadModels(true);
+    ai.set({ config, models: NO_MODELS, unavailable: [] });
     return true;
   } catch (e) {
-    ai.set({ connection: { phase: "done", result: last ?? null, error: errorMessage(e) } });
+    ai.set({ connection: { phase: "done", result: null, error: errorMessage(e) } });
     return false;
   }
 }

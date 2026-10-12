@@ -401,6 +401,7 @@ export type ConnectionState =
   | "empty"
   | "modelUnavailable"
   | "modelRejected"
+  | "unconfirmed"
   | "other";
 
 export interface ModelsResponse {

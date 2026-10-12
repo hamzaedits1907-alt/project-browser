@@ -337,6 +337,8 @@ pub enum ConnectionState {
     Empty,
     ModelUnavailable,
     ModelRejected,
+    /// The key was not rejected, but no model answered, so NVIDIA has neither confirmed nor refused it.
+    Unconfirmed,
     Other,
 }
 
@@ -685,8 +687,8 @@ pub async fn test_connection(api: &NvidiaApi, key: &Secret, selected: &str) -> (
         }
     }
     let problem = selected_problem.unwrap_or(Failure {
-        state: ConnectionState::ModelUnavailable,
-        message: "NVIDIA's list has no chat model that answered, so the key couldn't be checked. Try again later.".into(),
+        state: ConnectionState::Unconfirmed,
+        message: "NVIDIA didn't reject your key, but none of the models tried answered, so it couldn't be confirmed. Your key is still saved. Choose a model below and test again.".into(),
     });
     (failed(problem, count), models)
 }
@@ -1584,7 +1586,7 @@ mod tests {
     fn when_no_model_answers_the_result_says_the_key_is_unchecked() {
         let fake = fake_nvidia(vec![("/models", vec![ok(model_list())]), ("/chat/completions", vec![status(404, "404 page not found")])]);
         let (result, _) = run(test_connection(&api(&fake), &Secret::new(KEY), ""));
-        assert_eq!((result.state, result.key_ok), (ConnectionState::ModelUnavailable, false));
+        assert_eq!((result.state, result.key_ok), (ConnectionState::Unconfirmed, false));
         assert!(fake.requests_to("/chat/completions") <= MAX_TEST_MODELS);
     }
 

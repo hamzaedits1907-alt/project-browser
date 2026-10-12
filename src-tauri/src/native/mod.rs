@@ -511,19 +511,31 @@ pub fn respond_permission(req: u64, allow: Option<bool>) {
 
 fn choose_download_path(suggested: &str) -> Option<String> {
     let dir = DOWNLOAD_DIR.lock().ok()?.clone()?;
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        log::warn!("download folder {} is not usable ({e}); using the default folder", dir.display());
+        return None;
+    }
     let name = std::path::Path::new(suggested).file_name()?.to_string_lossy().to_string();
     let path = crate::db::downloads::unique_path(&dir, &name, |p| p.exists());
     Some(path.to_string_lossy().to_string())
 }
 
+fn host_of(url: &str) -> String {
+    url::Url::parse(url).ok().and_then(|u| u.host_str().map(str::to_string)).unwrap_or_else(|| "unknown host".into())
+}
+
 unsafe fn start_download(args: &ICoreWebView2DownloadStartingEventArgs, tab: Option<TabId>, ctl: &ControllerHandle) -> windows::core::Result<()> {
     let op = args.DownloadOperation()?;
     // We show our own downloads UI instead of the Edge flyout.
-    args.SetHandled(true)?;
+    if let Err(e) = args.SetHandled(true) {
+        log::warn!("download: could not take over the download UI: {e}");
+    }
     let mut path = pwstr(|p| args.ResultFilePath(p));
     if let Some(custom) = choose_download_path(&path) {
-        args.SetResultFilePath(&HSTRING::from(custom.as_str()))?;
-        path = custom;
+        match args.SetResultFilePath(&HSTRING::from(custom.as_str())) {
+            Ok(()) => path = custom,
+            Err(e) => log::warn!("download: could not set the target path, keeping WebView2's choice: {e}"),
+        }
     }
     let id = next_download_id();
     let url = pwstr(|p| op.Uri(p));
@@ -531,11 +543,18 @@ unsafe fn start_download(args: &ICoreWebView2DownloadStartingEventArgs, tab: Opt
     let mut total = 0i64;
     let _ = op.TotalBytesToReceive(&mut total);
     let total = (total > 0).then_some(total);
+    log::info!(
+        "download {id}: started from {} into {} ({}, {})",
+        host_of(&url),
+        std::path::Path::new(&path).parent().map(|p| p.display().to_string()).unwrap_or_default(),
+        total.map(|t| format!("{t} bytes")).unwrap_or_else(|| "size unknown".into()),
+        if mime.is_empty() { "no content type" } else { mime.as_str() }
+    );
 
     let c = ctl.clone();
-    let mut last = Instant::now() - Duration::from_secs(1);
+    let mut last = Instant::now().checked_sub(Duration::from_secs(1)).unwrap_or_else(Instant::now);
     let mut token = 0i64;
-    op.add_BytesReceivedChanged(
+    if let Err(e) = op.add_BytesReceivedChanged(
         &BytesReceivedChangedEventHandler::create(Box::new(move |sender, _| {
             // Progress fires very often; forward at most 4 updates per second.
             if last.elapsed() < Duration::from_millis(250) {
@@ -551,14 +570,16 @@ unsafe fn start_download(args: &ICoreWebView2DownloadStartingEventArgs, tab: Opt
             Ok(())
         })),
         &mut token,
-    )?;
+    ) {
+        log::warn!("download {id}: progress updates unavailable: {e}");
+    }
 
     let c = ctl.clone();
-    op.add_StateChanged(
+    if let Err(e) = op.add_StateChanged(
         &StateChangedEventHandler::create(Box::new(move |sender, _| {
             let Some(op) = sender else { return Ok(()) };
             let mut state = COREWEBVIEW2_DOWNLOAD_STATE::default();
-            op.State(&mut state)?;
+            let _ = op.State(&mut state);
             let mut reason = COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON::default();
             let _ = op.InterruptReason(&mut reason);
             let mut received = 0i64;
@@ -571,6 +592,7 @@ unsafe fn start_download(args: &ICoreWebView2DownloadStartingEventArgs, tab: Opt
                 _ if reason == COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON_USER_CANCELED => NativeDownloadState::Cancelled,
                 _ => NativeDownloadState::Interrupted(interrupt_text(reason)),
             };
+            log::info!("download {id}: state {} (reason {}), {received} bytes received", state.0, reason.0);
             if matches!(native, NativeDownloadState::Completed | NativeDownloadState::Cancelled | NativeDownloadState::Interrupted(_)) {
                 DOWNLOADS.with(|d| d.borrow_mut().remove(&id));
             }
@@ -578,7 +600,9 @@ unsafe fn start_download(args: &ICoreWebView2DownloadStartingEventArgs, tab: Opt
             Ok(())
         })),
         &mut token,
-    )?;
+    ) {
+        log::warn!("download {id}: state updates unavailable: {e}");
+    }
 
     DOWNLOADS.with(|d| d.borrow_mut().insert(id, op));
     let started = NativeDownload { id, url, path, mime: (!mime.is_empty()).then_some(mime), total };
@@ -599,7 +623,7 @@ fn interrupt_text(reason: COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON) -> String {
         COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON_SERVER_FORBIDDEN => "Server refused the download",
         COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON_SERVER_UNAUTHORIZED => "Not authorised",
         COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON_USER_SHUTDOWN => "Browser closed",
-        _ => "Download failed",
+        _ => return format!("Download failed (code {})", reason.0),
     }
     .to_string()
 }
@@ -628,7 +652,10 @@ pub enum DownloadAction {
     Cancel,
 }
 
-pub fn download_action(id: i64, action: DownloadAction) {
+/// `ERROR_INVALID_STATE`: what WebView2 answers when the webview that owns a download has been closed.
+const E_INVALID_STATE: i32 = 0x8007139Fu32 as i32;
+
+pub fn download_action(id: i64, action: DownloadAction, ctl: ControllerHandle) {
     let Some(op) = DOWNLOADS.with(|d| d.borrow().get(&id).cloned()) else { return };
     unsafe {
         let r = match action {
@@ -644,7 +671,32 @@ pub fn download_action(id: i64, action: DownloadAction) {
         };
         if let Err(e) = r {
             log::warn!("download {id} action failed: {e}");
+            if e.code().0 == E_INVALID_STATE {
+                // The transfer can no longer be controlled (its tab's webview is gone). Stop showing it as running.
+                DOWNLOADS.with(|d| d.borrow_mut().remove(&id));
+                let mut received = 0i64;
+                let _ = op.BytesReceived(&mut received);
+                let cancelled = matches!(action, DownloadAction::Cancel);
+                ctl.post(move |c| {
+                    let state = if cancelled {
+                        NativeDownloadState::Cancelled
+                    } else {
+                        NativeDownloadState::Interrupted("The download was cut off before it finished".into())
+                    };
+                    c.on_download_state(id, state, String::new(), received)
+                });
+            }
         }
+    }
+}
+
+/// Reports the address the tab is really showing. A link that turned into a download makes the tab announce the
+/// download's address first, but the tab stays on its previous page.
+pub fn report_source(id: TabId, ctl: ControllerHandle) {
+    let Some(t) = tab_com(id) else { return };
+    let uri = unsafe { pwstr(|p| t.webview.Source(p)) };
+    if !uri.is_empty() {
+        ctl.post(move |c| c.on_source_changed(id, uri, true));
     }
 }
 

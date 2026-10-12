@@ -3,9 +3,9 @@ import { useEffect, useRef, useState } from "react";
 import { Badge, Button, Slider, Spinner } from "../../components/ui/controls";
 import { Icon } from "../../components/ui/Icon";
 import { Card, Notice, SettingRow } from "../../components/ui/Section";
-import { capabilityView, featureGate, formatCount, isTransientFailure, KIND_LABEL, resolveSelection, setupStage, stateView } from "../../features/ai/aiModels";
+import { capabilityView, featureGate, formatCount, KIND_LABEL, resolveSelection, setupStage, stateView } from "../../features/ai/aiModels";
 import type { SetupStage } from "../../features/ai/aiModels";
-import { ai, connect, loadAiConfig, loadModels, probeFeature, removeKey, removeStaleKey, saveKeyUnchecked, selectModel, testSaved } from "../../features/ai/aiStore";
+import { ai, loadAiConfig, loadModels, probeFeature, removeKey, removeStaleKey, saveKey, selectModel, testSaved } from "../../features/ai/aiStore";
 import type { ConnectionUi } from "../../features/ai/aiStore";
 import { ModelPicker } from "../../features/ai/ModelPicker";
 import { api } from "../../lib/ipc";
@@ -43,8 +43,8 @@ function ConnectionStatus({ connection }: { connection: ConnectionUi }) {
 const STAGE_TEXT: Record<SetupStage["stage"], { tone: "good" | "warn" | "bad" | "neutral"; text: string }> = {
   loading: { tone: "neutral", text: "Reading your saved settings…" },
   noKey: { tone: "neutral", text: "Step 1: paste your NVIDIA API key." },
-  keyEntered: { tone: "neutral", text: "Press Connect to check the key with NVIDIA and save it." },
-  keySaved: { tone: "neutral", text: "Your key is saved. Loading models…" },
+  keyEntered: { tone: "neutral", text: "Press Save key. Saving only stores the key; it doesn't need the internet or a model." },
+  keySaved: { tone: "neutral", text: "Your key is saved. Press Test connection to check it with NVIDIA." },
   catalogLoading: { tone: "neutral", text: "Loading NVIDIA's model list…" },
   invalidKey: { tone: "bad", text: "NVIDIA rejected the key. Paste a new one." },
   providerFailure: { tone: "warn", text: "Couldn't finish talking to NVIDIA. Your key is saved; try again." },
@@ -151,29 +151,19 @@ export function AiSettings() {
     selectedModel: config?.model ?? "",
     unavailable,
   });
-  const canSaveUnchecked = keyTyped && connection.phase === "done" && !!connection.result && !connection.result.keyOk && isTransientFailure(connection.result.state);
   const busy = connection.phase === "testing";
   const selection = resolveSelection(models.models, config?.model ?? "", unavailable);
   const selectedModel = selection.status === "ready" ? selection.model : selection.status === "unsupported" ? selection.model : null;
 
-  const onConnect = async () => {
+  // Saving stores the key and nothing else. Loading the model list and testing the connection never decide whether it is kept.
+  const onSave = async () => {
     const value = keyInput.current?.value.trim() ?? "";
     if (!value) return;
-    const result = await connect(value);
-    if (result?.keyOk) {
+    if (await saveKey(value)) {
       if (keyInput.current) keyInput.current.value = "";
       setKeyTyped(false);
       toast("NVIDIA key saved");
-    }
-  };
-
-  const onSaveUnchecked = async () => {
-    const value = keyInput.current?.value.trim() ?? "";
-    if (!value) return;
-    if (await saveKeyUnchecked(value)) {
-      if (keyInput.current) keyInput.current.value = "";
-      setKeyTyped(false);
-      toast("NVIDIA key saved (not checked)");
+      void loadModels(true);
     }
   };
 
@@ -201,13 +191,12 @@ export function AiSettings() {
               type="password"
               autoComplete="new-password"
               spellCheck={false}
-              disabled={busy}
               placeholder={hasKey ? "Paste a new key to replace the saved one" : "nvapi-…"}
               onChange={(e) => setKeyTyped(e.target.value.trim().length > 0)}
-              onKeyDown={(e) => e.key === "Enter" && void onConnect()}
+              onKeyDown={(e) => e.key === "Enter" && void onSave()}
             />
-            <Button variant="primary" disabled={busy || !keyTyped} onClick={() => void onConnect()}>
-              {busy && keyTyped ? "Checking…" : hasKey ? "Replace key" : "Connect"}
+            <Button variant="primary" disabled={!keyTyped} onClick={() => void onSave()}>
+              {hasKey ? "Replace key" : "Save key"}
             </Button>
           </div>
           {hasKey ? (
@@ -216,8 +205,8 @@ export function AiSettings() {
             </p>
           ) : (
             <p className="field-hint">
-              Create a key at build.nvidia.com (it starts with nvapi-). It is checked with NVIDIA first, then saved to Windows Credential Manager, not
-              to the browser's own files.
+              Create a key at build.nvidia.com (it starts with nvapi-). Saving puts it in Windows Credential Manager, not in the browser's own files.
+              It works without a model and without the internet; use Test connection afterwards to check it with NVIDIA.
             </p>
           )}
         </div>
@@ -226,12 +215,6 @@ export function AiSettings() {
 
         <ConnectionStatus connection={connection} />
 
-        {canSaveUnchecked && (
-          <Notice tone="info">
-            NVIDIA couldn't be reached to check this key, which says nothing about the key itself. You can save it anyway and test it later.{" "}
-            <Button size="sm" onClick={() => void onSaveUnchecked()}>Save without checking</Button>
-          </Notice>
-        )}
         {!config && (
           <Notice tone="warn">
             Your saved AI settings couldn't be read, but you can still enter a key.{" "}
@@ -261,7 +244,7 @@ export function AiSettings() {
 
       <Card title="Model" subtitle="Pick from the models NVIDIA currently offers. The assistant panel and “Include this page” both use the model chosen here.">
         {!hasKey ? (
-          <p className="dim">Connect your NVIDIA key above to load the model list.</p>
+          <p className="dim">Save your NVIDIA key above to load the model list.</p>
         ) : models.phase === "loading" && models.models.length === 0 ? (
           <div className="ai-status" role="status">
             <Spinner size={16} /> <span>Loading models from NVIDIA…</span>

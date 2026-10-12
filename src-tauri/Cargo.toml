@@ -1,6 +1,6 @@
 [package]
 name = "project-browser"
-version = "0.1.2"
+version = "0.2.0"
 description = "Project Browser - a gaming-first desktop web browser"
 edition = "2021"
 rust-version = "1.85"

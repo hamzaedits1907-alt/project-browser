@@ -666,6 +666,8 @@ mod tests {
         empty,https://empty.example/,erin,,\r\n\
         \r\n";
 
+    type VaultRow = (String, String, String, Vec<u8>, Option<Vec<u8>>);
+
     fn db() -> Db {
         Db::open_in_memory().unwrap()
     }
@@ -738,7 +740,7 @@ mod tests {
 
         // Look at every byte SQLite holds for the vault: the password and the note must not appear.
         let mut stmt = db.conn.prepare("SELECT origin, display_url, username, sealed, note_sealed FROM vault_logins").unwrap();
-        let rows: Vec<(String, String, String, Vec<u8>, Option<Vec<u8>>)> =
+        let rows: Vec<VaultRow> =
             stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))).unwrap().map(|r| r.unwrap()).collect();
         assert_eq!(rows.len(), 2);
         let haystack: Vec<u8> =

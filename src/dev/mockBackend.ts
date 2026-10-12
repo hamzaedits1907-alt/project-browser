@@ -42,6 +42,15 @@ export function installMockBackend(): void {
   const params = new URLSearchParams(location.search);
   let aiModel = params.get("ai") === "1" ? "google/gemma-3-4b-it" : "";
   let aiKey = params.get("ai") === "1";
+  // Lets screenshots open a given Settings section: ?page=settings&section=ai
+  const section = params.get("section");
+  if (section) {
+    try {
+      localStorage.setItem("pb:settings.section", JSON.stringify(section));
+    } catch {
+      /* preview only */
+    }
+  }
   const startUrl = params.get("page") ? `browser://${params.get("page")}` : "browser://newtab";
 
   let settings: Settings = { ...DEFAULT_SETTINGS, gamingMode: params.get("gaming") === "1", accent: params.get("accent") ?? "ion" };

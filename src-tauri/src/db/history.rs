@@ -224,6 +224,44 @@ impl Db {
     }
 }
 
+/// One visit read from another browser: a page address and when it was opened.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VisitRow {
+    pub url: String,
+    pub visited_at: i64,
+}
+
+impl Db {
+    /// Bulk import of individual visits (browser migration), in one transaction.
+    ///
+    /// A visit is stored only for a page that is already in the history (`import_urls` runs first) and
+    /// only when that page has no visit at the same time yet, so importing twice adds nothing. Visit
+    /// counts are not touched: the page rows carry the source browser's own counts.
+    pub fn import_visits(&self, rows: &[VisitRow]) -> Result<ImportCounts> {
+        let tx = self.conn.unchecked_transaction()?;
+        let mut counts = ImportCounts::default();
+        {
+            let mut find_url = tx.prepare_cached("SELECT id FROM urls WHERE url = ?1")?;
+            let mut find_visit = tx.prepare_cached("SELECT 1 FROM visits WHERE url_id = ?1 AND visited_at = ?2")?;
+            let mut add_visit = tx.prepare_cached("INSERT INTO visits (url_id, visited_at) VALUES (?1, ?2)")?;
+            for r in rows {
+                let Some(url_id) = find_url.query_row([&r.url], |row| row.get::<_, i64>(0)).optional()? else {
+                    counts.skipped += 1;
+                    continue;
+                };
+                if r.visited_at <= 0 || find_visit.query_row(params![url_id, r.visited_at], |_| Ok(())).optional()?.is_some() {
+                    counts.skipped += 1;
+                    continue;
+                }
+                add_visit.execute(params![url_id, r.visited_at])?;
+                counts.added += 1;
+            }
+        }
+        tx.commit()?;
+        Ok(counts)
+    }
+}
+
 /// Outcome of a bulk import into the database.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ImportCounts {
@@ -303,6 +341,24 @@ mod tests {
         db.record_visit("https://a.com/2", "", 1).unwrap();
         db.record_visit("https://b.com/", "", 1).unwrap();
         assert_eq!(db.top_sites(10, 1).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn imported_visits_keep_their_times_and_need_a_known_page() {
+        let db = Db::open_in_memory().unwrap();
+        db.import_urls(&[UrlRow { url: "https://a.com/".into(), title: "A".into(), visit_count: 3, last_visit: 30 }]).unwrap();
+        let visits = vec![
+            VisitRow { url: "https://a.com/".into(), visited_at: 10 },
+            VisitRow { url: "https://a.com/".into(), visited_at: 20 },
+            VisitRow { url: "https://a.com/".into(), visited_at: 30 }, // the page row already recorded this one
+            VisitRow { url: "https://unknown.com/".into(), visited_at: 40 },
+            VisitRow { url: "https://a.com/".into(), visited_at: 0 }, // no real timestamp
+        ];
+        assert_eq!(db.import_visits(&visits).unwrap(), ImportCounts { added: 2, skipped: 3 });
+        let times: Vec<i64> = db.history_query("", 10, None).unwrap().iter().map(|e| e.visited_at).collect();
+        assert_eq!(times, vec![30, 20, 10]);
+        assert_eq!(db.import_visits(&visits).unwrap(), ImportCounts { added: 0, skipped: 5 }, "a second run adds nothing");
+        assert_eq!(db.top_sites(10, 30).unwrap()[0].visit_count, 3, "counts come from the page rows, not from the visits");
     }
 
     #[test]

@@ -4,8 +4,11 @@ import type { KeyboardEvent } from "react";
 import { api } from "../../lib/ipc";
 import { useOverlay } from "../../lib/overlay";
 import { activeTab, attempt, onBus, useStore } from "../../lib/store";
-import type { Suggestion, Tab } from "../../lib/types";
+import type { FillOptions, Suggestion, Tab } from "../../lib/types";
 import { idleAddress, splitUrl } from "../../lib/urls";
+import { useLoad } from "../../lib/useLoad";
+import { canOfferFill } from "../../lib/vault";
+import { FillPanel } from "../menus/FillPanel";
 import { SitePanel } from "../menus/SitePanel";
 import { Icon } from "../ui/Icon";
 import type { IconName } from "../ui/Icon";
@@ -52,6 +55,8 @@ export function Omnibox() {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [selected, setSelected] = useState(-1);
   const [siteOpen, setSiteOpen] = useState(false);
+  const [fillOpen, setFillOpen] = useState(false);
+  const keyRef = useRef<HTMLButtonElement>(null);
   const seq = useRef(0);
   const timer = useRef<number | undefined>(undefined);
 
@@ -61,6 +66,16 @@ export function Omnibox() {
 
   const idle = idleAddress(tab);
   const shown = focused ? text : idle;
+
+  // Saved logins and addresses for this exact page. The result is tagged with the page it was asked for, so a slow
+  // answer for the previous tab is never offered on the new one.
+  const fillTab = canOfferFill(tab) ? tab : null;
+  const fillKey = fillTab ? `${fillTab.id}|${fillTab.url}` : null;
+  const fill = useLoad<{ key: string; options: FillOptions }>(
+    () => api.fillOptions(fillTab?.id ?? 0).then((options) => ({ key: fillKey ?? "", options })),
+    fillKey,
+  );
+  const fillOptions = fillKey && fill.data?.key === fillKey && (fill.data.options.logins.length > 0 || fill.data.options.profileCount > 0) ? fill.data.options : null;
 
   const focusInput = useCallback(() => {
     const el = inputRef.current;
@@ -211,6 +226,19 @@ export function Omnibox() {
           <Icon name="star" size={16} filled={tab.bookmarked} />
         </button>
       )}
+      {fillOptions && fillTab && (
+        <button
+          ref={keyRef}
+          type="button"
+          className={`omni-key${fillOpen ? " is-on" : ""}`}
+          aria-label="Fill a saved login or address"
+          aria-haspopup="dialog"
+          title={fillOptions.logins.length > 0 ? "Fill a saved login" : "Fill a saved address"}
+          onClick={() => setFillOpen((o) => !o)}
+        >
+          <Icon name="key" size={16} />
+        </button>
+      )}
       {tab?.loading && <div className="omni-progress" role="progressbar" aria-label="Loading page" />}
 
       {showList && (
@@ -234,6 +262,7 @@ export function Omnibox() {
       )}
 
       <SitePanel tab={tab} open={siteOpen} onClose={() => setSiteOpen(false)} anchor={wrapRef} />
+      {fillOptions && fillTab && <FillPanel tab={fillTab} options={fillOptions} open={fillOpen} onClose={() => setFillOpen(false)} anchor={keyRef} />}
     </div>
   );
 }

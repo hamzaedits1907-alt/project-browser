@@ -7,6 +7,7 @@ pub mod bookmarks;
 pub mod downloads;
 pub mod history;
 pub mod permissions;
+pub mod vault;
 
 use std::path::Path;
 
@@ -20,7 +21,8 @@ pub struct Db {
 }
 
 /// Ordered list of schema migrations; index + 1 is the schema version.
-const MIGRATIONS: &[&str] = &[r#"
+const MIGRATIONS: &[&str] = &[
+    r#"
 CREATE TABLE kv (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -81,7 +83,33 @@ CREATE TABLE site_permissions (
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (origin, kind)
 );
-"#];
+"#,
+    // v2: the credential vault. Passwords, notes and address profiles are stored only as `sealed`
+    // blobs (Windows DPAPI, see vault.rs); no column here ever holds a plaintext secret.
+    r#"
+CREATE TABLE vault_logins (
+  id          INTEGER PRIMARY KEY,
+  origin      TEXT NOT NULL,
+  display_url TEXT NOT NULL,
+  username    TEXT NOT NULL,
+  sealed      BLOB NOT NULL,
+  note_sealed BLOB,
+  source      TEXT NOT NULL,
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL,
+  last_used   INTEGER,
+  UNIQUE (origin, username)
+);
+CREATE INDEX vault_logins_origin ON vault_logins(origin);
+
+CREATE TABLE vault_profiles (
+  id          INTEGER PRIMARY KEY,
+  source_id   TEXT NOT NULL UNIQUE,
+  sealed      BLOB NOT NULL,
+  created_at  INTEGER NOT NULL
+);
+"#,
+];
 
 impl Db {
     pub fn open(path: &Path) -> Result<Db> {

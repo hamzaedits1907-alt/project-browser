@@ -97,9 +97,15 @@ jobs:
           cargo test --locked --manifest-path src-tauri/Cargo.toml 2>&1 | Tee-Object -FilePath rust-test.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      # Exercises the real Windows Credential Manager (needs a user session; informational).
-      - name: Credential Manager round-trip (informational)
-        run: cargo test --locked --manifest-path src-tauri/Cargo.toml secrets -- --ignored
+      # Exercises the real Windows Credential Manager and DPAPI (need a user session; informational).
+      - name: Credential Manager and DPAPI round-trips (informational)
+        shell: pwsh
+        run: |
+          cargo test --locked --manifest-path src-tauri/Cargo.toml secrets -- --ignored
+          $a = $LASTEXITCODE
+          cargo test --locked --manifest-path src-tauri/Cargo.toml vault -- --ignored
+          $b = $LASTEXITCODE
+          if ($a -ne 0 -or $b -ne 0) { exit 1 }
         continue-on-error: true
 
       - name: Clippy (warnings are errors)

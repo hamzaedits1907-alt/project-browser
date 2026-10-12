@@ -101,6 +101,7 @@ export function FirstRun() {
         {step === "import" && (
           <div className="fr-body">
             <h1>Bring your stuff over</h1>
+            <p className="dim">Bookmarks, history, saved passwords and open tabs from Chrome, Edge or Brave. You can skip this and do it later from the menu.</p>
             <ImportFlow onClose={() => setStep("ready")} cancelLabel="Skip for now" />
           </div>
         )}
@@ -109,7 +110,7 @@ export function FirstRun() {
           <div className="fr-body">
             <div className="fr-check"><Icon name="check" size={30} /></div>
             <h1>You're all set</h1>
-            <p className="dim">You can change anything later in Settings (Ctrl+,). Import is always available from the menu.</p>
+            <p className="dim">You can change anything later in Settings (Ctrl+,): import, passwords, and the NVIDIA AI assistant (just add your API key). Import is always available from the menu.</p>
             <div className="wizard-actions">
               <Button variant="primary" icon="rocket" disabled={finishing} onClick={() => void finish()}>{finishing ? "Starting…" : "Start browsing"}</Button>
             </div>

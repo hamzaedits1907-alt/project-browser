@@ -156,3 +156,5 @@
 .toast { pointer-events: auto; display: inline-flex; align-items: center; gap: 8px; max-width: 520px; padding: 9px 16px; border-radius: 999px; background: var(--bg-5); border: 1px solid var(--line-3); color: var(--text-1); box-shadow: var(--shadow-pop); animation: toast-in 0.26s var(--ease-out); }
 .toast svg { color: var(--accent); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(-14px) scale(0.96); } }
+.omni-key { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 14px; color: var(--accent); flex: none; transition: color var(--t-fast), background var(--t-fast); }
+.omni-key:hover, .omni-key.is-on { background: var(--bg-4); color: var(--accent-hi); }

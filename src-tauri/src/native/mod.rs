@@ -4,6 +4,7 @@
 //! COM objects are single-threaded and are kept in thread-local registries.
 //! Event handlers never block; they only post work to the controller thread.
 
+pub mod dialog;
 pub mod metrics;
 
 use std::cell::RefCell;
@@ -895,6 +896,26 @@ pub fn page_text(id: TabId, reply: tokio::sync::oneshot::Sender<Option<String>>)
             })),
         );
         // A synchronous failure drops the handler (and `reply`); the caller treats that as "no text".
+    }
+}
+
+/// Runs a script (a saved login or address being filled in) in a tab's top frame and replies with the JSON
+/// it returned, or `None` if it could not run. The script text may hold a password, so it is neither
+/// logged nor kept: it is handed to WebView2 and dropped.
+pub fn run_script(id: TabId, script: String, reply: tokio::sync::oneshot::Sender<Option<String>>) {
+    let Some(t) = tab_com(id) else {
+        let _ = reply.send(None);
+        return;
+    };
+    unsafe {
+        let _ = t.webview.ExecuteScript(
+            &HSTRING::from(script),
+            &ExecuteScriptCompletedHandler::create(Box::new(move |res, json| {
+                let _ = reply.send(res.ok().map(|_| json));
+                Ok(())
+            })),
+        );
+        // A synchronous failure drops the handler (and `reply`); the caller treats that as "could not fill".
     }
 }
 

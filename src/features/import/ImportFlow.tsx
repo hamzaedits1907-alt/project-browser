@@ -4,23 +4,39 @@ import { Badge, Button, Spinner } from "../../components/ui/controls";
 import { Icon } from "../../components/ui/Icon";
 import { EmptyState, Notice } from "../../components/ui/Section";
 import { api, errorMessage } from "../../lib/ipc";
-import { importPlan, profileKey, summarizeReport } from "./importPlan";
-import type { DetectedProfile, ImportReport } from "../../lib/types";
+import { toast } from "../../lib/store";
+import { defaultChoices, effectiveChoices, hasAnyChoice, importPlan, profileKey, summarizeReport } from "./importPlan";
+import type { ImportPlan } from "./importPlan";
+import { PasswordImport } from "./PasswordImport";
+import type { DetectedProfile, ImportChoices, ImportReport } from "../../lib/types";
 
-type Phase = { name: "detecting" } | { name: "choose"; profiles: DetectedProfile[] } | { name: "running" } | { name: "done"; report: ImportReport } | { name: "failed"; message: string };
+type Phase =
+  | { name: "detecting" }
+  | { name: "choose"; profiles: DetectedProfile[] }
+  | { name: "running" }
+  | { name: "done"; report: ImportReport; profile: DetectedProfile; plan: ImportPlan }
+  | { name: "passwords"; profile: DetectedProfile; after: Phase }
+  | { name: "failed"; message: string };
+
+const OPEN_TABS_LIMIT = 20;
+
+const CHOICE_ROWS: { key: keyof ImportChoices; title: string; plan: (p: ImportPlan) => { available: boolean; detail: string }; note?: string }[] = [
+  { key: "bookmarks", title: "Bookmarks", plan: (p) => p.bookmarks },
+  { key: "history", title: "Browsing history", plan: (p) => p.history },
+  { key: "searchEngine", title: "Default search engine", plan: (p) => p.searchEngine },
+  { key: "addresses", title: "Saved addresses", plan: (p) => p.addresses },
+  { key: "session", title: "Open tabs", plan: (p) => p.session },
+];
 
 /**
- * The migration wizard body. It lists exactly what each data type's status is:
- * bookmarks, history and the default search engine are imported; everything else
- * (passwords, autofill, cookies) is shown as not imported with the reason, never
- * silently skipped.
+ * The migration wizard body. Every kind of data gets a visible status: what will be imported, what is done outside
+ * the wizard (passwords: the user exports a file), and what can never be imported (with the reason). The result
+ * screen reports each kind separately, including what was already there. The other browser's files are only read.
  */
 export function ImportFlow({ onClose, onDone, cancelLabel = "Cancel" }: { onClose: () => void; onDone?: (report: ImportReport) => void; cancelLabel?: string }) {
   const [phase, setPhase] = useState<Phase>({ name: "detecting" });
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [bookmarks, setBookmarks] = useState(true);
-  const [history, setHistory] = useState(true);
-  const [searchEngine, setSearchEngine] = useState(true);
+  const [choices, setChoices] = useState<ImportChoices>({ bookmarks: true, history: true, searchEngine: true, addresses: true, session: false });
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
@@ -31,7 +47,10 @@ export function ImportFlow({ onClose, onDone, cancelLabel = "Cancel" }: { onClos
         if (!live) return;
         setPhase({ name: "choose", profiles });
         const first = profiles[0];
-        if (first) setSelectedKey(profileKey(first));
+        if (first) {
+          setSelectedKey(profileKey(first));
+          setChoices(defaultChoices(importPlan(first)));
+        }
       })
       .catch((e) => live && setPhase({ name: "failed", message: errorMessage(e) }));
     return () => {
@@ -78,18 +97,71 @@ export function ImportFlow({ onClose, onDone, cancelLabel = "Cancel" }: { onClos
     );
   }
 
+  if (phase.name === "passwords") {
+    const { profile, after } = phase;
+    return <PasswordImport browserLabel={profile.browserLabel} onClose={() => setPhase(after)} />;
+  }
+
   if (phase.name === "done") {
-    const s = summarizeReport(phase.report);
+    const { report, profile, plan } = phase;
+    const s = summarizeReport(report);
+    const urls = report.sessionUrls.slice(0, OPEN_TABS_LIMIT);
+    const openTabs = () => {
+      void (async () => {
+        for (const url of urls) await api.tabNew(url).catch(() => undefined);
+        toast(`Opened ${urls.length} tab${urls.length === 1 ? "" : "s"}`);
+        onClose();
+      })();
+    };
     return (
       <>
         <div className={`import-result tone-${s.tone}`}>
           <Icon name={s.tone === "bad" ? "warning" : "check"} size={26} />
           <div>
             <h3>{s.title}</h3>
-            <ul className="plain-list">{s.lines.map((l) => <li key={l}>{l}</li>)}</ul>
+            {s.rows.length > 0 ? (
+              <ul className="result-rows">
+                {s.rows.map((r) => (
+                  <li key={r.key} className={`tone-${r.tone}`}>
+                    <strong>{r.label}</strong>
+                    <span>{r.text}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <ul className="plain-list">{s.lines.map((l) => <li key={l}>{l}</li>)}</ul>
+            )}
           </div>
         </div>
-        {phase.report.errors.length > 0 && <Notice tone="warn">{phase.report.errors.map((e) => <div key={e}>{e}</div>)}</Notice>}
+        {report.errors.length > 0 && (
+          <Notice tone="warn">
+            <strong>Not everything could be imported:</strong>
+            {report.errors.map((e) => <div key={e}>{e}</div>)}
+          </Notice>
+        )}
+        {plan.unsupported.length > 0 && (
+          <p className="dim small">
+            Not imported, by design: {plan.unsupported.map((u) => u.label.toLowerCase()).join(", ")}. {plan.unsupported[0]?.kind === "cookies" ? "Sign in to your sites once here; your saved passwords make that quick." : ""}
+          </p>
+        )}
+        {urls.length > 0 && (
+          <div className="next-step">
+            <div>
+              <strong>{report.sessionUrls.length > OPEN_TABS_LIMIT ? `Open the first ${OPEN_TABS_LIMIT} of ${report.sessionUrls.length} tabs` : `Open the ${urls.length} tab${urls.length === 1 ? "" : "s"} you had open`}</strong>
+              <small>They are also saved under Other bookmarks, in “Open tabs”.</small>
+            </div>
+            <Button icon="tabs" onClick={openTabs}>Open now</Button>
+          </div>
+        )}
+        {plan.passwords.available && (
+          <div className="next-step">
+            <div>
+              <strong>Bring your saved passwords too</strong>
+              <small>Export them from {profile.browserLabel} and choose the file. Takes about a minute.</small>
+            </div>
+            <Button icon="lock" onClick={() => setPhase({ name: "passwords", profile, after: phase })}>Import passwords…</Button>
+          </div>
+        )}
         <div className="wizard-actions"><Button variant="primary" onClick={onClose}>Done</Button></div>
       </>
     );
@@ -106,26 +178,28 @@ export function ImportFlow({ onClose, onDone, cancelLabel = "Cancel" }: { onClos
           We looked for Google Chrome, Microsoft Edge and Brave profiles in your Windows user folder and didn't find any. Portable or
           custom-location installs can't be detected in this version.
         </EmptyState>
-        <div className="wizard-actions"><Button onClick={onClose}>Close</Button></div>
+        <div className="wizard-actions"><Button onClick={onClose}>{cancelLabel === "Cancel" ? "Close" : "Continue"}</Button></div>
       </>
     );
   }
 
+  const choose = (p: DetectedProfile) => {
+    setSelectedKey(profileKey(p));
+    setChoices(defaultChoices(importPlan(p)));
+  };
+
   const run = async () => {
-    if (!chosen) return;
+    if (!chosen || !plan) return;
+    const sent = effectiveChoices(plan, choices);
+    const here = phase;
     setPhase({ name: "running" });
     try {
-      const report = await api.importRun(
-        chosen.browser,
-        chosen.profileDir,
-        bookmarks && !!plan?.bookmarks.available,
-        history && !!plan?.history.available,
-        searchEngine && !!plan?.searchEngine.available,
-      );
+      const report = await api.importRun(chosen.browser, chosen.profileDir, sent);
       onDone?.(report);
-      setPhase({ name: "done", report });
+      setPhase({ name: "done", report, profile: chosen, plan });
     } catch (e) {
-      setPhase({ name: "failed", message: errorMessage(e) });
+      setPhase(here);
+      toast(errorMessage(e));
     }
   };
 
@@ -136,7 +210,7 @@ export function ImportFlow({ onClose, onDone, cancelLabel = "Cancel" }: { onClos
         {profiles.map((p) => {
           const key = profileKey(p);
           return (
-            <button key={key} type="button" role="radio" aria-checked={key === selectedKey} className={`import-profile${key === selectedKey ? " is-on" : ""}`} onClick={() => setSelectedKey(key)}>
+            <button key={key} type="button" role="radio" aria-checked={key === selectedKey} className={`import-profile${key === selectedKey ? " is-on" : ""}`} onClick={() => choose(p)}>
               <span className={`browser-dot b-${p.browser}`}>{p.browserLabel.replace("Google ", "").replace("Microsoft ", "").charAt(0)}</span>
               <span className="ip-text">
                 <strong>{p.browserLabel}</strong>
@@ -150,19 +224,27 @@ export function ImportFlow({ onClose, onDone, cancelLabel = "Cancel" }: { onClos
 
       {chosen && plan && (
         <div className="import-items">
-          <h4>What to import</h4>
-          <label className={`check-row${plan.bookmarks.available ? "" : " is-disabled"}`}>
-            <input type="checkbox" checked={bookmarks && plan.bookmarks.available} disabled={!plan.bookmarks.available} onChange={(e) => setBookmarks(e.target.checked)} />
-            <span><strong>Bookmarks</strong><small>{plan.bookmarks.detail}</small></span>
-          </label>
-          <label className={`check-row${plan.history.available ? "" : " is-disabled"}`}>
-            <input type="checkbox" checked={history && plan.history.available} disabled={!plan.history.available} onChange={(e) => setHistory(e.target.checked)} />
-            <span><strong>Browsing history</strong><small>{plan.history.detail}</small></span>
-          </label>
-          <label className={`check-row${plan.searchEngine.available ? "" : " is-disabled"}`}>
-            <input type="checkbox" checked={searchEngine && plan.searchEngine.available} disabled={!plan.searchEngine.available} onChange={(e) => setSearchEngine(e.target.checked)} />
-            <span><strong>Default search engine</strong><small>{plan.searchEngine.detail}</small></span>
-          </label>
+          <h4>What to bring over</h4>
+          {CHOICE_ROWS.map((row) => {
+            const p = row.plan(plan);
+            return (
+              <label key={row.key} className={`check-row${p.available ? "" : " is-disabled"}`}>
+                <input type="checkbox" checked={choices[row.key] && p.available} disabled={!p.available} onChange={(e) => setChoices({ ...choices, [row.key]: e.target.checked })} />
+                <span><strong>{row.title}</strong><small>{p.detail}</small></span>
+              </label>
+            );
+          })}
+
+          <h4>Passwords</h4>
+          <div className={`next-step${plan.passwords.available ? "" : " is-off"}`}>
+            <div>
+              <strong>Saved passwords {plan.passwords.available && <Badge tone="accent">Needs your export</Badge>}</strong>
+              <small>{plan.passwords.available ? plan.passwords.detail : "No saved passwords were found in this profile."}</small>
+            </div>
+            <Button icon="lock" disabled={!plan.passwords.available} onClick={() => setPhase({ name: "passwords", profile: chosen, after: phase })}>
+              Import passwords…
+            </Button>
+          </div>
 
           <h4>Not imported</h4>
           <ul className="unsupported-list">
@@ -181,7 +263,7 @@ export function ImportFlow({ onClose, onDone, cancelLabel = "Cancel" }: { onClos
 
       <div className="wizard-actions">
         <Button variant="ghost" onClick={onClose}>{cancelLabel}</Button>
-        <Button variant="primary" icon="import" disabled={!chosen || !((bookmarks && plan?.bookmarks.available) || (history && plan?.history.available) || (searchEngine && plan?.searchEngine.available))} onClick={() => void run()}>
+        <Button variant="primary" icon="import" disabled={!chosen || !plan || !hasAnyChoice(plan, choices)} onClick={() => void run()}>
           Import
         </Button>
       </div>

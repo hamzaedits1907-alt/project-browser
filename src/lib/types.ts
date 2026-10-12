@@ -259,9 +259,82 @@ export interface ImportReport {
   bookmarksSkipped: number;
   historyImported: number;
   historySkipped: number;
+  /** Individual visits added with their original timestamps. */
+  historyVisitsImported: number;
   /** Name of the default search engine that was adopted, if one was imported. */
   searchEngine: string | null;
+  /** Open tabs found in the last session of the other browser. */
+  sessionTabs: number;
+  /** Of those, how many were saved as bookmarks. */
+  sessionTabsSaved: number;
+  /** Their web addresses (at most 50), so they can be reopened. */
+  sessionUrls: string[];
+  addressesImported: number;
+  addressesSkipped: number;
   errors: string[];
+}
+
+/** What the user chose to bring over in the main import step. */
+export interface ImportChoices {
+  bookmarks: boolean;
+  history: boolean;
+  searchEngine: boolean;
+  addresses: boolean;
+  session: boolean;
+}
+
+/** The password export file the user picked, described by counts only. */
+export interface ExportPreview {
+  name: string;
+  size: number;
+  logins: number;
+  sites: number;
+  skipped: number;
+}
+
+export interface PasswordImportReport {
+  rows: number;
+  imported: number;
+  /** Already saved with a different password; the file's password replaced it. */
+  updated: number;
+  /** Already saved with the same password. */
+  duplicates: number;
+  duplicatesInFile: number;
+  skippedAppLogins: number;
+  skippedInvalid: number;
+  skippedEmpty: number;
+  fileErased: boolean;
+  fileEraseError: string | null;
+  errors: string[];
+}
+
+/** A saved login as the shell sees it: the site and user name, never the password. */
+export interface LoginSummary {
+  id: number;
+  origin: string;
+  displayUrl: string;
+  username: string;
+  source: string;
+  createdAt: number;
+  lastUsed: number | null;
+}
+
+/** A saved address, described by a label to recognise it by. */
+export interface ProfileSummary {
+  id: number;
+  label: string;
+}
+
+export interface FillOptions {
+  logins: LoginSummary[];
+  profileCount: number;
+}
+
+export type FillState = "filled" | "usernameOnly" | "noForm" | "originMismatch";
+
+export interface FillResult {
+  state: FillState;
+  fields: number;
 }
 
 export interface AppInfo {
@@ -282,15 +355,76 @@ export type UpdateStatus =
 /** Progress of an update that is being installed (`pb:update`). */
 export type UpdateEvent = { kind: "downloading"; downloaded: number; total: number | null } | { kind: "installing" };
 
-export type AiProvider = "openAiCompatible" | "anthropic";
+export type AiProvider = "nvidia";
+
+/** Whether something is supported: known yes, known no, or not known yet. */
+export type Support = "yes" | "no" | "unknown";
+
+export interface AiCapabilities {
+  chat: Support;
+  vision: Support;
+  tools: Support;
+}
 
 export interface AiConfigView {
   provider: AiProvider;
-  baseUrl: string;
   model: string;
   hasKey: boolean;
-  /** A key from an older build is still in the profile database because moving it to Credential Manager failed. */
-  keyMigrationPending: boolean;
+  /** A key saved by an older version for a provider that is no longer supported is still stored. */
+  staleKey: boolean;
+  /** What the user's own checks proved about the selected model. */
+  verified: AiCapabilities;
+}
+
+export type ModelKind = "chat" | "vision" | "code" | "embedding" | "safety" | "document";
+
+/** One model from NVIDIA's list. `hints` come from the model's name only; they are not proof. */
+export interface ModelInfo {
+  id: string;
+  publisher: string;
+  name: string;
+  kind: ModelKind;
+  hints: AiCapabilities;
+}
+
+export type ConnectionState =
+  | "ok"
+  | "noKey"
+  | "invalidKey"
+  | "rateLimited"
+  | "network"
+  | "timeout"
+  | "serverError"
+  | "badResponse"
+  | "empty"
+  | "modelUnavailable"
+  | "modelRejected"
+  | "other";
+
+export interface ModelsResponse {
+  state: ConnectionState;
+  message: string | null;
+  models: ModelInfo[];
+  /** The models are from an earlier request because this one failed. */
+  stale: boolean;
+  fetchedAt: number;
+}
+
+export interface AiTestResult {
+  state: ConnectionState;
+  message: string;
+  /** NVIDIA accepted the key (a chat request with it succeeded). */
+  keyOk: boolean;
+  modelCount: number;
+  testedModel: string | null;
+  latencyMs: number | null;
+}
+
+export type AiFeature = "vision" | "tools";
+
+export interface AiProbeResult {
+  supported: Support;
+  message: string;
 }
 
 export interface AiChatMessage {
@@ -302,6 +436,8 @@ export interface AiEvent {
   requestId: string;
   kind: "delta" | "done" | "error";
   text: string;
+  /** For errors: what went wrong. */
+  state?: ConnectionState | null;
 }
 
 export interface ContentRect {

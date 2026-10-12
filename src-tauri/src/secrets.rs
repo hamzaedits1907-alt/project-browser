@@ -1,11 +1,11 @@
 //! Secret storage.
 //!
-//! Secrets (currently only the AI API key) never go into the profile database,
+//! Secrets (currently only the NVIDIA API key) never go into the profile database,
 //! the settings document, logs, events or the React shell's state. They live in
 //! the Windows Credential Manager, which encrypts them for the signed-in user
 //! (DPAPI) and keeps them out of any file this browser writes.
 //!
-//! * The database holds only non-secret metadata (provider, endpoint, model).
+//! * The database holds only non-secret metadata (the chosen model).
 //! * `Secret` has no `Serialize` impl and prints as `Secret(***)`, so it cannot be
 //!   sent to the UI or logged by accident.
 //! * There is deliberately **no plaintext fallback**: if the credential store is
@@ -69,7 +69,13 @@ pub trait SecretStore: Send + Sync {
     fn delete(&self, account: &str) -> Result<()>;
 }
 
-/// Credential name for a profile's AI key. One key per profile.
+/// Credential name for a profile's NVIDIA API key. One key per profile.
+pub fn nvidia_key_account(profile_id: &str) -> String {
+    format!("{profile_id}/nvidia-api-key")
+}
+
+/// Credential name used by versions that let the user pick any provider. Nothing writes it any more; it is
+/// only looked at so a leftover key can be shown and removed, and it is never sent to NVIDIA.
 pub fn ai_key_account(profile_id: &str) -> String {
     format!("{profile_id}/ai-api-key")
 }
@@ -236,7 +242,7 @@ mod tests {
     #[test]
     fn memory_store_roundtrip_and_delete() {
         let store = MemoryStore::new();
-        let account = ai_key_account("p1");
+        let account = nvidia_key_account("p1");
         assert!(store.get(&account).unwrap().is_none());
         store.set(&account, &Secret::new("k1")).unwrap();
         assert_eq!(store.get(&account).unwrap().unwrap().expose(), "k1");
@@ -250,11 +256,19 @@ mod tests {
     #[test]
     fn keys_are_per_profile() {
         let store = MemoryStore::new();
-        store.set(&ai_key_account("a"), &Secret::new("A")).unwrap();
-        store.set(&ai_key_account("b"), &Secret::new("B")).unwrap();
-        assert_eq!(store.get(&ai_key_account("a")).unwrap().unwrap().expose(), "A");
-        store.delete(&ai_key_account("a")).unwrap();
-        assert_eq!(store.get(&ai_key_account("b")).unwrap().unwrap().expose(), "B");
+        store.set(&nvidia_key_account("a"), &Secret::new("A")).unwrap();
+        store.set(&nvidia_key_account("b"), &Secret::new("B")).unwrap();
+        assert_eq!(store.get(&nvidia_key_account("a")).unwrap().unwrap().expose(), "A");
+        store.delete(&nvidia_key_account("a")).unwrap();
+        assert_eq!(store.get(&nvidia_key_account("b")).unwrap().unwrap().expose(), "B");
+    }
+
+    #[test]
+    fn the_nvidia_key_never_shares_a_credential_with_the_old_any_provider_key() {
+        assert_ne!(nvidia_key_account("p"), ai_key_account("p"));
+        let store = MemoryStore::new();
+        store.set(&ai_key_account("p"), &Secret::new("someone-elses-key")).unwrap();
+        assert!(store.get(&nvidia_key_account("p")).unwrap().is_none());
     }
 
     #[test]

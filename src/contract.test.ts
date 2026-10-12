@@ -162,6 +162,17 @@ const STRUCTS: [file: string, rust: string, ts: string][] = [
   ["commands.rs", "ProfilesInfo", "ProfilesInfo"],
   ["commands.rs", "AppInfo", "AppInfo"],
   ["ai.rs", "AiConfigView", "AiConfigView"],
+  ["ai.rs", "Capabilities", "AiCapabilities"],
+  ["ai.rs", "ModelInfo", "ModelInfo"],
+  ["ai.rs", "ModelsResponse", "ModelsResponse"],
+  ["ai.rs", "TestResult", "AiTestResult"],
+  ["ai.rs", "ProbeResult", "AiProbeResult"],
+  ["vault.rs", "ExportPreview", "ExportPreview"],
+  ["vault.rs", "PasswordImportReport", "PasswordImportReport"],
+  ["vault.rs", "ProfileSummary", "ProfileSummary"],
+  ["vault.rs", "FillResult", "FillResult"],
+  ["db/vault.rs", "LoginSummary", "LoginSummary"],
+  ["commands.rs", "FillOptions", "FillOptions"],
   ["settings.rs", "Settings", "Settings"],
 ];
 
@@ -177,16 +188,26 @@ describe("payload shapes match the Rust structs", () => {
 describe("secret handling", () => {
   const aiRs = read("src-tauri/src/ai.rs");
   const secretsRs = read("src-tauri/src/secrets.rs");
+  const vaultRs = read("src-tauri/src/vault.rs");
+  const dbVaultRs = read("src-tauri/src/db/vault.rs");
 
-  it("AiConfig (the stored struct) has no key field that can be serialised", () => {
+  it("AiConfig (the stored struct) holds the chosen model and nothing secret", () => {
     const start = aiRs.indexOf("pub struct AiConfig {");
     const body = aiRs.slice(start, aiRs.indexOf("\n}", start));
-    expect(body).not.toMatch(/pub api_key/);
-    expect(body).toMatch(/skip_serializing\)\]\s*legacy_api_key/);
+    expect(body).not.toMatch(/key|secret|token/i);
+    expect(rustStructFields(aiRs, "AiConfig")).toEqual(["provider", "model"]);
   });
 
   it("the view sent to the shell exposes only whether a key exists", () => {
-    expect(tsInterfaceFields("AiConfigView")).toEqual(["provider", "baseUrl", "model", "hasKey", "keyMigrationPending"]);
+    expect(tsInterfaceFields("AiConfigView")).toEqual(["provider", "model", "hasKey", "staleKey", "verified"]);
+  });
+
+  it("NVIDIA is the only provider and its key is only ever sent to NVIDIA's own address", () => {
+    expect(typesTs).toMatch(/export type AiProvider = "nvidia";/);
+    expect(aiRs).toContain('pub const NVIDIA_BASE: &str = "https://integrate.api.nvidia.com/v1";');
+    expect(aiRs).toMatch(/redirect\(reqwest::redirect::Policy::none\(\)\)/);
+    expect(aiRs.slice(0, aiRs.indexOf("#[cfg(test)]"))).not.toMatch(/api\.openai\.com|api\.anthropic\.com|localhost:11434/);
+    expect(read("src/features/ai/aiStore.ts")).not.toMatch(/localStorage|sessionStorage/);
   });
 
   it("keeps the secret type opaque and the store Windows-backed with no plaintext fallback", () => {
@@ -197,14 +218,14 @@ describe("secret handling", () => {
     expect(read("src-tauri/src/lib.rs")).toContain("secrets::os_store()");
   });
 
-  it("never logs or emits a key", () => {
-    for (const f of ["ai.rs", "secrets.rs", "commands.rs"]) {
+  it("never logs or emits a key or a password", () => {
+    for (const f of ["ai.rs", "secrets.rs", "commands.rs", "vault.rs", "import.rs", "db/vault.rs"]) {
       const src = read(`src-tauri/src/${f}`);
       for (const line of src.split("\n")) {
         if (/(log::|println!|eprintln!|dbg!)/.test(line)) {
           // Wording like "the AI key" is fine; interpolating a secret-ish variable is not.
-          expect(line, `${f}: ${line}`).not.toMatch(/\{[^}]*(key|secret|legacy|token)[^}]*\}/i);
-          expect(line, `${f}: ${line}`).not.toMatch(/",\s*[^)]*(key|secret|legacy|token)/i);
+          expect(line, `${f}: ${line}`).not.toMatch(/\{[^}]*(key|secret|legacy|token|password)[^}]*\}/i);
+          expect(line, `${f}: ${line}`).not.toMatch(/",\s*[^)]*(key|secret|legacy|token|password)/i);
         }
       }
     }
@@ -215,6 +236,42 @@ describe("secret handling", () => {
     expect(settings).not.toMatch(/useState[^\n]*[aA]piKey/);
     expect(settings).not.toMatch(/localStorage|sessionStorage/);
     expect(typesTs).not.toMatch(/apiKey\??:\s*string/);
+  });
+
+  it("saved passwords are sealed with DPAPI, bound to their site, and stored only as opaque blobs", () => {
+    expect(vaultRs).toContain("CryptProtectData");
+    expect(vaultRs).toContain("CryptUnprotectData");
+    expect(vaultRs).toMatch(/fn login_context/);
+    const migration = read("src-tauri/src/db/mod.rs");
+    const table = migration.slice(migration.indexOf("CREATE TABLE vault_logins"), migration.indexOf("CREATE TABLE vault_profiles"));
+    expect(table).toMatch(/sealed\s+BLOB NOT NULL/);
+    expect(table).not.toMatch(/password\s+TEXT/i);
+    expect(migration.slice(migration.indexOf("CREATE TABLE vault_profiles"))).toMatch(/sealed\s+BLOB NOT NULL/);
+  });
+
+  it("no type that holds a password can be serialised, and nothing sent to the shell has a password field", () => {
+    expect(vaultRs).toMatch(/pub struct ParsedLogin/);
+    const before = vaultRs.slice(0, vaultRs.indexOf("pub struct ParsedLogin")).trimEnd().split("\n").pop() ?? "";
+    expect(before).not.toMatch(/Serialize|derive/);
+    expect(dbVaultRs.slice(dbVaultRs.indexOf("pub struct LoginSummary"), dbVaultRs.indexOf("}", dbVaultRs.indexOf("pub struct LoginSummary")))).not.toMatch(/sealed|password/);
+    expect(typesTs).not.toMatch(/\bpassword\??:\s*string/i);
+    expect(read("src/lib/ipc.ts")).not.toMatch(/password\??:\s*string/i);
+  });
+
+  it("the shell cannot name a file to read: the picked path stays in the core", () => {
+    const sig = commandsRs.slice(commandsRs.indexOf("pub async fn passwords_import("), commandsRs.indexOf("-> Result<PasswordImportReport>"));
+    expect(sig).not.toMatch(/path|file:\s*String/i);
+    expect(read("src/lib/ipc.ts")).toMatch(/passwordsPickFile: \(\) =>/);
+    expect(read("src/lib/ipc.ts")).toMatch(/passwordsImport: \(deleteFile: boolean\)/);
+  });
+
+  it("filling is a user action on one tab and one login id, never a password in a request", () => {
+    const sig = commandsRs.slice(commandsRs.indexOf("pub async fn fill_login("), commandsRs.indexOf("-> Result<FillResult>", commandsRs.indexOf("pub async fn fill_login(")));
+    expect(sig).toContain("login_id: i64");
+    expect(sig).not.toMatch(/password/i);
+    const js = read("src-tauri/src/native/fill_login.js") + read("src-tauri/src/native/fill_profile.js");
+    expect(js).not.toMatch(/\.submit\(|requestSubmit|\.click\(/);
+    expect(js).toContain("location.origin !== args.origin");
   });
 });
 
@@ -324,8 +381,9 @@ describe("native wiring", () => {
 
   it("import options reach the core under the same names", () => {
     const sig = commandsRs.slice(commandsRs.indexOf("pub async fn import_run("), commandsRs.indexOf("-> Result<ImportReport>"));
-    for (const arg of ["browser", "profile_dir", "bookmarks", "history", "search_engine"]) expect(sig).toContain(`${arg}:`);
-    expect(ipcTs).toMatch(/call<ImportReport>\("import_run", \{ browser, profileDir, bookmarks, history, searchEngine \}\)/);
+    for (const arg of ["browser", "profile_dir", "bookmarks", "history", "search_engine", "addresses", "session"]) expect(sig).toContain(`${arg}:`);
+    expect(ipcTs).toMatch(/call<ImportReport>\("import_run", \{ browser, profileDir, \.\.\.choices \}\)/);
+    expect(tsInterfaceFields("ImportChoices").sort()).toEqual(["addresses", "bookmarks", "history", "searchEngine", "session"]);
   });
 
   it("the file logger is installed at startup", () => {

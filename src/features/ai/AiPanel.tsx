@@ -7,10 +7,12 @@ import { api } from "../../lib/ipc";
 import { writeLocal } from "../../lib/storage";
 import { activeTab, attempt, useStore } from "../../lib/store";
 import { isInternalUrl } from "../../lib/urls";
-import { ai, clearConversation, loadAiConfig, sendMessage, setAiOpen, setIncludePage, stopStreaming } from "./aiStore";
+import { assistantReady, resolveSelection } from "./aiModels";
+import { ai, clearConversation, loadAiConfig, loadModels, selectModel, sendMessage, setAiOpen, setIncludePage, stopStreaming } from "./aiStore";
 import type { AiMessage } from "./aiStore";
 import { parseBlocks } from "./markdown";
 import type { Span } from "./markdown";
+import { ModelPicker } from "./ModelPicker";
 
 const SUGGESTIONS: { label: string; prompt: string; page: boolean }[] = [
   { label: "Summarize this page", prompt: "Summarize this page in a few bullet points.", page: true },
@@ -65,17 +67,21 @@ function Message({ m, streaming }: { m: AiMessage; streaming: boolean }) {
 }
 
 export function AiPanel() {
-  const { messages, streaming, includePage, config } = ai.use((s) => s);
+  const { messages, streaming, includePage, config, models, unavailable } = ai.use((s) => s);
   const tab = useStore(activeTab);
   const [draft, setDraft] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const pageAvailable = !!tab && !isInternalUrl(tab.url) && !tab.private && !tab.error;
-  const configured = !!config && config.model.trim().length > 0 && (config.provider !== "anthropic" || config.hasKey);
+  const selection = resolveSelection(models.models, config?.model ?? "", unavailable);
+  const configured = !!config && assistantReady(config.hasKey, selection) && config.model.trim().length > 0;
+  const needsModel = !!config && config.hasKey && !configured;
 
   useEffect(() => {
-    void loadAiConfig();
+    void loadAiConfig().then((c) => {
+      if (c?.hasKey) void loadModels();
+    });
     inputRef.current?.focus();
   }, []);
 
@@ -113,13 +119,40 @@ export function AiPanel() {
         </div>
       </header>
 
+      {config?.hasKey && models.models.length > 0 && (
+        <div className="ai-model-bar">
+          <ModelPicker
+            compact
+            models={models.models}
+            value={config.model}
+            unavailable={unavailable}
+            busy={models.phase === "loading"}
+            onChange={(id) => void selectModel(id)}
+          />
+        </div>
+      )}
+
       <div className="ai-messages" ref={listRef}>
-        {config && !configured && (
+        {config && !config.hasKey && (
           <div className="ai-setup">
             <Icon name="key" size={20} />
-            <h3>Connect a model</h3>
-            <p className="dim">Pick a local model (Ollama, LM Studio) or add your own API key for OpenAI, OpenRouter or Anthropic. Nothing is sent anywhere until you ask a question.</p>
-            <Button variant="primary" onClick={openAiSettings}>Open AI settings</Button>
+            <h3>Connect NVIDIA AI</h3>
+            <p className="dim">Paste your NVIDIA API key in AI settings and choose a model. Nothing is sent anywhere until you ask a question.</p>
+            <Button variant="primary" onClick={openAiSettings}>Add API key</Button>
+          </div>
+        )}
+        {needsModel && (
+          <div className="ai-setup">
+            <Icon name="sparkle" size={20} />
+            <h3>{selection.status === "none" ? "Choose a model" : "Choose another model"}</h3>
+            <p className="dim">
+              {selection.status === "missing"
+                ? `“${selection.id}” is no longer offered by NVIDIA.`
+                : selection.status === "unsupported"
+                  ? selection.reason
+                  : "Pick one of NVIDIA's models to start chatting."}
+            </p>
+            {models.models.length === 0 && models.phase !== "loading" && <Button onClick={() => void loadModels(true)}>Load models</Button>}
           </div>
         )}
         {configured && messages.length === 0 && (
@@ -146,7 +179,7 @@ export function AiPanel() {
           </span>
         </label>
         <div className="ai-input">
-          <textarea ref={inputRef} rows={2} value={draft} placeholder={configured ? "Ask anything…" : "Connect a model first"} aria-label="Message the assistant" disabled={!configured} onChange={(e) => setDraft(e.target.value)} onKeyDown={onKey} />
+          <textarea ref={inputRef} rows={2} value={draft} placeholder={configured ? "Ask anything…" : config?.hasKey ? "Choose a model first" : "Add your NVIDIA key first"} aria-label="Message the assistant" disabled={!configured} onChange={(e) => setDraft(e.target.value)} onKeyDown={onKey} />
           {streaming ? (
             <IconButton icon="stop" label="Stop" className="ai-send" onClick={stopStreaming} />
           ) : (

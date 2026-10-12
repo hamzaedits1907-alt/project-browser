@@ -12,6 +12,24 @@ import type { Bookmark, BrowserState, Download, PerfSample, Settings, Tab } from
 const now = Date.now();
 const MIN = 60_000;
 
+const MOCK_MODELS = [
+  ["google", "gemma-3-4b-it", "chat", "unknown"],
+  ["google", "gemma-3-12b-it", "chat", "unknown"],
+  ["meta", "llama-3.1-70b-instruct", "chat", "unknown"],
+  ["meta", "llama-3.2-11b-vision-instruct", "vision", "yes"],
+  ["mistralai", "mistral-large-2-instruct", "chat", "unknown"],
+  ["nvidia", "llama-3.1-nemotron-70b-instruct", "chat", "unknown"],
+  ["nvidia", "nv-embedqa-mistral-7b-v2", "embedding", "unknown"],
+  ["nvidia", "nemotron-parse", "document", "unknown"],
+  ["openai", "gpt-oss-20b", "chat", "unknown"],
+].map(([publisher, name, kind, vision]) => ({
+  id: `${publisher}/${name}`,
+  publisher,
+  name,
+  kind,
+  hints: { chat: kind === "embedding" || kind === "document" ? "no" : "yes", vision, tools: "unknown" },
+}));
+
 function tab(id: number, url: string, title: string, extra: Partial<Tab> = {}): Tab {
   return {
     id, url, title, favicon: null, pinned: false, private: false, loading: false, canGoBack: false, canGoForward: false, zoom: 1,
@@ -22,6 +40,8 @@ function tab(id: number, url: string, title: string, extra: Partial<Tab> = {}): 
 
 export function installMockBackend(): void {
   const params = new URLSearchParams(location.search);
+  let aiModel = params.get("ai") === "1" ? "google/gemma-3-4b-it" : "";
+  let aiKey = params.get("ai") === "1";
   const startUrl = params.get("page") ? `browser://${params.get("page")}` : "browser://newtab";
 
   let settings: Settings = { ...DEFAULT_SETTINGS, gamingMode: params.get("gaming") === "1", accent: params.get("accent") ?? "ion" };
@@ -199,24 +219,73 @@ export function installMockBackend(): void {
         case "import_detect":
           return params.get("noimport") === "1" ? [] : [
             { browser: "chrome", browserLabel: "Google Chrome", profileDir: "Default", name: "Person 1", items: [
-              { kind: "bookmarks", label: "Bookmarks", supported: true, present: true, detail: "312 bookmarks found" },
-              { kind: "history", label: "Browsing history", supported: true, present: true, detail: "Up to 100,000 most recent pages" },
+              { kind: "bookmarks", label: "Bookmarks", supported: true, present: true, detail: "312 bookmarks found, with their folders" },
+              { kind: "history", label: "Browsing history", supported: true, present: true, detail: "Up to 100,000 most recent pages and 250,000 recent visits, with their dates" },
               { kind: "searchEngines", label: "Default search engine", supported: true, present: true, detail: "Default: DuckDuckGo" },
-              { kind: "passwords", label: "Saved passwords", supported: false, present: true, detail: "Not imported. Google Chrome protects saved passwords with encryption that only it can unlock. We don't bypass that protection." },
-              { kind: "autofill", label: "Autofill (addresses, cards)", supported: false, present: true, detail: "Not imported. Addresses and payment cards are protected by the source browser and are not read." },
-              { kind: "cookies", label: "Cookies and site sign-ins", supported: false, present: true, detail: "Not imported. Cookies are encrypted per browser; you will sign in to sites again." },
+              { kind: "passwords", label: "Saved passwords", supported: true, present: true, detail: "24 saved logins found. Google Chrome locks them with encryption that only it can open, and this browser doesn't get around that. You export them from Google Chrome yourself and choose the file here." },
+              { kind: "autofill", label: "Saved addresses", supported: true, present: true, detail: "1 saved address found. They are stored encrypted for this Windows account. Form history is not copied." },
+              { kind: "session", label: "Open tabs", supported: true, present: true, detail: "The tabs Google Chrome had open last time. Close Google Chrome completely first." },
+              { kind: "cookies", label: "Cookies and site sign-ins", supported: false, present: true, detail: "Not imported. Cookies are encrypted so that only the browser that made them can open them, and sites tie sign-ins to that browser. Copying them would not keep you signed in. Sign in once here; your saved passwords make that quick." },
+              { kind: "cards", label: "Payment cards", supported: false, present: false, detail: "Never imported. Card numbers are encrypted by the source browser for its own use." },
             ] },
             { browser: "edge", browserLabel: "Microsoft Edge", profileDir: "Default", name: "Profile 1", items: [
               { kind: "bookmarks", label: "Bookmarks", supported: true, present: false, detail: "No bookmarks file" },
-              { kind: "history", label: "Browsing history", supported: true, present: true, detail: "Up to 100,000 most recent pages" },
+              { kind: "history", label: "Browsing history", supported: true, present: true, detail: "Up to 100,000 most recent pages and 250,000 recent visits, with their dates" },
               { kind: "searchEngines", label: "Default search engine", supported: true, present: false, detail: "No custom default search engine set in this profile" },
-              { kind: "passwords", label: "Saved passwords", supported: false, present: false, detail: "Not imported." },
+              { kind: "passwords", label: "Saved passwords", supported: true, present: false, detail: "No saved passwords." },
+              { kind: "cookies", label: "Cookies and site sign-ins", supported: false, present: true, detail: "Not imported." },
             ] },
           ];
         case "import_run":
-          return { bookmarksImported: 312, bookmarksSkipped: 0, historyImported: 18200, historySkipped: 0, searchEngine: a.searchEngine ? "DuckDuckGo" : null, errors: [] };
+          return {
+            bookmarksImported: a.bookmarks ? 312 : 0, bookmarksSkipped: 0, historyImported: a.history ? 18200 : 0, historySkipped: 0, historyVisitsImported: a.history ? 61000 : 0,
+            searchEngine: a.searchEngine ? "DuckDuckGo" : null,
+            sessionTabs: a.session ? 4 : 0, sessionTabsSaved: a.session ? 3 : 0, sessionUrls: a.session ? ["https://example.com/", "https://news.example/", "https://docs.example/"] : [],
+            addressesImported: a.addresses ? 1 : 0, addressesSkipped: 0, errors: [],
+          };
+        case "passwords_pick_file":
+          return { name: "Chrome Passwords.csv", size: 4096, logins: 24, sites: 22, skipped: 2 };
+        case "passwords_import":
+          return { rows: 26, imported: 22, updated: 0, duplicates: 0, duplicatesInFile: 1, skippedAppLogins: 1, skippedInvalid: 0, skippedEmpty: 0, fileErased: !!a.deleteFile, fileEraseError: null, errors: [] };
+        case "passwords_list":
+          return [
+            { id: 1, origin: "https://github.com", displayUrl: "https://github.com/login", username: "hamza", source: "password export", createdAt: now, lastUsed: now },
+            { id: 2, origin: "https://store.steampowered.com", displayUrl: "https://store.steampowered.com/login", username: "gamer42", source: "password export", createdAt: now, lastUsed: null },
+          ];
+        case "autofill_profiles":
+          return [{ id: 1, label: "Ana Koch · Graz" }];
+        case "fill_options":
+          return params.get("fill") === "1" ? { logins: [{ id: 1, origin: "https://github.com", displayUrl: "https://github.com/login", username: "hamza", source: "password export", createdAt: now, lastUsed: now }], profileCount: 1 } : { logins: [], profileCount: 0 };
+        case "fill_login":
+        case "fill_profile":
+          return { state: "filled", fields: 2 };
         case "ai_config_get":
-          return { provider: "openAiCompatible", baseUrl: "http://localhost:11434/v1", model: params.get("ai") === "1" ? "llama3.2" : "", hasKey: false, keyMigrationPending: params.get("keymigration") === "1" };
+          return {
+            provider: "nvidia",
+            model: aiModel,
+            hasKey: aiKey,
+            staleKey: params.get("stalekey") === "1",
+            verified: { chat: aiModel ? "yes" : "unknown", vision: "unknown", tools: "unknown" },
+          };
+        case "ai_config_set":
+          if (typeof a.model === "string") aiModel = a.model;
+          if (typeof a.apiKey === "string") aiKey = a.apiKey.length > 0;
+          return {
+            provider: "nvidia", model: aiModel, hasKey: aiKey, staleKey: false,
+            verified: { chat: aiModel ? "yes" : "unknown", vision: "unknown", tools: "unknown" },
+          };
+        case "ai_models": {
+          const mode = params.get("models");
+          if (mode === "error") return { state: "network", message: "Couldn't reach NVIDIA (integrate.api.nvidia.com). Check your internet connection, proxy or firewall.", models: [], stale: false, fetchedAt: 0 };
+          if (mode === "empty") return { state: "empty", message: "NVIDIA returned an empty model list.", models: [], stale: false, fetchedAt: 0 };
+          return { state: "ok", message: null, models: MOCK_MODELS, stale: false, fetchedAt: now };
+        }
+        case "ai_test": {
+          if (params.get("badkey") === "1") return { state: "invalidKey", message: "NVIDIA rejected the API key. Check that you copied the whole key (it starts with nvapi-) and that it hasn't been revoked.", keyOk: false, modelCount: 80, testedModel: null, latencyMs: null };
+          return { state: "ok", message: "Connected. NVIDIA accepted your key and lists 80 models. Choose one below.", keyOk: true, modelCount: 80, testedModel: "google/gemma-3-4b-it", latencyMs: 412 };
+        }
+        case "ai_probe":
+          return a.feature === "vision" ? { supported: "yes", message: "Confirmed: the model supports image input." } : { supported: "no", message: "The model answered but didn't call the tool." };
         case "ai_chat": {
           const id = String(a.requestId);
           const text = "Here's a **quick summary**:\n\n- The page introduces the topic\n- It lists three key ideas\n- It ends with `references`\n\n```rust\nfn main() { println!(\"hi\"); }\n```";

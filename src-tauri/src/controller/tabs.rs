@@ -499,6 +499,13 @@ impl Controller {
         self.views.get(&id).filter(|v| v.visible).map(|_| id)
     }
 
+    /// Active tab id if it has a webview at all, shown or hidden. A shell popup hides the page while it is open,
+    /// and filling a saved login from that popup must still reach the page underneath.
+    pub fn active_tab_with_view(&self) -> Option<TabId> {
+        let id = self.tabs.active_id()?;
+        self.views.contains_key(&id).then_some(id)
+    }
+
     pub fn toggle_browser_fullscreen(&mut self) {
         self.layout.browser_fullscreen = !self.layout.browser_fullscreen;
         self.apply_window_fullscreen();

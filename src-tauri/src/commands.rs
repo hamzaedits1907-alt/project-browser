@@ -8,13 +8,14 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 
-use crate::ai::{self, AiConfigView, AiState, ChatMessage, PageSnapshot, Provider};
+use crate::ai::{self, AiConfigView, AiState, ChatMessage, ModelsResponse, NvidiaApi, PageSnapshot, ProbeResult, TestResult};
 use crate::controller::{Bootstrap, ContentRect, ControllerHandle, PerfSample, Viewport};
 use crate::controller::{DownloadCommand, ZoomMode};
 use crate::db::bookmarks::Bookmark;
 use crate::db::downloads::Download;
 use crate::db::history::{HistoryEntry, UrlRow};
 use crate::db::permissions::SitePermission;
+use crate::db::vault::LoginSummary;
 use crate::error::{now_ms, Error, Result};
 use crate::import::{DetectedProfile, ImportReport, SourceBrowser};
 use crate::native::{self, NavAction};
@@ -24,6 +25,7 @@ use crate::secrets::Secret;
 use crate::settings::{BackgroundTabAction, Settings};
 use crate::shortcuts::Command;
 use crate::tabs::TabId;
+use crate::vault::{ExportPreview, FillResult, PasswordImportReport, ProfileSummary, VaultState};
 
 const SNAPSHOT_TIMEOUT: Duration = Duration::from_millis(900);
 const PAGE_TEXT_TIMEOUT: Duration = Duration::from_secs(6);
@@ -540,20 +542,28 @@ pub async fn import_detect(s: State<'_, AppState>) -> Result<Vec<DetectedProfile
     tauri::async_runtime::spawn_blocking(move || crate::import::detect(&root)).await.map_err(|e| Error::msg(e.to_string()))
 }
 
+/// Rows of history written per controller turn, so a large import never holds the browser for long.
+const HISTORY_URL_CHUNK: usize = 5_000;
+const HISTORY_VISIT_CHUNK: usize = 10_000;
+
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn import_run(
     s: State<'_, AppState>,
+    vault_state: State<'_, VaultState>,
     browser: SourceBrowser,
     profile_dir: String,
     bookmarks: bool,
     history: bool,
     search_engine: bool,
+    addresses: bool,
+    session: bool,
 ) -> Result<ImportReport> {
     let local = s.local_app_data.clone();
     let scratch = s.scratch.clone();
     // Reading (and copying) the source files can take seconds for a large history: do it off the
-    // controller thread so the browser stays responsive, then write the result in one quick step.
-    let collected = tauri::async_runtime::spawn_blocking(move || {
+    // controller thread so the browser stays responsive, then write the result in quick steps.
+    let mut collected = tauri::async_runtime::spawn_blocking(move || {
         crate::import::collect(&crate::import::ImportRequest {
             local_app_data: &local,
             scratch: &scratch,
@@ -562,13 +572,18 @@ pub async fn import_run(
             bookmarks,
             history,
             search_engine,
+            addresses,
+            session,
         })
     })
     .await
     .map_err(|e| Error::msg(e.to_string()))??;
-    s.ctl
+    let big_history = collected.take_history();
+    let sealer = vault_state.sealer.clone();
+    let mut report = s
+        .ctl
         .call(move |c| -> Result<ImportReport> {
-            let outcome = crate::import::apply(&c.db, collected);
+            let outcome = crate::import::apply(&c.db, sealer.as_ref(), collected);
             let mut report = outcome.report;
             if let Some(search) = outcome.search {
                 if let Err(e) = c.adopt_imported_search(&search) {
@@ -579,10 +594,203 @@ pub async fn import_run(
             c.on_bookmarks_changed();
             Ok(report)
         })
+        .await??;
+
+    if let Some(h) = big_history {
+        for rows in h.urls.chunks(HISTORY_URL_CHUNK) {
+            let rows = rows.to_vec();
+            match s.ctl.call(move |c| crate::import::apply_history_urls(&c.db, &rows)).await? {
+                Ok(counts) => {
+                    report.history_imported += counts.added;
+                    report.history_skipped += counts.skipped;
+                }
+                Err(e) => {
+                    report.errors.push(format!("History: {e}"));
+                    break;
+                }
+            }
+        }
+        for rows in h.visits.chunks(HISTORY_VISIT_CHUNK) {
+            let rows = rows.to_vec();
+            match s.ctl.call(move |c| crate::import::apply_history_visits(&c.db, &rows)).await? {
+                Ok(counts) => report.history_visits_imported += counts.added,
+                Err(e) => {
+                    report.errors.push(format!("History visits: {e}"));
+                    break;
+                }
+            }
+        }
+    }
+    Ok(report)
+}
+
+// ---- saved passwords and addresses (the vault) -------------------------------------------
+
+/// Opens the Windows file dialog so the user can choose the password export they made in their old browser,
+/// and reports what the file contains (counts only). Nothing is stored yet. The path stays in the core.
+#[tauri::command]
+pub async fn passwords_pick_file(app: AppHandle, vault_state: State<'_, VaultState>) -> Result<Option<ExportPreview>> {
+    let owner = app.get_webview_window(crate::window::SHELL_LABEL).and_then(|w| w.hwnd().ok()).map(|h| h.0 as isize).unwrap_or(0);
+    let picked =
+        tauri::async_runtime::spawn_blocking(move || native::dialog::pick_file(owner, "Choose the exported passwords file", "CSV files", "*.csv"))
+            .await
+            .map_err(|e| Error::msg(e.to_string()))?;
+    let Some(path) = picked else { return Ok(None) };
+    let check = path.clone();
+    let preview =
+        tauri::async_runtime::spawn_blocking(move || crate::vault::preview_export(&check)).await.map_err(|e| Error::msg(e.to_string()))??;
+    vault_state.set_pending(path);
+    Ok(Some(preview))
+}
+
+/// Stores the picked export in the vault (sealed with DPAPI), then, if asked, overwrites and deletes the file.
+#[tauri::command]
+pub async fn passwords_import(s: State<'_, AppState>, vault_state: State<'_, VaultState>, delete_file: bool) -> Result<PasswordImportReport> {
+    let path = vault_state.take_pending().ok_or_else(|| Error::msg("Choose the exported file first."))?;
+    let read = path.clone();
+    let parsed = tauri::async_runtime::spawn_blocking(move || -> Result<crate::vault::CsvOutcome> {
+        let buffer = crate::vault::read_export(&read)?;
+        crate::vault::parse_export(buffer.as_slice())
+    })
+    .await
+    .map_err(|e| Error::msg(e.to_string()))??;
+    let sealer = vault_state.sealer.clone();
+    let mut report = s.ctl.call(move |c| crate::vault::import_logins(&c.db, sealer.as_ref(), parsed, now_ms())).await??;
+    if delete_file {
+        match tauri::async_runtime::spawn_blocking(move || crate::vault::erase_file(&path)).await {
+            Ok(Ok(())) => report.file_erased = true,
+            Ok(Err(e)) => {
+                report.file_erase_error =
+                    Some(format!("The file couldn't be deleted ({e}). Delete it yourself: it holds your passwords as plain text."))
+            }
+            Err(e) => report.file_erase_error = Some(e.to_string()),
+        }
+    }
+    Ok(report)
+}
+
+#[tauri::command]
+pub async fn passwords_list(s: State<'_, AppState>) -> Result<Vec<LoginSummary>> {
+    s.ctl.call(|c| c.db.logins_list()).await?
+}
+
+#[tauri::command]
+pub async fn passwords_delete(s: State<'_, AppState>, id: i64) -> Result<()> {
+    s.ctl.call(move |c| c.db.login_delete(id)).await?
+}
+
+#[tauri::command]
+pub async fn passwords_clear(s: State<'_, AppState>) -> Result<usize> {
+    s.ctl.call(|c| c.db.logins_clear()).await?
+}
+
+#[tauri::command]
+pub async fn autofill_profiles(s: State<'_, AppState>, vault_state: State<'_, VaultState>) -> Result<Vec<ProfileSummary>> {
+    let sealer = vault_state.sealer.clone();
+    s.ctl.call(move |c| crate::vault::list_profiles(&c.db, sealer.as_ref())).await?
+}
+
+#[tauri::command]
+pub async fn autofill_profile_delete(s: State<'_, AppState>, id: i64) -> Result<()> {
+    s.ctl.call(move |c| c.db.profile_delete(id)).await?
+}
+
+/// What can be filled on a tab's page: the logins saved for exactly that site, and how many address profiles exist.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FillOptions {
+    pub logins: Vec<LoginSummary>,
+    pub profile_count: usize,
+}
+
+#[tauri::command]
+pub async fn fill_options(s: State<'_, AppState>, tab_id: TabId) -> Result<FillOptions> {
+    s.ctl
+        .call(move |c| -> Result<FillOptions> {
+            let url = c.tabs.get(tab_id).map(|t| t.url.clone()).unwrap_or_default();
+            let fillable = crate::vault::origin_of(&url).is_some_and(|o| crate::vault::fill_allowed(&o));
+            let logins = crate::vault::logins_for_page(&c.db, &url)?;
+            let profile_count = if fillable { c.db.profiles_list()?.len() } else { 0 };
+            Ok(FillOptions { logins, profile_count })
+        })
         .await?
 }
 
-// ---- AI assistant -------------------------------------------------------------------
+const FILL_TIMEOUT: Duration = Duration::from_secs(6);
+
+/// Runs a fill script in the tab and reads back what it did.
+async fn run_fill(app: &AppHandle, tab: TabId, script: String) -> Result<FillResult> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.run_on_main_thread(move || native::run_script(tab, script, tx))?;
+    let reply = tokio::time::timeout(FILL_TIMEOUT, rx)
+        .await
+        .ok()
+        .and_then(|r| r.ok())
+        .flatten()
+        .ok_or_else(|| Error::msg("The page didn't respond, so nothing was filled."))?;
+    Ok(crate::vault::parse_fill_reply(&reply))
+}
+
+/// The page the user is on, if filling is allowed there: the active tab, a live web page over https (or localhost).
+fn fill_target(c: &crate::controller::Controller, tab_id: TabId) -> Result<String> {
+    if c.active_tab_with_view() != Some(tab_id) {
+        return Err(Error::msg("Switch to the page you want to fill first."));
+    }
+    let url = c.tabs.get(tab_id).map(|t| t.url.clone()).unwrap_or_default();
+    crate::vault::origin_of(&url)
+        .filter(|o| crate::vault::fill_allowed(o))
+        .ok_or_else(|| Error::msg("Saved details are only filled into https pages."))
+}
+
+/// Fills one saved login into the active page. Only on a user's click, only for the exact site the login was saved
+/// for; the form is not submitted. The password goes from the vault to the page and nowhere else.
+#[tauri::command]
+pub async fn fill_login(
+    app: AppHandle,
+    s: State<'_, AppState>,
+    vault_state: State<'_, VaultState>,
+    tab_id: TabId,
+    login_id: i64,
+) -> Result<FillResult> {
+    let sealer = vault_state.sealer.clone();
+    let script = s
+        .ctl
+        .call(move |c| -> Result<String> {
+            let origin = fill_target(c, tab_id)?;
+            let rec = c.db.login_get(login_id)?.ok_or_else(|| Error::msg("That saved login no longer exists."))?;
+            if rec.origin != origin {
+                return Err(Error::msg("That login was saved for a different site."));
+            }
+            let password = crate::vault::open_password(sealer.as_ref(), &rec)?;
+            c.db.login_touch(login_id, now_ms())?;
+            Ok(crate::vault::login_fill_script(&origin, &rec.username, &password))
+        })
+        .await??;
+    run_fill(&app, tab_id, script).await
+}
+
+/// Fills one saved address into the active page's empty address, name, e-mail and phone fields.
+#[tauri::command]
+pub async fn fill_profile(
+    app: AppHandle,
+    s: State<'_, AppState>,
+    vault_state: State<'_, VaultState>,
+    tab_id: TabId,
+    profile_id: i64,
+) -> Result<FillResult> {
+    let sealer = vault_state.sealer.clone();
+    let script = s
+        .ctl
+        .call(move |c| -> Result<String> {
+            let origin = fill_target(c, tab_id)?;
+            let fields = crate::vault::open_profile(&c.db, sealer.as_ref(), profile_id)?;
+            Ok(crate::vault::profile_fill_script(&origin, &fields))
+        })
+        .await??;
+    run_fill(&app, tab_id, script).await
+}
+
+// ---- AI assistant (NVIDIA) ------------------------------------------------------------------
 
 #[tauri::command]
 pub async fn ai_config_get(s: State<'_, AppState>, ai_state: State<'_, AiState>) -> Result<AiConfigView> {
@@ -590,27 +798,119 @@ pub async fn ai_config_get(s: State<'_, AppState>, ai_state: State<'_, AiState>)
     s.ctl
         .call(move |c| -> Result<AiConfigView> {
             let cfg = ai::load_config(&c.db, secrets.as_ref(), &c.profile.meta.id)?;
-            Ok(cfg.view(ai::has_key(secrets.as_ref(), &c.profile.meta.id)))
+            Ok(ai::view(&c.db, secrets.as_ref(), &c.profile.meta.id, &cfg))
         })
         .await?
 }
 
-/// `api_key`: `None` keeps the stored key, `Some("")` removes it, anything else replaces it.
-/// The key is written straight to the Windows Credential Manager and is never returned.
+/// `model`: `None` keeps the choice. `api_key`: `None` keeps the stored key, `Some("")` removes it, anything else
+/// replaces it. The key is written straight to the Windows Credential Manager and is never returned.
 #[tauri::command]
 pub async fn ai_config_set(
     s: State<'_, AppState>,
     ai_state: State<'_, AiState>,
-    provider: Provider,
-    base_url: String,
-    model: String,
+    model: Option<String>,
     api_key: Option<String>,
+    remove_stale_key: Option<bool>,
 ) -> Result<AiConfigView> {
     let secrets = ai_state.secrets.clone();
+    let key_changed = api_key.is_some();
     let key = api_key.map(Secret::new);
+    let view = s
+        .ctl
+        .call(move |c| -> Result<AiConfigView> {
+            ai::save_config(&c.db, secrets.as_ref(), &c.profile.meta.id, model.as_deref(), key, remove_stale_key.unwrap_or(false))
+        })
+        .await??;
+    if key_changed {
+        ai_state.forget_models();
+    }
+    Ok(view)
+}
+
+/// The key in the Credential Manager, if there is one.
+async fn stored_key(s: &State<'_, AppState>, ai_state: &State<'_, AiState>) -> Result<(ai::AiConfig, Option<Secret>)> {
+    let secrets = ai_state.secrets.clone();
     s.ctl
-        .call(move |c| -> Result<AiConfigView> { ai::save_config(&c.db, secrets.as_ref(), &c.profile.meta.id, provider, &base_url, &model, key) })
+        .call(move |c| -> Result<(ai::AiConfig, Option<Secret>)> {
+            let cfg = ai::load_config(&c.db, secrets.as_ref(), &c.profile.meta.id)?;
+            let key = secrets.get(&crate::secrets::nvidia_key_account(&c.profile.meta.id))?;
+            Ok((cfg, key))
+        })
         .await?
+}
+
+/// The models NVIDIA offers (`GET /v1/models`, sent with the saved key). A fresh list is reused for ten minutes
+/// unless `refresh` is set. Failures come back as a state and a message, not as an error.
+#[tauri::command]
+pub async fn ai_models(s: State<'_, AppState>, ai_state: State<'_, AiState>, refresh: Option<bool>) -> Result<ModelsResponse> {
+    let (_, key) = stored_key(&s, &ai_state).await?;
+    Ok(ai::models_response(&ai_state, &NvidiaApi::production(), key.as_ref(), refresh.unwrap_or(false)).await)
+}
+
+/// Checks the key and the selected model with real requests. `api_key` tests a key the user just typed without
+/// saving it; without it the saved key is tested. Returns a state and a message, never the key.
+#[tauri::command]
+pub async fn ai_test(s: State<'_, AppState>, ai_state: State<'_, AiState>, api_key: Option<String>) -> Result<TestResult> {
+    let (cfg, saved) = stored_key(&s, &ai_state).await?;
+    let typed = api_key.map(|k| Secret::new(k.trim())).filter(|k| !k.is_empty());
+    let key = match typed {
+        Some(k) => {
+            ai::validate_key(k.expose())?;
+            k
+        }
+        None => match saved {
+            Some(k) => k,
+            None => {
+                return Ok(TestResult {
+                    state: ai::ConnectionState::NoKey,
+                    message: "Paste your NVIDIA API key first.".into(),
+                    key_ok: false,
+                    model_count: 0,
+                    tested_model: None,
+                    latency_ms: None,
+                })
+            }
+        },
+    };
+    let (result, _) = ai::test_connection(&NvidiaApi::production(), &key, &cfg.model).await;
+    // Remember what the test proved about the selected model.
+    let proof = match (result.state, result.tested_model.as_deref()) {
+        (ai::ConnectionState::Ok, Some(m)) if m == cfg.model => Some(ai::Support::Yes),
+        (ai::ConnectionState::ModelUnavailable, _) if result.key_ok && !cfg.model.is_empty() => Some(ai::Support::No),
+        _ => None,
+    };
+    if let (Some(support), false) = (proof, cfg.model.is_empty()) {
+        let model = cfg.model.clone();
+        let _ = s.ctl.call(move |c| ai::record_capability(&c.db, &model, |caps| caps.chat = support)).await;
+    }
+    Ok(result)
+}
+
+/// Checks with a tiny real request whether a model accepts images or calls tools, and remembers a clear answer.
+#[tauri::command]
+pub async fn ai_probe(s: State<'_, AppState>, ai_state: State<'_, AiState>, model: String, feature: ai::Feature) -> Result<ProbeResult> {
+    let model = model.trim().to_string();
+    ai::validate_model_id(&model)?;
+    if model.is_empty() {
+        return Err(Error::msg("Choose a model first."));
+    }
+    let (_, key) = stored_key(&s, &ai_state).await?;
+    let key = key.ok_or_else(|| Error::msg("Add your NVIDIA API key in AI settings first"))?;
+    let result = ai::probe_capability(&NvidiaApi::production(), &key, &model, feature).await;
+    if result.supported != ai::Support::Unknown {
+        let (support, name) = (result.supported, model.clone());
+        let _ = s
+            .ctl
+            .call(move |c| {
+                ai::record_capability(&c.db, &name, |caps| match feature {
+                    ai::Feature::Vision => caps.vision = support,
+                    ai::Feature::Tools => caps.tools = support,
+                })
+            })
+            .await;
+    }
+    Ok(result)
 }
 
 /// Starts a streamed reply; text arrives as `pb:ai` events keyed by `request_id`.
@@ -623,22 +923,15 @@ pub async fn ai_chat(
     messages: Vec<ChatMessage>,
     include_page: bool,
 ) -> Result<()> {
-    let secrets = ai_state.secrets.clone();
-    let (cfg, key) = s
-        .ctl
-        .call(move |c| -> Result<(ai::AiConfig, Option<Secret>)> {
-            let cfg = ai::load_config(&c.db, secrets.as_ref(), &c.profile.meta.id)?;
-            let key = secrets.get(&crate::secrets::ai_key_account(&c.profile.meta.id))?;
-            Ok((cfg, key))
-        })
-        .await??;
-    if cfg.model.trim().is_empty() {
+    let (cfg, key) = stored_key(&s, &ai_state).await?;
+    let model = cfg.model.trim().to_string();
+    if model.is_empty() {
         return Err(Error::msg("Choose a model in AI settings first"));
     }
-    if cfg.provider == Provider::Anthropic && key.is_none() {
-        return Err(Error::msg("Add your API key in AI settings first"));
+    let key = key.ok_or_else(|| Error::msg("Add your NVIDIA API key in AI settings first"))?;
+    if let Some(why) = ai::chat_blocker(&model) {
+        return Err(Error::msg(why));
     }
-    ai::validate_base_url(&cfg.base_url)?;
     if messages.is_empty() || messages.iter().any(|m| m.role != "user" && m.role != "assistant") {
         return Err(Error::msg("Invalid conversation"));
     }
@@ -669,7 +962,7 @@ pub async fn ai_chat(
     let cancel = ai_state.register(&request_id);
     let id = request_id.clone();
     tauri::async_runtime::spawn(async move {
-        ai::run_chat(app.clone(), request_id, cfg, key, system, messages, cancel).await;
+        ai::run_chat(app.clone(), request_id, model, key, system, messages, cancel).await;
         app.state::<AiState>().finish(&id);
     });
     Ok(())
@@ -775,8 +1068,21 @@ macro_rules! all_commands {
             $crate::commands::first_run_complete,
             $crate::commands::import_detect,
             $crate::commands::import_run,
+            $crate::commands::passwords_pick_file,
+            $crate::commands::passwords_import,
+            $crate::commands::passwords_list,
+            $crate::commands::passwords_delete,
+            $crate::commands::passwords_clear,
+            $crate::commands::autofill_profiles,
+            $crate::commands::autofill_profile_delete,
+            $crate::commands::fill_options,
+            $crate::commands::fill_login,
+            $crate::commands::fill_profile,
             $crate::commands::ai_config_get,
             $crate::commands::ai_config_set,
+            $crate::commands::ai_models,
+            $crate::commands::ai_test,
+            $crate::commands::ai_probe,
             $crate::commands::ai_chat,
             $crate::commands::ai_cancel,
             $crate::commands::app_info,

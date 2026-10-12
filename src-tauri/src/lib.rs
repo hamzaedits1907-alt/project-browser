@@ -17,6 +17,7 @@ pub mod settings;
 pub mod shortcuts;
 pub mod tabs;
 pub mod updates;
+pub mod vault;
 pub mod window;
 
 use std::time::Duration;
@@ -121,6 +122,7 @@ pub fn run() {
 
             app.manage(AppState { ctl, local_app_data, scratch, data_root });
             app.manage(ai::AiState::new(secrets::os_store()));
+            app.manage(vault::VaultState::new(vault::os_sealer()));
             app.manage(updates::UpdateState::default());
             log::info!("startup: setup finished, waiting for the shell UI");
             Ok(())

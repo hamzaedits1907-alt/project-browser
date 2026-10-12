@@ -49,6 +49,7 @@ export function MainMenu({ open, onClose, anchor, onImport }: { open: boolean; o
         <MenuItem icon="bookmarks" label="Bookmarks" hint="Ctrl+Shift+O" onSelect={() => run({ type: "openBookmarks" })} />
         <MenuItem icon="download" label="Downloads" hint="Ctrl+J" onSelect={() => run({ type: "openDownloads" })} />
         <MenuItem icon="star" label={showBar ? "Hide bookmarks bar" : "Show bookmarks bar"} hint="Ctrl+Shift+B" onSelect={() => run({ type: "toggleBookmarksBar" })} />
+        <MenuItem icon="key" label="Passwords and autofill" onSelect={() => { writeLocal("settings.section", "passwords"); run({ type: "openSettings" }); }} />
         <MenuItem icon="import" label="Import from Chrome, Edge or Brave…" onSelect={onImport} />
         <MenuSeparator />
         <MenuHeading>This page</MenuHeading>

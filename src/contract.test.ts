@@ -138,6 +138,11 @@ function tsInterfaceFields(name: string): string[] {
 
 const STRUCTS: [file: string, rust: string, ts: string][] = [
   ["tabs.rs", "Tab", "Tab"],
+  ["tabs.rs", "TabGroup", "TabGroup"],
+  ["native/context_menu.rs", "NativeMenuItem", "NativeMenuItem"],
+  ["native/context_menu.rs", "ContextTarget", "ContextTarget"],
+  ["controller/context_menu.rs", "ContextMenuEvent", "ContextMenuEvent"],
+  ["controller/drag.rs", "TabDragEvent", "TabDragEvent"],
   ["tabs.rs", "NavError", "NavError"],
   ["controller/mod.rs", "BrowserState", "BrowserState"],
   ["controller/mod.rs", "Bootstrap", "Bootstrap"],
@@ -181,6 +186,7 @@ const STRUCTS: [file: string, rust: string, ts: string][] = [
   ["db/vault.rs", "LoginSummary", "LoginSummary"],
   ["commands.rs", "FillOptions", "FillOptions"],
   ["settings.rs", "Settings", "Settings"],
+  ["settings.rs", "PinnedSite", "PinnedSite"],
 ];
 
 describe("payload shapes match the Rust structs", () => {
@@ -286,7 +292,24 @@ describe("settings defaults", () => {
   it("match Settings::default() in Rust", () => {
     const src = read("src-tauri/src/settings.rs");
     const block = src.slice(src.indexOf("impl Default for Settings"), src.indexOf("impl Settings {"));
-    const enumValue: Record<string, string> = { Google: "google", RestoreSession: "restoreSession", Sleep: "sleep", Tab: "tab" };
+    const enumValue: Record<string, string> = {
+      Google: "google",
+      RestoreSession: "restoreSession",
+      Sleep: "sleep",
+      Tab: "tab",
+      Angular: "angular",
+      Comfortable: "comfortable",
+      Standard: "standard",
+      Shaped: "shaped",
+      Rail: "rail",
+      Full: "full",
+    };
+    // `strings(CONST)` names a `pub const CONST: &[&str] = &[...]` list in settings.rs.
+    const constList = (name: string): string[] => {
+      const at = src.indexOf(`pub const ${name}: &[&str]`);
+      if (at < 0) throw new Error(`const ${name} not found`);
+      return [...src.slice(at, src.indexOf("];", at)).matchAll(/"([^"]*)"/g)].map((m) => m[1] as string);
+    };
     const parsed: Record<string, unknown> = {};
     for (const m of block.matchAll(/^\s+(\w+): (.+),$/gm)) {
       const key = camel(m[1] as string);
@@ -298,6 +321,7 @@ describe("settings defaults", () => {
       else if (raw === "Vec::new()") value = [];
       else if (/^"[^"]*"\.into\(\)$/.test(raw)) value = raw.slice(1, raw.indexOf('".into'));
       else if (/^\w+::\w+$/.test(raw)) value = enumValue[raw.split("::")[1] as string];
+      else if (/^strings\((\w+)\)$/.test(raw)) value = constList(/^strings\((\w+)\)$/.exec(raw)?.[1] as string);
       else continue;
       parsed[key] = value;
     }
@@ -307,7 +331,7 @@ describe("settings defaults", () => {
 
 describe("events, commands and pages", () => {
   it("every event the core emits is declared on the frontend", () => {
-    const sources = ["controller/mod.rs", "controller/perf.rs", "ai.rs", "updates.rs"].map((f) => read(`src-tauri/src/${f}`)).join("\n");
+    const sources = ["controller/mod.rs", "controller/perf.rs", "controller/context_menu.rs", "controller/drag.rs", "ai.rs", "updates.rs"].map((f) => read(`src-tauri/src/${f}`)).join("\n");
     const emitted = new Set([...sources.matchAll(/"(pb:[a-z]+)"/g)].map((m) => m[1] as string));
     const declared = new Set([...ipcTs.slice(ipcTs.indexOf("interface EventMap")).matchAll(/"(pb:[a-z]+)":/g)].map((m) => m[1] as string));
     expect(sorted([...declared])).toEqual(sorted([...emitted]));
@@ -459,5 +483,27 @@ describe("release pipeline", () => {
   it("builds test installers without needing the private key", () => {
     expect(read(".github/workflows/windows-build.yml")).toContain("tauri.ci.conf.json");
     expect(JSON.parse(read("src-tauri/tauri.ci.conf.json"))).toEqual({ bundle: { createUpdaterArtifacts: false } });
+  });
+});
+
+describe("interface catalogues", () => {
+  it("sidebar, toolbar, widget, theme and background ids match settings.rs", async () => {
+    const s = await import("./lib/settings");
+    const src = read("src-tauri/src/settings.rs");
+    const list = (name: string) => {
+      const at = src.indexOf(`pub const ${name}: &[&str]`);
+      return [...src.slice(at, src.indexOf("];", at)).matchAll(/"([^"]*)"/g)].map((m) => m[1]);
+    };
+    expect([...s.SIDEBAR_ITEMS]).toEqual(list("SIDEBAR_ITEMS"));
+    expect(s.DEFAULT_SIDEBAR_ITEMS).toEqual(list("DEFAULT_SIDEBAR_ITEMS"));
+    expect([...s.TOOLBAR_ITEMS]).toEqual(list("TOOLBAR_ITEMS"));
+    expect([...s.NTP_WIDGETS]).toEqual(list("NTP_WIDGETS"));
+    expect([...s.THEMES]).toEqual(list("THEMES"));
+    expect([...s.NTP_BACKGROUNDS]).toEqual(list("NTP_BACKGROUNDS"));
+    const tabs = read("src-tauri/src/tabs.rs");
+    const at = tabs.indexOf("pub const GROUP_COLORS");
+    const rust = [...tabs.slice(at, tabs.indexOf("];", at)).matchAll(/"([^"]*)"/g)].map((m) => m[1]);
+    const { GROUP_COLORS } = await import("./lib/types");
+    expect([...GROUP_COLORS]).toEqual(rust);
   });
 });

@@ -33,6 +33,111 @@ pub enum NewWindowRequests {
     Window,
 }
 
+/// The shape language of the interface: angular (bevelled corners, the default), rounded, or soft.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum CornerStyle {
+    #[default]
+    Angular,
+    Rounded,
+    Soft,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum Density {
+    Compact,
+    #[default]
+    Comfortable,
+    Spacious,
+}
+
+/// How much the interface animates. `reduce_motion` (or Gaming Mode's reduce-animations) turns animation off entirely.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum MotionLevel {
+    Subtle,
+    #[default]
+    Standard,
+    Expressive,
+}
+
+/// How tabs are drawn: shaped (the active tab merges with the toolbar), pills, or minimal text with an underline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum TabStyle {
+    #[default]
+    Shaped,
+    Pill,
+    Minimal,
+}
+
+/// The sidebar: an icon rail, a rail with labels, or hidden (its items stay in the main menu).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum SidebarMode {
+    #[default]
+    Rail,
+    Expanded,
+    Hidden,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum NtpLayout {
+    #[default]
+    Full,
+    Minimal,
+}
+
+/// A site the user pinned (to the sidebar or the New Tab page).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PinnedSite {
+    pub title: String,
+    pub url: String,
+}
+
+/// Sidebar entries, in their default order. The shell knows what each one opens; unknown ids are dropped.
+pub const SIDEBAR_ITEMS: &[&str] =
+    &["bookmarks", "history", "downloads", "ai", "memory", "research", "gaming", "shield", "passwords", "privacy", "performance"];
+pub const DEFAULT_SIDEBAR_ITEMS: &[&str] = &["bookmarks", "history", "downloads", "ai", "gaming", "shield", "passwords"];
+/// Optional toolbar buttons (back, forward, reload, the address bar and the menu are always there).
+pub const TOOLBAR_ITEMS: &[&str] = &["gaming", "shield", "ai", "downloads", "bookmarks", "history", "memory", "performance", "privateWindow"];
+pub const DEFAULT_TOOLBAR_ITEMS: &[&str] = &["gaming", "shield", "ai", "downloads"];
+pub const NTP_WIDGETS: &[&str] = &["shortcuts", "continue", "closed", "bookmarks", "downloads", "system", "gaming", "ai"];
+pub const DEFAULT_NTP_WIDGETS: &[&str] = &["shortcuts", "continue", "closed", "bookmarks", "downloads", "system", "gaming", "ai"];
+pub const THEMES: &[&str] = &["neon", "oled", "violet", "tactical", "crimson", "minimal", "performance", "custom"];
+pub const NTP_BACKGROUNDS: &[&str] = &["grid", "aurora", "circuit", "horizon", "plain"];
+
+fn strings(list: &[&str]) -> Vec<String> {
+    list.iter().map(|s| s.to_string()).collect()
+}
+
+/// Keeps the known ids of `list`, in the user's order, without duplicates.
+fn known_ids(list: Vec<String>, known: &[&str]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for id in list {
+        if known.contains(&id.as_str()) && !out.contains(&id) {
+            out.push(id);
+        }
+    }
+    out
+}
+
+fn clean_sites(sites: Vec<PinnedSite>, max: usize) -> Vec<PinnedSite> {
+    let mut out: Vec<PinnedSite> = Vec::new();
+    for s in sites {
+        let url = s.url.trim().to_string();
+        let ok = url::Url::parse(&url).map(|u| matches!(u.scheme(), "http" | "https") && u.host_str().is_some()).unwrap_or(false);
+        if ok && !out.iter().any(|o| o.url == url) {
+            out.push(PinnedSite { title: s.title.trim().chars().take(80).collect(), url });
+        }
+    }
+    out.truncate(max);
+    out
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -83,6 +188,30 @@ pub struct Settings {
     /// Sites that may open pop-ups without being asked to (a pop-up nobody asked for is blocked everywhere else).
     pub popup_allowed_hosts: Vec<String>,
     pub new_window_requests: NewWindowRequests,
+
+    /// Theme preset (`THEMES`); `accent` overrides its accent colour unless it is "auto".
+    pub theme: String,
+    /// Hue (0-359) of the accent when `accent` is "custom".
+    pub custom_hue: u32,
+    pub corner_style: CornerStyle,
+    pub density: Density,
+    pub motion: MotionLevel,
+    /// Short, quiet interface sounds (off by default).
+    pub ui_sounds: bool,
+    pub tab_style: TabStyle,
+    pub vertical_tabs: bool,
+    pub compact_title_bar: bool,
+    pub sidebar: SidebarMode,
+    pub sidebar_items: Vec<String>,
+    /// Sites pinned to the sidebar; a click opens the site (or switches to its tab).
+    pub sidebar_sites: Vec<PinnedSite>,
+    pub toolbar_items: Vec<String>,
+    pub ntp_layout: NtpLayout,
+    pub ntp_widgets: Vec<String>,
+    /// Shortcuts the user added to the New Tab page, shown before the most visited sites.
+    pub ntp_shortcuts: Vec<PinnedSite>,
+    /// Most-visited sites the user removed from the New Tab page (by address).
+    pub ntp_hidden_sites: Vec<String>,
 }
 
 impl Default for Settings {
@@ -93,7 +222,7 @@ impl Default for Settings {
             startup: StartupBehavior::RestoreSession,
             show_bookmarks_bar: true,
             download_dir: None,
-            accent: "ion".into(),
+            accent: "auto".into(),
             new_tab_background: "grid".into(),
             reduce_motion: false,
             show_ram_on_new_tab: true,
@@ -114,6 +243,23 @@ impl Default for Settings {
             check_updates: true,
             popup_allowed_hosts: Vec::new(),
             new_window_requests: NewWindowRequests::Tab,
+            theme: "neon".into(),
+            custom_hue: 190,
+            corner_style: CornerStyle::Angular,
+            density: Density::Comfortable,
+            motion: MotionLevel::Standard,
+            ui_sounds: false,
+            tab_style: TabStyle::Shaped,
+            vertical_tabs: false,
+            compact_title_bar: false,
+            sidebar: SidebarMode::Rail,
+            sidebar_items: strings(DEFAULT_SIDEBAR_ITEMS),
+            sidebar_sites: Vec::new(),
+            toolbar_items: strings(DEFAULT_TOOLBAR_ITEMS),
+            ntp_layout: NtpLayout::Full,
+            ntp_widgets: strings(DEFAULT_NTP_WIDGETS),
+            ntp_shortcuts: Vec::new(),
+            ntp_hidden_sites: Vec::new(),
         }
     }
 }
@@ -152,6 +298,25 @@ impl Settings {
                 self.custom_search_template = None;
             }
         }
+        if !THEMES.contains(&self.theme.as_str()) {
+            self.theme = "neon".into();
+        }
+        // "ion" was the default accent before themes existed: it now means "the theme's own accent".
+        if self.accent == "ion" || self.accent.trim().is_empty() {
+            self.accent = "auto".into();
+        }
+        self.custom_hue %= 360;
+        if !NTP_BACKGROUNDS.contains(&self.new_tab_background.as_str()) {
+            self.new_tab_background = "grid".into();
+        }
+        self.sidebar_items = known_ids(self.sidebar_items, SIDEBAR_ITEMS);
+        self.toolbar_items = known_ids(self.toolbar_items, TOOLBAR_ITEMS);
+        self.ntp_widgets = known_ids(self.ntp_widgets, NTP_WIDGETS);
+        self.sidebar_sites = clean_sites(self.sidebar_sites, 12);
+        self.ntp_shortcuts = clean_sites(self.ntp_shortcuts, 24);
+        self.ntp_hidden_sites.retain(|u| !u.trim().is_empty());
+        self.ntp_hidden_sites.dedup();
+        self.ntp_hidden_sites.truncate(200);
         self
     }
 
@@ -193,6 +358,45 @@ mod tests {
         assert!(s.is_never_sleep("music.youtube.com"));
         assert!(s.is_never_sleep("youtube.com"));
         assert!(!s.is_never_sleep("notyoutube.com"));
+    }
+
+    #[test]
+    fn interface_preferences_keep_only_known_values() {
+        let s = Settings {
+            theme: "rainbow".into(),
+            accent: "ion".into(),
+            custom_hue: 725,
+            new_tab_background: "video".into(),
+            sidebar_items: vec!["history".into(), "nope".into(), "history".into(), "ai".into()],
+            toolbar_items: vec!["shield".into(), "made-up".into()],
+            ntp_widgets: vec![],
+            sidebar_sites: vec![
+                PinnedSite { title: " Discord ".into(), url: "https://discord.com/app".into() },
+                PinnedSite { title: "bad".into(), url: "javascript:alert(1)".into() },
+                PinnedSite { title: "dup".into(), url: "https://discord.com/app".into() },
+            ],
+            ..Default::default()
+        }
+        .sanitized();
+        assert_eq!(s.theme, "neon");
+        assert_eq!(s.accent, "auto", "the old default accent follows the theme");
+        assert_eq!(s.custom_hue, 5);
+        assert_eq!(s.new_tab_background, "grid");
+        assert_eq!(s.sidebar_items, vec!["history".to_string(), "ai".to_string()]);
+        assert_eq!(s.toolbar_items, vec!["shield".to_string()]);
+        assert!(s.ntp_widgets.is_empty(), "an empty widget list is a valid choice (minimal page)");
+        assert_eq!(s.sidebar_sites, vec![PinnedSite { title: "Discord".into(), url: "https://discord.com/app".into() }]);
+    }
+
+    #[test]
+    fn profiles_saved_before_themes_load_with_the_new_defaults() {
+        let s: Settings = serde_json::from_str(r#"{"accent":"violet","reduceMotion":true}"#).unwrap();
+        assert_eq!((s.theme.as_str(), s.accent.as_str()), ("neon", "violet"));
+        assert_eq!(s.sidebar_items, strings(DEFAULT_SIDEBAR_ITEMS));
+        assert_eq!(s.corner_style, CornerStyle::Angular);
+        assert!(s.reduce_motion);
+        let json = serde_json::to_string(&Settings::default()).unwrap();
+        assert!(json.contains("\"cornerStyle\":\"angular\"") && json.contains("\"sidebar\":\"rail\""), "{json}");
     }
 
     #[test]

@@ -1,31 +1,46 @@
 import { useRef, useState } from "react";
 
-import { useStore } from "../../lib/store";
+import { activeTab, useStore } from "../../lib/store";
+import { tabTitle } from "../../lib/urls";
 import { TabSearch } from "../menus/TabSearch";
 import { Icon } from "../ui/Icon";
+import { Logo } from "../ui/Logo";
 import { IconButton } from "../ui/controls";
 import { TabStrip } from "./TabStrip";
 import { WindowControls } from "./WindowControls";
 
-export function TitleBar() {
+/**
+ * The window's title bar: brand mark, the tab strip (or, with vertical tabs, the page title), tab search and the
+ * window buttons. Empty areas drag the window; double-clicking them maximises or restores it.
+ */
+export function TitleBar({ onShellMenu }: { onShellMenu: (x: number, y: number) => void }) {
   const searchRef = useRef<HTMLDivElement>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const privateWindow = useStore((s) => s.browser.privateWindow);
+  const vertical = useStore((s) => s.settings.verticalTabs);
+  const compact = useStore((s) => s.settings.compactTitleBar);
+  const tab = useStore(activeTab);
   return (
-    <div className="titlebar" data-tauri-drag-region>
-      <div className="brand" data-tauri-drag-region aria-hidden="true">
-        <svg viewBox="0 0 32 32" width="20" height="20">
-          <defs>
-            <linearGradient id="pb-logo" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stopColor="var(--accent-hi)" />
-              <stop offset="1" stopColor="var(--accent-lo)" />
-            </linearGradient>
-          </defs>
-          <rect x="3" y="3" width="26" height="26" rx="8" fill="url(#pb-logo)" />
-          <path d="M11 22V10h6.2a3.6 3.6 0 010 7.2H11" fill="none" stroke="var(--on-accent)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+    <header
+      className={`titlebar${vertical ? " has-vertical-tabs" : ""}${compact ? " is-compact" : ""}`}
+      data-tauri-drag-region
+      onContextMenu={(e) => {
+        if (e.target !== e.currentTarget && !(e.target as HTMLElement).hasAttribute("data-tauri-drag-region")) return;
+        e.preventDefault();
+        onShellMenu(e.clientX, e.clientY);
+      }}
+    >
+      <div className="brand" data-tauri-drag-region title="Project Browser">
+        <Logo size={20} />
+        {(vertical || compact) && <span className="brand-name" data-tauri-drag-region>Project Browser</span>}
       </div>
-      <TabStrip />
+      {vertical ? (
+        <div className="titlebar-title truncate" data-tauri-drag-region>
+          {tab ? tabTitle(tab) : ""}
+        </div>
+      ) : (
+        <TabStrip />
+      )}
       <div className="drag-fill" data-tauri-drag-region />
       {privateWindow && (
         <div className="private-badge" role="status" title="Nothing in this window is saved: no history, cookies or sessions outlive it.">
@@ -33,10 +48,10 @@ export function TitleBar() {
         </div>
       )}
       <div ref={searchRef} className="titlebar-tools">
-        <IconButton icon="chevronDown" label="Search tabs" size={16} active={searchOpen} onClick={() => setSearchOpen((o) => !o)} />
+        <IconButton icon="search" label="Search tabs" size={15} active={searchOpen} onClick={() => setSearchOpen((o) => !o)} />
       </div>
       <TabSearch open={searchOpen} onClose={() => setSearchOpen(false)} anchor={searchRef} />
       <WindowControls />
-    </div>
+    </header>
   );
 }

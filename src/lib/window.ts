@@ -25,3 +25,8 @@ export async function onWindowMoved(fn: () => void): Promise<() => void> {
   if (!inTauri) return () => {};
   return getCurrentWindow().onMoved(fn);
 }
+
+/** This window's label ("main", "win-2", …); "main" outside Tauri. */
+export function windowLabel(): string {
+  return inTauri ? getCurrentWindow().label : "main";
+}

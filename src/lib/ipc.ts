@@ -13,6 +13,11 @@ import type {
   BrowserCommand,
   BrowserState,
   Bootstrap,
+  ContextMenuEvent,
+  DragOutcome,
+  GroupId,
+  GroupOp,
+  TabDragEvent,
   ClearOptions,
   ContentRect,
   DetectedProfile,
@@ -145,6 +150,11 @@ export const COMMANDS = [
   "tunnel_restart",
   "windows_list",
   "tab_to_window",
+  "tab_drag_hover",
+  "tab_drag_end",
+  "window_new",
+  "tab_group",
+  "context_menu_choose",
   "shield_state",
   "shield_tab",
   "shield_set",
@@ -291,8 +301,16 @@ export const api = {
   popupDecision: (tabId: TabId, action: "open" | "allow" | "dismiss") => call("popup_decision", { tabId, action }),
   /** All browser windows (the asking window is marked `current`). */
   windowsList: () => call<WindowBrief[]>("windows_list"),
-  /** Moves a tab to the window `target`, or to a new window. The page keeps running. Resolves to the window's label. */
-  tabToWindow: (id: TabId, target?: string) => call<string>("tab_to_window", { id, target }),
+  /** Moves a tab to the window `target` (at `index` of its strip), or to a new window. The page keeps running. */
+  tabToWindow: (id: TabId, target?: string, index?: number) => call<string>("tab_to_window", { id, target, index }),
+  /** The tab is being dragged outside its strip: the window under the pointer is told (it shows a drop marker). */
+  tabDragHover: (id: TabId) => call<string | null>("tab_drag_hover", { id }),
+  /** The drag ended; a tab pulled out of its strip joins the window under the pointer or becomes a new window. */
+  tabDragEnd: (id: TabId, detached: boolean, cancel = false) => call<DragOutcome>("tab_drag_end", { id, detached, cancel }),
+  windowNew: (url?: string, isPrivate?: boolean) => call("window_new", { url, private: isPrivate }),
+  tabGroup: (op: GroupOp) => call<GroupId | null>("tab_group", { op }),
+  /** Closes right-click menu `request`, running WebView2's command `command` if one was chosen. */
+  contextMenuChoose: (request: number, command: number | null) => call("context_menu_choose", { request, command }),
   shieldTest: (url: string, page: string) => call<string>("shield_test", { url, page }),
 };
 
@@ -309,6 +327,8 @@ export interface EventMap {
   "pb:ai": AiEvent;
   "pb:update": UpdateEvent;
   "pb:shield": ShieldEvent;
+  "pb:contextmenu": ContextMenuEvent;
+  "pb:tabdrag": TabDragEvent;
 }
 
 export type EventName = keyof EventMap;

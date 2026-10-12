@@ -5,10 +5,12 @@ import { ACCENTS, DEFAULT_SETTINGS, accentOrDefault, backgroundOrDefault, motion
 describe("settings helpers", () => {
   it("falls back to known accents and backgrounds", () => {
     expect(accentOrDefault("violet")).toBe("violet");
-    expect(accentOrDefault("neon-pink")).toBe("ion");
+    expect(accentOrDefault("neon-pink")).toBe("auto");
+    expect(accentOrDefault("ion")).toBe("auto");
     expect(backgroundOrDefault("aurora")).toBe("aurora");
     expect(backgroundOrDefault("x")).toBe("grid");
-    expect(ACCENTS.map((a) => a.id)).toContain(DEFAULT_SETTINGS.accent);
+    expect(accentOrDefault(DEFAULT_SETTINGS.accent)).toBe("auto");
+    expect(ACCENTS.length).toBeGreaterThan(5);
   });
   it("reduces motion by preference or by Gaming Mode", () => {
     expect(motionReduced(DEFAULT_SETTINGS)).toBe(false);
@@ -19,7 +21,7 @@ describe("settings helpers", () => {
   it("patch does not mutate", () => {
     const next = patch(DEFAULT_SETTINGS, { accent: "lime" });
     expect(next.accent).toBe("lime");
-    expect(DEFAULT_SETTINGS.accent).toBe("ion");
+    expect(DEFAULT_SETTINGS.accent).toBe("auto");
   });
   it("parses never-sleep host lists", () => {
     expect(parseHostList("https://YouTube.com/watch\n music.youtube.com, youtube.com ;")).toEqual(["music.youtube.com", "youtube.com"]);

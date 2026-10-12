@@ -1,6 +1,18 @@
 // Mirrors the serde types of the Rust core (src-tauri/src). Field names are camelCase on the wire.
 
 export type TabId = number;
+export type GroupId = number;
+
+export const GROUP_COLORS = ["grey", "blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange"] as const;
+export type GroupColor = (typeof GROUP_COLORS)[number];
+
+/** A named, coloured run of neighbouring tabs. */
+export interface TabGroup {
+  id: GroupId;
+  title: string;
+  color: string;
+  collapsed: boolean;
+}
 
 export type Lifecycle = "unloaded" | "live" | "sleeping";
 export type Security = "internal" | "secure" | "insecure" | "certerror" | "local";
@@ -32,10 +44,12 @@ export interface Tab {
   lastActive: number;
   /** The address of the last pop-up this page opened without being asked to (it was blocked). */
   blockedPopup: string | null;
+  group: GroupId | null;
 }
 
 export interface BrowserState {
   tabs: Tab[];
+  groups: TabGroup[];
   activeId: TabId | null;
   closedCount: number;
   fullscreen: boolean;
@@ -50,6 +64,18 @@ export type SearchEngine = "google" | "bing" | "duckduckgo" | "brave" | "startpa
 export type StartupBehavior = "restoreSession" | "newTab";
 export type BackgroundTabAction = "sleep" | "unload";
 export type NewWindowRequests = "tab" | "window";
+export type CornerStyle = "angular" | "rounded" | "soft";
+export type Density = "compact" | "comfortable" | "spacious";
+export type MotionLevel = "subtle" | "standard" | "expressive";
+export type TabStyle = "shaped" | "pill" | "minimal";
+export type SidebarMode = "rail" | "expanded" | "hidden";
+export type NtpLayout = "full" | "minimal";
+
+/** A site pinned to the sidebar or the New Tab page. */
+export interface PinnedSite {
+  title: string;
+  url: string;
+}
 
 export interface Settings {
   searchEngine: SearchEngine;
@@ -80,6 +106,25 @@ export interface Settings {
   /** Sites that may open pop-ups without being asked to. */
   popupAllowedHosts: string[];
   newWindowRequests: NewWindowRequests;
+  /** Theme preset id; `accent` overrides its colour unless "auto". */
+  theme: string;
+  /** Accent hue used when `accent` is "custom". */
+  customHue: number;
+  cornerStyle: CornerStyle;
+  density: Density;
+  motion: MotionLevel;
+  uiSounds: boolean;
+  tabStyle: TabStyle;
+  verticalTabs: boolean;
+  compactTitleBar: boolean;
+  sidebar: SidebarMode;
+  sidebarItems: string[];
+  sidebarSites: PinnedSite[];
+  toolbarItems: string[];
+  ntpLayout: NtpLayout;
+  ntpWidgets: string[];
+  ntpShortcuts: PinnedSite[];
+  ntpHiddenSites: string[];
 }
 
 export interface ProfileMeta {
@@ -663,3 +708,61 @@ export interface TunnelView {
 }
 
 export type ProbeResult = { kind: "works"; millis: number } | { kind: "refused"; reason: string } | { kind: "unreachable"; reason: string };
+
+// ---- Right-click menus ---------------------------------------------------------------------------
+
+/** One of WebView2's own commands for this menu (run natively when chosen). */
+export interface NativeMenuItem {
+  commandId: number;
+  name: string;
+  label: string;
+  kind: "command" | "checkbox" | "radio" | "separator" | "submenu";
+  enabled: boolean;
+  checked: boolean;
+  shortcut: string;
+  children: NativeMenuItem[];
+}
+
+export interface ContextTarget {
+  kind: "page" | "image" | "selection" | "audio" | "video";
+  editable: boolean;
+  mainFrame: boolean;
+  pageUrl: string;
+  frameUrl: string;
+  linkUrl: string | null;
+  linkText: string | null;
+  sourceUrl: string | null;
+  selection: string | null;
+}
+
+/** `pb:contextmenu`: a right-click the shell should answer with its menu. */
+export interface ContextMenuEvent {
+  requestId: number;
+  /** The tab whose page was clicked; null for the shell's own text fields. */
+  tabId: TabId | null;
+  x: number;
+  y: number;
+  private: boolean;
+  target: ContextTarget;
+  items: NativeMenuItem[];
+}
+
+// ---- Tab drag between windows ------------------------------------------------------------------
+
+/** `pb:tabdrag`: a tab from another window is over this one, left it, or was dropped on it. */
+export interface TabDragEvent {
+  phase: "over" | "leave" | "drop";
+  tabId: TabId;
+  x: number;
+  y: number;
+}
+
+export type DragOutcome = { kind: "window"; label: string } | { kind: "newWindow"; label: string } | { kind: "movedWindow" } | { kind: "cancelled" };
+
+export type GroupOp =
+  | { op: "create"; tabs: TabId[]; title: string; color: string }
+  | { op: "add"; tab: TabId; group: GroupId }
+  | { op: "remove"; tab: TabId }
+  | { op: "update"; group: GroupId; title?: string; color?: string; collapsed?: boolean }
+  | { op: "ungroup"; group: GroupId }
+  | { op: "close"; group: GroupId };

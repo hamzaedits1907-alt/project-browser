@@ -14,8 +14,8 @@ body,
 body {
   background: var(--bg-0);
   color: var(--text-1);
-  font: 13px/1.45 var(--font-ui);
-  font-feature-settings: "cv11", "ss01";
+  font: var(--fs) / 1.45 var(--font-ui);
+  font-feature-settings: "cv11", "ss01", "ss03";
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
   user-select: none;
@@ -51,6 +51,7 @@ a {
 h1,
 h2,
 h3,
+h4,
 p {
   margin: 0;
 }
@@ -61,14 +62,14 @@ svg {
 
 :focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  outline-offset: 2px;
 }
 
 ::selection {
-  background: var(--accent-mid);
+  background: var(--accent-a45);
+  color: var(--text-1);
 }
 
-/* Thin dark scrollbars everywhere. */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--bg-5) transparent;
@@ -85,10 +86,24 @@ svg {
 
 .mono {
   font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.num {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
 }
 
 .dim {
   color: var(--text-3);
+}
+
+.small {
+  font-size: 12px;
+}
+
+.pad {
+  padding: 10px;
 }
 
 .truncate {
@@ -97,10 +112,25 @@ svg {
   white-space: nowrap;
 }
 
-/* Reduced motion: user preference, OS preference, or Gaming Mode's reduce-animations. */
-:root[data-motion="reduced"] *,
-:root[data-motion="reduced"] *::before,
-:root[data-motion="reduced"] *::after {
+/* Text that fades out instead of ending in "…" (tab titles, rows). */
+.fade-end {
+  overflow: hidden;
+  white-space: nowrap;
+  mask-image: linear-gradient(90deg, #000 calc(100% - 22px), transparent);
+}
+
+.eyebrow {
+  font: 650 10.5px/1.3 var(--font-display);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* Motion off (user choice, the Performance theme, Gaming Mode, or the OS setting). Spinners keep turning slowly:
+ * they report work in progress, they are not decoration. */
+:root[data-motion="off"] *,
+:root[data-motion="off"] *::before,
+:root[data-motion="off"] *::after {
   animation-duration: 0.001ms !important;
   animation-iteration-count: 1 !important;
   transition-duration: 0.001ms !important;
@@ -113,5 +143,65 @@ svg {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
+  }
+}
+
+:root[data-motion="off"] .spinner,
+:root .spinner {
+  animation-duration: 0.9s !important;
+  animation-iteration-count: infinite !important;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--rise));
+  }
+}
+
+@keyframes drop-in {
+  from {
+    opacity: 0;
+    transform: translateY(calc(-1 * var(--rise)));
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(calc(-0.6 * var(--rise))) scale(calc(1 - 0.03 * var(--md)));
+  }
+}
+
+@keyframes pop-out {
+  to {
+    opacity: 0;
+    transform: scale(calc(1 - 0.02 * var(--md)));
+  }
+}
+
+@keyframes slide-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(calc(-2 * var(--rise)));
+  }
+}
+
+@keyframes slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(calc(2 * var(--rise)));
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
   }
 }

@@ -1,21 +1,28 @@
-import { useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { BookmarksBar } from "./components/chrome/BookmarksBar";
 import { ContentHost } from "./components/chrome/ContentHost";
 import { FindBar } from "./components/chrome/FindBar";
 import { PermissionBar } from "./components/chrome/PermissionBar";
 import { PopupBar } from "./components/chrome/PopupBar";
+import { Rail } from "./components/chrome/Rail";
+import { SidePanel } from "./components/chrome/SidePanel";
+import { TabStrip } from "./components/chrome/TabStrip";
 import { TitleBar } from "./components/chrome/TitleBar";
 import { Toasts } from "./components/chrome/Toasts";
 import { Toolbar } from "./components/chrome/Toolbar";
+import { Logo } from "./components/ui/Logo";
 import { Button } from "./components/ui/controls";
 import { ClearDataDialog } from "./features/clear/ClearDataDialog";
+import { ContextMenuHost } from "./features/contextmenu/ContextMenuHost";
+import { CustomizeDialog } from "./features/customize/CustomizeDialog";
+import { ShellMenu } from "./features/customize/ShellMenu";
 import { AiPanel } from "./features/ai/AiPanel";
 import { ai } from "./features/ai/aiStore";
 import { checkForUpdates } from "./features/update/updateStore";
 import { FirstRun } from "./features/firstrun/FirstRun";
 import { ImportWizard } from "./features/import/ImportWizard";
-import { accentOrDefault, motionReduced } from "./lib/settings";
+import { applyLook } from "./lib/theme";
 import { init, useStore } from "./lib/store";
 
 export function App() {
@@ -26,6 +33,8 @@ export function App() {
   const fullscreen = useStore((s) => s.browser.fullscreen);
   const activeId = useStore((s) => s.browser.activeId);
   const aiOpen = ai.use((s) => s.open);
+  const [shellMenu, setShellMenu] = useState<{ x: number; y: number } | null>(null);
+  const openShellMenu = useCallback((x: number, y: number) => setShellMenu({ x, y }), []);
 
   useEffect(() => {
     void init();
@@ -41,15 +50,13 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
 
-  // Theme attributes live on <html> so every portal-free popup inherits them.
+  // The look (theme, accent, shape, density, motion) lives on <html>, so every popup inherits it.
   useEffect(() => {
-    const root = document.documentElement;
-    root.dataset.accent = accentOrDefault(settings.accent);
-    root.dataset.gaming = String(settings.gamingMode);
-    root.dataset.motion = motionReduced(settings) ? "reduced" : "full";
-  }, [settings]);
+    if (ready) applyLook(settings);
+  }, [ready, settings]);
 
-  // Shell keys that are not browser commands: stop the webview's own context menu on chrome.
+  // The shell has no browser context menu of its own: the core shows ours for text fields (see native/context_menu.rs)
+  // and the chrome's own areas open theirs.
   useEffect(() => {
     const block = (e: MouseEvent) => {
       const t = e.target as HTMLElement;
@@ -62,27 +69,55 @@ export function App() {
   if (fatal) {
     return (
       <div className="fatal" role="alert">
+        <Logo size={44} glow />
         <h1>Project Browser couldn't start</h1>
-        <p className="dim" data-selectable>{fatal}</p>
-        <Button variant="primary" onClick={() => location.reload()}>Try again</Button>
+        <p className="dim" data-selectable>
+          {fatal}
+        </p>
+        <Button variant="primary" onClick={() => location.reload()}>
+          Try again
+        </Button>
       </div>
     );
   }
-  if (!ready) return <div className="boot" aria-busy="true" />;
+  if (!ready) {
+    return (
+      <div className="boot" aria-busy="true">
+        <Logo size={40} />
+      </div>
+    );
+  }
 
+  const chrome = !fullscreen;
+  const sidebar = chrome && settings.sidebar !== "hidden";
+  const vertical = chrome && settings.verticalTabs;
   return (
-    <div className={`app${fullscreen ? " is-fullscreen" : ""}${settings.gamingMode ? " is-gaming" : ""}`}>
-      {!fullscreen && <TitleBar />}
-      {!fullscreen && <Toolbar />}
-      {!fullscreen && settings.showBookmarksBar && <BookmarksBar />}
-      <FindBar key={activeId ?? 0} />
-      <PermissionBar />
-      <PopupBar />
-      <div className="workspace">
-        <ContentHost />
-        {aiOpen && !fullscreen && <AiPanel />}
+    <div className={`app${fullscreen ? " is-fullscreen" : ""}`}>
+      {chrome && <TitleBar onShellMenu={openShellMenu} />}
+      <div className="frame">
+        {sidebar && <Rail onShellMenu={openShellMenu} />}
+        {vertical && (
+          <aside className="vtabs" aria-label="Tabs">
+            <TabStrip vertical />
+          </aside>
+        )}
+        <div className="main">
+          {chrome && <Toolbar onShellMenu={openShellMenu} />}
+          {chrome && settings.showBookmarksBar && <BookmarksBar />}
+          <FindBar key={activeId ?? 0} />
+          <PermissionBar />
+          <PopupBar />
+          <div className="workspace">
+            {chrome && <SidePanel />}
+            <ContentHost />
+            {aiOpen && chrome && <AiPanel />}
+          </div>
+        </div>
       </div>
       <Toasts />
+      <ContextMenuHost />
+      <ShellMenu at={shellMenu} onClose={() => setShellMenu(null)} />
+      <CustomizeDialog />
       <ImportWizard />
       <ClearDataDialog />
       {firstRun && <FirstRun />}

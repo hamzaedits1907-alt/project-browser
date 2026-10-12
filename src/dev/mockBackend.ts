@@ -57,7 +57,7 @@ function tab(id: number, url: string, title: string, extra: Partial<Tab> = {}): 
   return {
     id, url, title, favicon: null, pinned: false, private: false, loading: false, canGoBack: false, canGoForward: false, zoom: 1,
     audible: false, muted: false, lifecycle: url.startsWith("browser://") ? "unloaded" : "live", security: url.startsWith("https") ? "secure" : "internal",
-    error: null, heavy: false, bookmarked: false, lastActive: now - id * MIN, blockedPopup: null, ...extra,
+    error: null, heavy: false, bookmarked: false, lastActive: now - id * MIN, blockedPopup: null, group: null, ...extra,
   };
 }
 
@@ -110,16 +110,17 @@ export function installMockBackend(): void {
   }
   const startUrl = params.get("page") ? `browser://${params.get("page")}` : "browser://newtab";
 
-  let settings: Settings = { ...DEFAULT_SETTINGS, gamingMode: params.get("gaming") === "1", accent: params.get("accent") ?? "ion" };
+  let settings: Settings = { ...DEFAULT_SETTINGS, gamingMode: params.get("gaming") === "1", accent: params.get("accent") ?? "auto", theme: params.get("theme") ?? "neon", verticalTabs: params.get("vtabs") === "1", tabStyle: (params.get("tabs") as Settings["tabStyle"]) ?? "shaped", cornerStyle: (params.get("corners") as Settings["cornerStyle"]) ?? "angular", sidebar: (params.get("sidebar") as Settings["sidebar"]) ?? "rail" };
   let nextId = 10;
   let state: BrowserState = {
     tabs: [
       tab(1, "https://github.com/", "GitHub", { pinned: true, bookmarked: true }),
-      tab(2, "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "Never Gonna Give You Up - YouTube", { audible: true, heavy: true }),
-      tab(3, "https://store.steampowered.com/", "Welcome to Steam", { lifecycle: "sleeping" }),
+      tab(2, "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "Never Gonna Give You Up - YouTube", { audible: true, heavy: true, group: 1 }),
+      tab(3, "https://store.steampowered.com/", "Welcome to Steam", { lifecycle: "sleeping", group: 1 }),
       tab(4, "https://en.wikipedia.org/wiki/Rust_(programming_language)", "Rust (programming language) - Wikipedia", { loading: params.get("loading") === "1" }),
       tab(5, startUrl, startUrl === "browser://newtab" ? "New Tab" : startUrl.replace("browser://", "")),
     ],
+    groups: [{ id: 1, title: "Play", color: "pink", collapsed: params.get("collapsed") === "1" }],
     activeId: params.get("web") === "1" ? 4 : 5,
     closedCount: 2,
     fullscreen: false,
@@ -170,6 +171,23 @@ export function installMockBackend(): void {
   };
 
   const pushState = () => void emit("pb:state", state);
+  const ctx = params.get("ctx");
+  if (ctx) {
+    const item = (commandId: number, name: string, label: string, extra: Record<string, unknown> = {}) => ({ commandId, name, label, kind: "command", enabled: true, checked: false, shortcut: "", children: [], ...extra });
+    const items = {
+      link: [item(1, "copyLinkLocation", "Linkadresse kopieren"), item(2, "saveLinkAs", "Link speichern unter..."), item(3, "inspectElement", "Untersuchen")],
+      image: [item(1, "saveImageAs", "Bild speichern unter..."), item(2, "copyImage", "Bild kopieren"), item(3, "copyImageLocation", "Bildadresse kopieren")],
+      selection: [item(1, "copy", "Kopieren"), item(2, "copyLinkToHighlight", "Link zur Hervorhebung kopieren")],
+      editable: [item(1, "undo", "Rückgängig"), item(2, "cut", "Ausschneiden"), item(3, "copy", "Kopieren"), item(4, "paste", "Einfügen"), item(5, "selectAll", "Alles auswählen"), item(6, "spellCheck", "Receive")],
+      page: [item(1, "back", "Zurück"), item(2, "reload", "Neu laden"), item(3, "saveAs", "Speichern unter..."), item(4, "print", "Drucken..."), item(5, "inspectElement", "Untersuchen")],
+    }[ctx] ?? [];
+    setTimeout(() => void emit("pb:contextmenu", {
+      requestId: 1, tabId: 4, x: 520, y: 260, private: false, items,
+      target: { kind: ctx === "image" ? "image" : ctx === "selection" ? "selection" : "page", editable: ctx === "editable", mainFrame: true, pageUrl: "https://en.wikipedia.org/", frameUrl: "",
+        linkUrl: ctx === "link" ? "https://www.rust-lang.org/learn" : null, linkText: ctx === "link" ? "Learn Rust" : null,
+        sourceUrl: ctx === "image" ? "https://upload.wikimedia.org/rust-logo.png" : null, selection: ctx === "selection" ? "Rust is a general-purpose programming language" : null },
+    }), 900);
+  }
   const setActive = (id: number) => {
     state = { ...state, activeId: id };
     pushState();
@@ -465,6 +483,32 @@ export function installMockBackend(): void {
           ];
         case "tab_to_window":
           return a.target ?? "win-3";
+        case "tab_group": {
+          const op = a.op as { op: string; group?: number; title?: string; color?: string; collapsed?: boolean; tab?: number; tabs?: number[] };
+          if (op.op === "update") state = { ...state, groups: state.groups.map((g) => (g.id === op.group ? { ...g, ...(op.title !== undefined ? { title: op.title } : {}), ...(op.color ? { color: op.color } : {}), ...(op.collapsed !== undefined ? { collapsed: op.collapsed } : {}) } : g)) };
+          else if (op.op === "ungroup") state = { ...state, groups: state.groups.filter((g) => g.id !== op.group), tabs: state.tabs.map((t) => (t.group === op.group ? { ...t, group: null } : t)) };
+          else if (op.op === "remove") state = { ...state, tabs: state.tabs.map((t) => (t.id === op.tab ? { ...t, group: null } : t)) };
+          else if (op.op === "add") state = { ...state, tabs: state.tabs.map((t) => (t.id === op.tab ? { ...t, group: op.group ?? null } : t)) };
+          else if (op.op === "create") {
+            const gid = Math.max(0, ...state.groups.map((g) => g.id)) + 1;
+            state = { ...state, groups: [...state.groups, { id: gid, title: op.title ?? "", color: op.color ?? "blue", collapsed: false }], tabs: state.tabs.map((t) => (op.tabs?.includes(t.id) ? { ...t, group: gid } : t)) };
+          }
+          return pushState();
+        }
+        case "window_new":
+        case "context_menu_choose":
+        case "tab_drag_hover":
+          return null;
+        case "tab_drag_end":
+          return { kind: "newWindow", label: "win-3" };
+        case "tab_move": {
+          const tabs = state.tabs.slice();
+          const from = tabs.findIndex((t) => t.id === a.id);
+          const [moved] = tabs.splice(from, 1);
+          if (moved) tabs.splice(a.index as number, 0, moved);
+          state = { ...state, tabs };
+          return pushState();
+        }
         case "shield_state":
           return shieldView(a.site as string | undefined);
         case "shield_tab":

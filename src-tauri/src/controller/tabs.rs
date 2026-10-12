@@ -107,7 +107,14 @@ impl Controller {
         }
         let private = self.tab_is_private(self.tabs.get(opener).map(|t| t.private).unwrap_or(false));
         let tab = crate::controller::window_set::session_tab(url);
-        self.open_window(crate::controller::window_set::WindowSpec { tabs: vec![tab], active: 0, geometry: None, private, empty: false });
+        self.open_window(crate::controller::window_set::WindowSpec {
+            tabs: vec![tab],
+            active: 0,
+            geometry: None,
+            private,
+            empty: false,
+            groups: Vec::new(),
+        });
     }
 
     /// The popup the tab's page opened without being asked to was blocked: remember it so the shell can offer it.

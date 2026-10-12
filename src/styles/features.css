@@ -1,5 +1,5 @@
 /* ---- AI panel --------------------------------------------------------------------------- */
-.ai-panel { width: 380px; flex: none; display: flex; flex-direction: column; background: var(--bg-1); border-left: 1px solid var(--line-1); min-height: 0; animation: slide-in 0.22s var(--ease-out); }
+.ai-panel { width: 380px; flex: none; display: flex; flex-direction: column; background: var(--bg-1); border-left: 1px solid var(--line-1); min-height: 0; animation: slide-in 0.22s var(--e-out); }
 @keyframes slide-in { from { opacity: 0; transform: translateX(16px); } }
 .ai-head { display: flex; align-items: center; justify-content: space-between; height: 46px; padding: 0 8px 0 16px; border-bottom: 1px solid var(--line-1); }
 .ai-title { display: flex; align-items: center; gap: 8px; font: 650 14px var(--font-display); }
@@ -10,7 +10,7 @@
 .ai-setup svg { color: var(--accent); }
 .ai-suggestions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .ai-msg { max-width: 100%; line-height: 1.55; word-break: break-word; }
-.ai-user { align-self: flex-end; max-width: 88%; padding: 8px 12px; border-radius: 14px 14px 4px 14px; background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-mid); white-space: pre-wrap; }
+.ai-user { align-self: flex-end; max-width: 88%; padding: 8px 12px; border-radius: 14px 14px 4px 14px; background: var(--accent-a16); box-shadow: inset 0 0 0 1px var(--accent-a28); white-space: pre-wrap; }
 .ai-assistant { align-self: stretch; color: var(--text-1); }
 .ai-assistant p { margin: 0 0 8px; }
 .ai-assistant ul, .ai-assistant ol { margin: 0 0 8px; padding-left: 20px; }
@@ -24,7 +24,7 @@
 .ai-page-toggle small { display: block; color: var(--text-3); font-size: 11.5px; }
 .ai-input { position: relative; }
 .ai-input textarea { width: 100%; resize: none; padding: 10px 46px 10px 12px; border-radius: var(--r-lg); border: 1px solid var(--line-2); background: var(--bg-2); color: var(--text-1); line-height: 1.45; user-select: text; }
-.ai-input textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.ai-input textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-a16); }
 .ai-send { position: absolute; right: 6px; bottom: 6px; background: var(--accent); color: var(--on-accent); border-radius: 10px; width: 30px; height: 30px; }
 .ai-send:hover:not(:disabled) { background: var(--accent-hi); color: var(--on-accent); }
 .ai-send:disabled { background: var(--bg-4); color: var(--text-3); }
@@ -32,9 +32,9 @@
 /* ---- Import wizard ------------------------------------------------------------------------- */
 .import-center { display: grid; justify-items: center; gap: 10px; padding: 28px 0; text-align: center; }
 .import-profiles { display: grid; gap: 8px; margin: 10px 0; }
-.import-profile { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: var(--r-md); border: 1px solid var(--line-2); background: var(--bg-1); text-align: left; color: var(--text-2); transition: all var(--t-fast); }
+.import-profile { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: var(--r-md); border: 1px solid var(--line-2); background: var(--bg-1); text-align: left; color: var(--text-2); transition: all var(--d1); }
 .import-profile:hover { border-color: var(--line-3); }
-.import-profile.is-on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.import-profile.is-on { border-color: var(--accent); background: var(--accent-a16); color: var(--accent); }
 .ip-text { display: grid; flex: 1; }
 .ip-text strong { color: var(--text-1); }
 .browser-dot { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 11px; font-weight: 800; color: #fff; flex: none; }
@@ -56,14 +56,14 @@
 
 /* ---- First run ---------------------------------------------------------------------------------- */
 .firstrun { position: absolute; inset: 0; z-index: 950; display: grid; place-items: center; background: var(--bg-0); overflow: auto; }
-.firstrun-glow { position: absolute; inset: 0; background: radial-gradient(50% 45% at 50% 0%, var(--accent-mid), transparent 70%), linear-gradient(var(--line-1) 1px, transparent 1px) 0 0 / 46px 46px, linear-gradient(90deg, var(--line-1) 1px, transparent 1px) 0 0 / 46px 46px; -webkit-mask-image: linear-gradient(to bottom, #000, transparent 85%); mask-image: linear-gradient(to bottom, #000, transparent 85%); pointer-events: none; }
-.firstrun-card { position: relative; width: min(560px, calc(100vw - 48px)); padding: 28px 32px 30px; border-radius: 24px; background: color-mix(in srgb, var(--bg-2) 94%, transparent); border: 1px solid var(--line-2); box-shadow: var(--shadow-pop); animation: modal-in 0.3s var(--ease-out); }
+.firstrun-glow { position: absolute; inset: 0; background: radial-gradient(50% 45% at 50% 0%, var(--accent-a28), transparent 70%), linear-gradient(var(--line-1) 1px, transparent 1px) 0 0 / 46px 46px, linear-gradient(90deg, var(--line-1) 1px, transparent 1px) 0 0 / 46px 46px; -webkit-mask-image: linear-gradient(to bottom, #000, transparent 85%); mask-image: linear-gradient(to bottom, #000, transparent 85%); pointer-events: none; }
+.firstrun-card { position: relative; width: min(560px, calc(100vw - 48px)); padding: 28px 32px 30px; border-radius: 24px; background: color-mix(in srgb, var(--bg-2) 94%, transparent); border: 1px solid var(--line-2); box-shadow: var(--sh-pop); animation: modal-in 0.3s var(--e-out); }
 .steps { display: flex; gap: 6px; margin-bottom: 22px; }
-.steps span { flex: 1; height: 3px; border-radius: 2px; background: var(--bg-5); transition: background var(--t-med); }
-.steps span.is-done { background: var(--accent); box-shadow: 0 0 8px var(--accent-line); }
+.steps span { flex: 1; height: 3px; border-radius: 2px; background: var(--bg-5); transition: background var(--d2); }
+.steps span.is-done { background: var(--accent); box-shadow: 0 0 8px var(--accent-a45); }
 .fr-body { display: grid; gap: 14px; }
 .fr-body h1 { font: 700 26px/1.2 var(--font-display); letter-spacing: -0.015em; }
-.fr-logo { filter: drop-shadow(0 8px 24px var(--accent-line)); }
+.fr-logo { filter: drop-shadow(0 8px 24px var(--accent-a45)); }
 .fr-points { list-style: none; margin: 4px 0; padding: 0; display: grid; gap: 10px; }
 .fr-points li { display: flex; gap: 12px; align-items: flex-start; color: var(--text-2); }
 .fr-points svg { color: var(--accent); margin-top: 2px; }
@@ -92,7 +92,7 @@
 .mp-trigger:disabled { opacity: 0.55; }
 .mp-current { flex: 1; min-width: 0; }
 .mp-current.is-placeholder { color: var(--text-3); }
-.mp-panel { position: absolute; z-index: 50; top: calc(100% + 6px); left: 0; right: 0; min-width: 300px; max-height: 380px; display: flex; flex-direction: column; background: var(--bg-2); border: 1px solid var(--line-3); border-radius: var(--r-lg); box-shadow: var(--shadow-pop); overflow: hidden; }
+.mp-panel { position: absolute; z-index: 50; top: calc(100% + 6px); left: 0; right: 0; min-width: 300px; max-height: 380px; display: flex; flex-direction: column; background: var(--bg-2); border: 1px solid var(--line-3); border-radius: var(--r-lg); box-shadow: var(--sh-pop); overflow: hidden; }
 .model-picker.is-compact .mp-panel { min-width: 0; }
 .mp-search { display: flex; align-items: center; gap: 8px; padding: 0 12px; height: 40px; border-bottom: 1px solid var(--line-1); color: var(--text-3); flex: none; }
 .mp-search input { flex: 1; min-width: 0; background: none; border: 0; outline: 0; color: var(--text-1); }
@@ -227,3 +227,18 @@
 .shield-sites li { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .shield-test { display: grid; gap: 8px; grid-template-columns: 1fr 200px auto; align-items: end; }
 @media (max-width: 760px) { .shield-test { grid-template-columns: 1fr; } }
+
+/* ---- 0.5.0 shape language for feature surfaces ------------------------------------------------ */
+.ai-user, .ai-error, .ai-input textarea, .ai-send, .import-profile, .browser-dot, .unsupported-list li, .import-result,
+.firstrun-card, .fr-check, .mp-trigger, .mp-panel, .mp-item, .next-step, .file-card, .fill-item, .plan, .plan-outcome,
+.memory-body, .contradiction, .check-item, .shield-list-row, .tag, .ai-assistant pre {
+  corner-shape: var(--shape);
+}
+.ai-panel { background: var(--bg-1) var(--sheen); }
+.ai-panel > * { animation: slide-in-right var(--d3) var(--e-out); }
+.ai-head { color: var(--accent); }
+.ai-title { color: var(--text-1); }
+.ai-send { box-shadow: var(--glow-sm); }
+.shield-summary { display: grid; gap: 4px; }
+.shield-total { margin: 6px 10px 2px; }
+.firstrun-card::before { content: ""; position: absolute; inset: 0 0 auto; height: 2px; background: var(--energy); }

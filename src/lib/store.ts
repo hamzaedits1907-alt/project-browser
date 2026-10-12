@@ -29,6 +29,7 @@ export interface AppState {
 
 const EMPTY_BROWSER: BrowserState = {
   tabs: [],
+  groups: [],
   activeId: null,
   closedCount: 0,
   fullscreen: false,
@@ -81,7 +82,7 @@ export function activeTab(s: AppState): Tab | null {
 
 // ---- UI event bus (focus omnibox, open find) -------------------------------------
 
-type BusEvent = "focusOmnibox" | "openFind";
+type BusEvent = "focusOmnibox" | "openFind" | "openSiteInfo" | "openFill";
 const bus = new Map<BusEvent, Set<() => void>>();
 
 export function onBus(name: BusEvent, fn: () => void): () => void {
@@ -92,7 +93,7 @@ export function onBus(name: BusEvent, fn: () => void): () => void {
   return () => mine.delete(fn);
 }
 
-function emitBus(name: BusEvent): void {
+export function emitBus(name: BusEvent): void {
   bus.get(name)?.forEach((fn) => fn());
 }
 

@@ -1,67 +1,173 @@
-/* Design tokens. Dark-first; accent colour is switched with [data-accent]. */
+/* Project Browser "Vector" design tokens.
+ *
+ * Colours come from the theme engine (src/lib/theme.ts), which writes --bg-*, --text-*, --ah/--as/--al (accent),
+ * --ah2 (secondary hue) and --glow on <html>. Shape, density and motion are switched with data attributes on <html>:
+ * data-corners, data-density, data-motion, data-effects, data-tabs, data-gaming, data-vertical.
+ * The values below are the Neon Cyan defaults, used for the first paint. */
 :root {
   color-scheme: dark;
 
-  --ah: 197;
+  --bg-0: #06080c;
+  --bg-1: #0a0d13;
+  --bg-2: #0f131b;
+  --bg-3: #151a25;
+  --bg-4: #1c2230;
+  --bg-5: #252c3c;
+  --text-1: #eaeef6;
+  --text-2: #a6afc2;
+  --text-3: #6d768b;
+  --text-4: #485065;
+  --ah: 188;
   --as: 100%;
-  --al: 62%;
+  --al: 56%;
+  --ah2: 262;
+  --glow: 1;
+
   --accent: hsl(var(--ah) var(--as) var(--al));
   --accent-hi: hsl(var(--ah) var(--as) calc(var(--al) + 12%));
-  --accent-lo: hsl(var(--ah) 85% 44%);
-  --accent-soft: hsl(var(--ah) var(--as) var(--al) / 0.13);
-  --accent-mid: hsl(var(--ah) var(--as) var(--al) / 0.28);
-  --accent-line: hsl(var(--ah) var(--as) var(--al) / 0.55);
-  --on-accent: #03121b;
+  --accent-lo: hsl(var(--ah) var(--as) calc(var(--al) - 18%));
+  --accent-2: hsl(var(--ah2) 95% 66%);
+  --accent-a06: hsl(var(--ah) var(--as) var(--al) / 0.06);
+  --accent-a10: hsl(var(--ah) var(--as) var(--al) / 0.1);
+  --accent-a16: hsl(var(--ah) var(--as) var(--al) / 0.16);
+  --accent-a28: hsl(var(--ah) var(--as) var(--al) / 0.28);
+  --accent-a45: hsl(var(--ah) var(--as) var(--al) / 0.45);
+  --accent-a70: hsl(var(--ah) var(--as) var(--al) / 0.7);
+  --on-accent: hsl(var(--ah) 70% 6%);
+  /* Glow scales with the theme: 0 removes it entirely. */
+  --glow-a: calc(0.5 * var(--glow));
+  --glow-sm: 0 0 calc(8px * var(--glow)) hsl(var(--ah) var(--as) var(--al) / var(--glow-a));
+  --glow-md: 0 0 calc(22px * var(--glow)) calc(-4px * var(--glow)) hsl(var(--ah) var(--as) var(--al) / var(--glow-a));
+  --energy: linear-gradient(90deg, var(--accent), var(--accent-2));
 
-  --bg-0: #0b0d12; /* window / page background (matches the native window colour) */
-  --bg-1: #0f1218; /* chrome */
-  --bg-2: #141821; /* toolbar, cards */
-  --bg-3: #1a1f2b; /* raised controls */
-  --bg-4: #232938; /* hover */
-  --bg-5: #2c3345; /* pressed */
-
-  --line-1: rgb(255 255 255 / 0.05);
+  --line-1: rgb(255 255 255 / 0.055);
   --line-2: rgb(255 255 255 / 0.09);
-  --line-3: rgb(255 255 255 / 0.16);
+  --line-3: rgb(255 255 255 / 0.15);
+  --line-4: rgb(255 255 255 / 0.24);
+  --scrim: rgb(2 3 6 / 0.62);
 
-  --text-1: #eceef4;
-  --text-2: #a4acbf;
-  --text-3: #6c7589;
-  --text-4: #4a5266;
+  --good: #3ee08f;
+  --warn: #ffc23d;
+  --bad: #ff5470;
+  --info: #5ab0ff;
+  --private: #a98bff;
+  --good-a: rgb(62 224 143 / 0.13);
+  --warn-a: rgb(255 194 61 / 0.13);
+  --bad-a: rgb(255 84 112 / 0.13);
+  --private-a: rgb(169 139 255 / 0.16);
 
-  --good: #4ade80;
-  --warn: #fbbf24;
-  --bad: #ff5d73;
-  --info: #60a5fa;
+  /* Shape: angular (bevelled) by default. Every shaped element uses `corner-shape: var(--shape)`. */
+  --shape: bevel;
+  --r-xs: 3px;
+  --r-sm: 5px;
+  --r-md: 7px;
+  --r-lg: 10px;
+  --r-xl: 14px;
+  --r-pill: 9px;
 
-  --r-xs: 6px;
-  --r-sm: 8px;
-  --r-md: 10px;
-  --r-lg: 14px;
-  --r-xl: 20px;
+  /* Density. */
+  --h-titlebar: 40px;
+  --h-toolbar: 48px;
+  --h-bookmarks: 32px;
+  --h-control: 32px;
+  --h-row: 34px;
+  --rail-w: 54px;
+  --rail-w-expanded: 212px;
+  --panel-w: 340px;
+  --pad: 16px;
+  --fs: 13px;
 
-  --shadow-pop: 0 18px 50px rgb(0 0 0 / 0.55), 0 2px 8px rgb(0 0 0 / 0.4);
-  --shadow-card: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 8px 24px rgb(0 0 0 / 0.25);
+  /* Motion: --m scales durations, --md scales travel. data-motion="off" sets both to 0. */
+  --m: 1;
+  --md: 1;
+  --d1: calc(90ms * var(--m));
+  --d2: calc(170ms * var(--m));
+  --d3: calc(250ms * var(--m));
+  --d4: calc(400ms * var(--m));
+  --d5: calc(700ms * var(--m));
+  --e-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --e-inout: cubic-bezier(0.65, 0, 0.35, 1);
+  --e-pop: cubic-bezier(0.34, 1.32, 0.64, 1);
+  --rise: calc(6px * var(--md));
 
   --font-ui: "Inter Variable", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   --font-display: "Space Grotesk Variable", "Inter Variable", "Segoe UI", system-ui, sans-serif;
   --font-mono: "Cascadia Code", "Cascadia Mono", Consolas, ui-monospace, monospace;
 
-  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --t-fast: 120ms;
-  --t-med: 200ms;
-
-  --titlebar-h: 40px;
-  --toolbar-h: 46px;
-  --bookmarks-h: 32px;
+  --sh-pop: 0 28px 64px -12px rgb(0 0 0 / 0.7), 0 4px 14px rgb(0 0 0 / 0.45);
+  --sh-card: 0 1px 0 rgb(255 255 255 / 0.035) inset, 0 10px 30px -14px rgb(0 0 0 / 0.6);
+  --sheen: linear-gradient(180deg, rgb(255 255 255 / 0.045), transparent 42%);
 }
 
-:root[data-accent="violet"] { --ah: 258; --as: 100%; --al: 72%; --on-accent: #0d0724; }
-:root[data-accent="magenta"] { --ah: 322; --as: 100%; --al: 68%; --on-accent: #240615; }
-:root[data-accent="lime"] { --ah: 96; --as: 78%; --al: 56%; --on-accent: #0c1a02; }
-:root[data-accent="amber"] { --ah: 38; --as: 100%; --al: 58%; --on-accent: #231500; }
-:root[data-accent="crimson"] { --ah: 352; --as: 100%; --al: 66%; --on-accent: #26040a; }
+:root[data-corners="rounded"] {
+  --shape: round;
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-xl: 18px;
+  --r-pill: 999px;
+}
 
-/* Gaming Mode shifts the whole shell a step hotter. */
-:root[data-gaming="true"] { --accent-line: hsl(var(--ah) var(--as) var(--al) / 0.75); }
+:root[data-corners="soft"] {
+  --shape: squircle;
+  --r-xs: 6px;
+  --r-sm: 9px;
+  --r-md: 12px;
+  --r-lg: 18px;
+  --r-xl: 26px;
+  --r-pill: 999px;
+}
+
+:root[data-density="compact"] {
+  --h-titlebar: 34px;
+  --h-toolbar: 40px;
+  --h-bookmarks: 28px;
+  --h-control: 28px;
+  --h-row: 30px;
+  --rail-w: 46px;
+  --panel-w: 316px;
+  --pad: 12px;
+  --fs: 12.5px;
+}
+
+:root[data-density="spacious"] {
+  --h-titlebar: 44px;
+  --h-toolbar: 54px;
+  --h-bookmarks: 36px;
+  --h-control: 36px;
+  --h-row: 38px;
+  --rail-w: 60px;
+  --panel-w: 368px;
+  --pad: 20px;
+  --fs: 13.5px;
+}
+
+:root[data-motion="subtle"] {
+  --m: 0.75;
+  --md: 0.45;
+  --e-pop: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root[data-motion="expressive"] {
+  --m: 1.25;
+  --md: 1.6;
+}
+
+:root[data-motion="off"] {
+  --m: 0;
+  --md: 0;
+}
+
+/* Gaming Mode runs the chrome a step hotter. */
+:root[data-gaming="true"] {
+  --line-2: hsl(var(--ah) 40% 70% / 0.11);
+}
+
+/* Without effects (Minimal, Performance): flat surfaces, no glow, no decorative gradients. */
+:root[data-effects="off"] {
+  --glow: 0;
+  --sheen: none;
+  --energy: linear-gradient(90deg, var(--accent), var(--accent));
+  --sh-card: none;
+}

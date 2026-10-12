@@ -6,11 +6,12 @@ import { createRoot } from "react-dom/client";
 import "./styles/tokens.css";
 import "./styles/base.css";
 import "./styles/ui.css";
-import "./styles/chrome.css";
+import "./styles/shell.css";
 import "./styles/pages.css";
 import "./styles/features.css";
 
 import { App } from "./App";
+import { applyCachedLook } from "./lib/theme";
 import { inTauri } from "./lib/window";
 
 async function start(): Promise<void> {
@@ -19,6 +20,8 @@ async function start(): Promise<void> {
     const { installMockBackend } = await import("./dev/mockBackend");
     installMockBackend();
   }
+  // Paint in the colours this viewer last used before the core has answered (no flash of the default theme).
+  applyCachedLook();
   const root = document.getElementById("root");
   if (!root) throw new Error("missing #root");
   createRoot(root).render(

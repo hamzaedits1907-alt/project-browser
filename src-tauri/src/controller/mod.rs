@@ -13,9 +13,12 @@
 //! shutdown), so the two cannot deadlock.
 
 mod consistency;
+mod context_menu;
 mod downloads;
+mod drag;
 mod events;
 mod gaming;
+mod groups;
 mod perf;
 mod sleep_policy;
 mod tabs;
@@ -35,9 +38,11 @@ use crate::db::Db;
 use crate::error::{now_ms, Error, Result};
 use crate::profile::{Profile, ProfileStore};
 use crate::settings::Settings;
-use crate::tabs::{Tab, TabId, TabStrip};
+use crate::tabs::{GroupId, Tab, TabGroup, TabId, TabStrip};
 
 pub use downloads::DownloadCommand;
+pub use drag::DragOutcome;
+pub use groups::GroupOp;
 pub use perf::PerfSample;
 pub use sleep_policy::Reason;
 pub use tabs::ZoomMode;
@@ -147,6 +152,8 @@ pub(crate) struct Layout {
     pub overlay: bool,
     pub element_fullscreen: Option<TabId>,
     pub browser_fullscreen: bool,
+    /// The right-click menu this window's shell is showing (its WebView2 request id).
+    pub context_menu: Option<u64>,
 }
 
 /// Blocked-request counts per tab, sent to the shell a few times per second at most.
@@ -196,6 +203,7 @@ pub struct StartupMetrics {
 #[serde(rename_all = "camelCase")]
 pub struct BrowserState {
     pub tabs: Vec<Tab>,
+    pub groups: Vec<TabGroup>,
     pub active_id: Option<TabId>,
     pub closed_count: usize,
     pub fullscreen: bool,
@@ -213,6 +221,9 @@ struct SessionTab {
     title: String,
     pinned: bool,
     favicon: Option<String>,
+    /// Sessions written before tab groups have no group.
+    #[serde(default)]
+    group: Option<GroupId>,
 }
 
 /// One window's saved tabs. Sessions written before multi-window support have no `geometry`.
@@ -223,6 +234,8 @@ struct Session {
     active: usize,
     #[serde(default)]
     geometry: Option<WindowGeometry>,
+    #[serde(default)]
+    groups: Vec<TabGroup>,
 }
 
 /// Which saved tabs to recreate on startup, and which of them is selected.
@@ -231,6 +244,7 @@ struct RestorePlan {
     tabs: Vec<SessionTab>,
     /// Index into `tabs`; `None` keeps the first tab selected.
     active: Option<usize>,
+    groups: Vec<TabGroup>,
 }
 
 /// Pure decision logic for session restoration, so it can be tested without a webview.
@@ -243,6 +257,7 @@ struct RestorePlan {
 fn plan_restore(session: Session, startup: crate::settings::StartupBehavior) -> RestorePlan {
     use crate::settings::StartupBehavior;
     let saved_active = session.active;
+    let groups = session.groups;
     let mut tabs = Vec::new();
     let mut active = None;
     for (i, st) in session.tabs.into_iter().enumerate() {
@@ -259,7 +274,9 @@ fn plan_restore(session: Session, startup: crate::settings::StartupBehavior) -> 
         }
         tabs.push(st);
     }
-    RestorePlan { tabs, active }
+    // Only groups that still have a tab come back.
+    let groups = groups.into_iter().filter(|g| tabs.iter().any(|t| t.group == Some(g.id))).collect();
+    RestorePlan { tabs, active, groups }
 }
 
 /// Where the main window was when the browser last closed: its entry in the saved window list, else the size saved
@@ -334,6 +351,8 @@ pub struct Controller {
     pub(crate) last_focused: String,
     /// What the last "close" was, so that Ctrl+Shift+T reopens the right thing.
     pub(crate) last_close_was_window: bool,
+    /// The window a tab dragged out of another window is over (it shows the drop marker).
+    pub(crate) drag_hover: Option<String>,
     /// Download id -> the tab that started it (a running download blocks sleeping/unloading that tab).
     pub(crate) download_tabs: HashMap<i64, TabId>,
     /// Bumped each time a tab becomes active; a suspend answer from an older epoch is ignored.
@@ -427,6 +446,7 @@ impl Controller {
             closed_windows: Vec::new(),
             last_focused: main,
             last_close_was_window: false,
+            drag_hover: None,
             download_tabs: HashMap::new(),
             epochs: HashMap::new(),
             dirty_until: HashMap::new(),
@@ -644,6 +664,7 @@ impl Controller {
     pub fn snapshot(&self) -> BrowserState {
         BrowserState {
             tabs: self.tabs.tabs().to_vec(),
+            groups: self.tabs.groups().to_vec(),
             active_id: self.tabs.active_id(),
             closed_count: self.tabs.closed().len(),
             fullscreen: self.layout.browser_fullscreen || self.layout.element_fullscreen.is_some(),
@@ -667,8 +688,9 @@ impl Controller {
                 session.active = session.tabs.len();
             }
             let url = t.error.as_ref().map(|e| e.url.clone()).unwrap_or_else(|| t.url.clone());
-            session.tabs.push(SessionTab { url, title: t.title.clone(), pinned: t.pinned, favicon: t.favicon.clone() });
+            session.tabs.push(SessionTab { url, title: t.title.clone(), pinned: t.pinned, favicon: t.favicon.clone(), group: t.group });
         }
+        session.groups = self.tabs.groups().to_vec();
         let v = self.layout.viewport;
         if v.width > 0.0 && v.height > 0.0 {
             session.geometry = Some(self.window_geometry());
@@ -702,7 +724,9 @@ impl Controller {
     fn restore_window_tabs(&mut self, plan: RestorePlan, now: i64) -> usize {
         let mut restored = 0;
         let mut active = None;
+        let mut assignments = Vec::new();
         for (i, st) in plan.tabs.into_iter().enumerate() {
+            let group = st.group;
             // Restored tabs start unloaded; their webview is created when first shown.
             let id = self.tabs.create(
                 crate::tabs::NewTab {
@@ -716,10 +740,16 @@ impl Controller {
                 now,
             );
             self.refresh_tab_meta(id);
+            if let Some(g) = group {
+                assignments.push((id, g));
+            }
             if plan.active == Some(i) {
                 active = Some(id);
             }
             restored += 1;
+        }
+        if !plan.groups.is_empty() {
+            self.tabs.restore_groups(plan.groups, &assignments);
         }
         if let Some(a) = active {
             self.tabs.activate(a, now);
@@ -749,7 +779,8 @@ impl Controller {
             }
             let tabs = plan.tabs;
             let active = plan.active.unwrap_or(0);
-            if self.open_window(window_set::WindowSpec { tabs, active, geometry, private: false, empty: false }).is_some() {
+            let groups = plan.groups;
+            if self.open_window(window_set::WindowSpec { tabs, active, geometry, private: false, empty: false, groups }).is_some() {
                 restored += 1;
             }
         }
@@ -910,7 +941,7 @@ mod tests {
     use crate::tabs::{Lifecycle, NewTab};
 
     fn st(url: &str, pinned: bool) -> SessionTab {
-        SessionTab { url: url.into(), title: format!("title of {url}"), pinned, favicon: None }
+        SessionTab { url: url.into(), title: format!("title of {url}"), pinned, favicon: None, group: None }
     }
 
     fn session() -> Session {
@@ -923,6 +954,7 @@ mod tests {
             ],
             active: 2,
             geometry: None,
+            groups: Vec::new(),
         }
     }
 
@@ -950,6 +982,23 @@ mod tests {
         let plan = plan_restore(session(), StartupBehavior::NewTab);
         assert_eq!(plan.tabs, vec![st("https://pinned.example/", true)]);
         assert_eq!(plan.active, None);
+    }
+
+    #[test]
+    fn groups_survive_a_restore_only_while_they_have_tabs() {
+        let mut s = session();
+        s.tabs[2].group = Some(4);
+        s.tabs[1].group = Some(5); // the removed internal page
+        s.groups = vec![
+            TabGroup { id: 4, title: "Kept".into(), color: "green".into(), collapsed: false },
+            TabGroup { id: 5, title: "Gone".into(), color: "red".into(), collapsed: false },
+        ];
+        let plan = plan_restore(s, StartupBehavior::RestoreSession);
+        assert_eq!(plan.groups.iter().map(|g| g.id).collect::<Vec<_>>(), vec![4]);
+        assert_eq!(plan.tabs.iter().filter_map(|t| t.group).collect::<Vec<_>>(), vec![4]);
+        // Sessions saved before groups existed still load.
+        let old: Session = serde_json::from_str(r#"{"tabs":[{"url":"https://a/","title":"A","pinned":false,"favicon":null}],"active":0}"#).unwrap();
+        assert!(old.groups.is_empty() && old.tabs[0].group.is_none());
     }
 
     #[test]

@@ -5,7 +5,7 @@ import type { Tab } from "./types";
 
 const t = (id: number, over: Partial<Tab> = {}): Tab => ({
   id, url: `https://t${id}.example/`, title: `Tab ${id}`, favicon: null, pinned: false, private: false, loading: false, canGoBack: false, canGoForward: false,
-  zoom: 1, audible: false, muted: false, lifecycle: "live", security: "secure", error: null, heavy: false, bookmarked: false, lastActive: 0, blockedPopup: null, ...over,
+  zoom: 1, audible: false, muted: false, lifecycle: "live", security: "secure", error: null, heavy: false, bookmarked: false, lastActive: 0, blockedPopup: null, group: null, ...over,
 });
 
 describe("drag and drop slots", () => {

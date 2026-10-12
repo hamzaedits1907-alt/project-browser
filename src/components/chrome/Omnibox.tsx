@@ -3,15 +3,19 @@ import type { KeyboardEvent } from "react";
 
 import { api } from "../../lib/ipc";
 import { useOverlay } from "../../lib/overlay";
+import { SEARCH_ENGINES, engineLabel } from "../../lib/settings";
 import { activeTab, attempt, onBus, useStore } from "../../lib/store";
-import type { FillOptions, Suggestion, Tab } from "../../lib/types";
+import type { FillOptions, SearchEngine, Suggestion, Tab } from "../../lib/types";
 import { idleAddress, splitUrl } from "../../lib/urls";
 import { useLoad } from "../../lib/useLoad";
+import { useSettings } from "../../lib/useSettings";
 import { canOfferFill } from "../../lib/vault";
 import { FillPanel } from "../menus/FillPanel";
 import { SitePanel } from "../menus/SitePanel";
 import { Icon } from "../ui/Icon";
 import type { IconName } from "../ui/Icon";
+import { MenuItem, Popover } from "../ui/Popover";
+import { cx } from "../ui/controls";
 
 const SUGGEST_DELAY_MS = 60;
 
@@ -31,38 +35,61 @@ const KIND_LABEL: Record<Suggestion["kind"], string> = {
   history: "History",
 };
 
-function securityIcon(tab: Tab | null): { icon: IconName; label: string; tone: string } {
+export function securityIcon(tab: Tab | null): { icon: IconName; label: string; tone: string } {
   switch (tab?.security) {
     case "secure":
-      return { icon: "lock", label: "Secure", tone: "good" };
+      return { icon: "lock", label: "Connection is secure", tone: "good" };
     case "insecure":
       return { icon: "warning", label: "Not secure", tone: "warn" };
     case "certerror":
       return { icon: "warning", label: "Certificate error", tone: "bad" };
     case "local":
-      return { icon: "file", label: "File", tone: "neutral" };
+      return { icon: "file", label: "File on this computer", tone: "neutral" };
     default:
-      return { icon: "shieldCheck", label: "Project Browser", tone: "brand" };
+      return { icon: "shieldCheck", label: "Project Browser page", tone: "brand" };
   }
+}
+
+function EngineMenu({ open, onClose, anchor }: { open: boolean; onClose: () => void; anchor: React.RefObject<HTMLElement | null> }) {
+  const { settings, update } = useSettings();
+  return (
+    <Popover open={open} onClose={onClose} anchor={anchor} width={240} label="Search engine" className="menu">
+      <div role="menu">
+        <div className="menu-heading">Search with</div>
+        {SEARCH_ENGINES.map((e) => (
+          <MenuItem
+            key={e.id}
+            icon="search"
+            label={e.label}
+            checked={!settings.customSearchTemplate && settings.searchEngine === e.id}
+            onSelect={() => void update({ searchEngine: e.id as SearchEngine, customSearchTemplate: null })}
+          />
+        ))}
+        {settings.customSearchTemplate && <MenuItem icon="sliders" label="Custom search address" checked onSelect={() => {}} disabled />}
+      </div>
+    </Popover>
+  );
 }
 
 export function Omnibox() {
   const tab = useStore(activeTab);
+  const settings = useStore((s) => s.settings);
   const inputRef = useRef<HTMLInputElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const engineRef = useRef<HTMLButtonElement>(null);
   const [focused, setFocused] = useState(false);
   const [text, setText] = useState("");
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [selected, setSelected] = useState(-1);
   const [siteOpen, setSiteOpen] = useState(false);
   const [fillOpen, setFillOpen] = useState(false);
+  const [engineOpen, setEngineOpen] = useState(false);
   const keyRef = useRef<HTMLButtonElement>(null);
   const seq = useRef(0);
   const timer = useRef<number | undefined>(undefined);
 
-  // The page is replaced by a snapshot while the address is being edited, so the
-  // suggestion list can be drawn over it.
-  const overlayReady = useOverlay(focused);
+  // The page is replaced by a snapshot while the address is being edited, so the suggestion list can be drawn over it.
+  const overlayReady = useOverlay(focused && suggestions.length > 0);
 
   const idle = idleAddress(tab);
   const shown = focused ? text : idle;
@@ -71,10 +98,7 @@ export function Omnibox() {
   // answer for the previous tab is never offered on the new one.
   const fillTab = canOfferFill(tab) ? tab : null;
   const fillKey = fillTab ? `${fillTab.id}|${fillTab.url}` : null;
-  const fill = useLoad<{ key: string; options: FillOptions }>(
-    () => api.fillOptions(fillTab?.id ?? 0).then((options) => ({ key: fillKey ?? "", options })),
-    fillKey,
-  );
+  const fill = useLoad<{ key: string; options: FillOptions }>(() => api.fillOptions(fillTab?.id ?? 0).then((options) => ({ key: fillKey ?? "", options })), fillKey);
   const fillOptions = fillKey && fill.data?.key === fillKey && (fill.data.options.logins.length > 0 || fill.data.options.profileCount > 0) ? fill.data.options : null;
 
   const focusInput = useCallback(() => {
@@ -85,6 +109,8 @@ export function Omnibox() {
   }, []);
 
   useEffect(() => onBus("focusOmnibox", focusInput), [focusInput]);
+  useEffect(() => onBus("openSiteInfo", () => setSiteOpen(true)), []);
+  useEffect(() => onBus("openFill", () => setFillOpen(true)), []);
 
   const query = useCallback((value: string) => {
     window.clearTimeout(timer.current);
@@ -110,14 +136,14 @@ export function Omnibox() {
 
   useEffect(() => () => window.clearTimeout(timer.current), []);
 
-  const commit = (value: string, suggestion?: Suggestion) => {
+  const commit = (value: string, suggestion?: Suggestion, newTab = false) => {
     const input = inputRef.current;
     setSuggestions([]);
     if (suggestion?.tabId != null) {
       const id = suggestion.tabId;
       void attempt(() => api.tabActivate(id));
     } else if (value.trim()) {
-      void attempt(() => api.navigate(value));
+      void attempt(() => (newTab ? api.tabNew(value) : api.navigate(value)));
     }
     seq.current++;
     input?.blur();
@@ -133,12 +159,11 @@ export function Omnibox() {
       if (s && s.kind !== "tab") setText(s.kind === "search" ? text : s.url);
     } else if (e.key === "ArrowUp" && count) {
       e.preventDefault();
-      const next = selected <= 0 ? count - 1 : selected - 1;
-      setSelected(next);
+      setSelected(selected <= 0 ? count - 1 : selected - 1);
     } else if (e.key === "Enter") {
       e.preventDefault();
       const s = selected >= 0 ? suggestions[selected] : undefined;
-      commit(s && s.kind !== "tab" && s.kind !== "search" ? s.url : text, s);
+      commit(s && s.kind !== "tab" && s.kind !== "search" ? s.url : text, s, e.altKey);
     } else if (e.key === "Escape") {
       e.preventDefault();
       if (suggestions.length) {
@@ -157,18 +182,28 @@ export function Omnibox() {
   const canBookmark = !!tab && !tab.url.startsWith("browser://") && !tab.error;
 
   return (
-    <div ref={wrapRef} className={`omnibox${focused ? " is-focused" : ""}${tab?.private ? " is-private" : ""}`}>
-      <button
-        type="button"
-        className={`omni-site tone-${sec.tone}`}
-        aria-label={`Site information: ${sec.label}`}
-        title={sec.label}
-        onClick={() => setSiteOpen((o) => !o)}
-      >
-        <Icon name={sec.icon} size={16} />
-        {tab?.security === "insecure" && <span className="omni-site-text">Not secure</span>}
-        {tab?.security === "certerror" && <span className="omni-site-text">Certificate error</span>}
-      </button>
+    <div ref={wrapRef} className={cx("omnibox", focused && "is-focused", tab?.private && "is-private", showList && "has-list")}>
+      {focused ? (
+        <button
+          ref={engineRef}
+          type="button"
+          className="omni-engine"
+          title={`Searching with ${engineLabel(settings)}: click to change`}
+          aria-label={`Search engine: ${engineLabel(settings)}`}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => setEngineOpen((o) => !o)}
+        >
+          <Icon name="search" size={14} />
+          <span>{engineLabel(settings)}</span>
+          <Icon name="chevronDown" size={12} />
+        </button>
+      ) : (
+        <button type="button" className={`omni-site tone-${sec.tone}`} aria-label={`Site information: ${sec.label}`} title={sec.label} onClick={() => setSiteOpen((o) => !o)}>
+          <Icon name={sec.icon} size={15} />
+          {tab?.security === "insecure" && <span className="omni-site-text">Not secure</span>}
+          {tab?.security === "certerror" && <span className="omni-site-text">Certificate error</span>}
+        </button>
+      )}
 
       <div className="omni-field">
         <input
@@ -179,9 +214,10 @@ export function Omnibox() {
           aria-label="Address and search bar"
           aria-expanded={showList}
           aria-controls="omni-suggestions"
+          aria-autocomplete="list"
           autoComplete="off"
           spellCheck={false}
-          placeholder="Search or enter address"
+          placeholder={`Search ${engineLabel(settings)} or enter address`}
           value={shown}
           style={!focused && idle ? { color: "transparent" } : undefined}
           onFocus={(e) => {
@@ -209,34 +245,35 @@ export function Omnibox() {
         )}
       </div>
 
-      {tab && tab.zoom !== 1 && (
+      {focused && text.trim() && <kbd className="omni-hint" title="Alt+Enter opens it in a new tab">Enter</kbd>}
+      {!focused && tab && tab.zoom !== 1 && (
         <button type="button" className="omni-chip" title="Reset zoom" onClick={() => void attempt(() => api.zoom("reset", undefined, tab.id))}>
           <Icon name="zoomIn" size={13} />
           {Math.round(tab.zoom * 100)}%
         </button>
       )}
-      {canBookmark && (
-        <button
-          type="button"
-          className={`omni-star${tab.bookmarked ? " is-on" : ""}`}
-          aria-label={tab.bookmarked ? "Remove bookmark" : "Bookmark this page"}
-          title={tab.bookmarked ? "Remove bookmark (Ctrl+D)" : "Bookmark this page (Ctrl+D)"}
-          onClick={() => void attempt(() => api.bookmarkToggle(tab.id))}
-        >
-          <Icon name="star" size={16} filled={tab.bookmarked} />
-        </button>
-      )}
-      {fillOptions && fillTab && (
+      {!focused && fillOptions && fillTab && (
         <button
           ref={keyRef}
           type="button"
-          className={`omni-key${fillOpen ? " is-on" : ""}`}
+          className={cx("omni-btn omni-key", fillOpen && "is-on")}
           aria-label="Fill a saved login or address"
           aria-haspopup="dialog"
           title={fillOptions.logins.length > 0 ? "Fill a saved login" : "Fill a saved address"}
           onClick={() => setFillOpen((o) => !o)}
         >
-          <Icon name="key" size={16} />
+          <Icon name="key" size={15} />
+        </button>
+      )}
+      {!focused && canBookmark && (
+        <button
+          type="button"
+          className={cx("omni-btn omni-star", tab.bookmarked && "is-on")}
+          aria-label={tab.bookmarked ? "Remove bookmark" : "Bookmark this page"}
+          title={tab.bookmarked ? "Remove bookmark (Ctrl+D)" : "Bookmark this page (Ctrl+D)"}
+          onClick={() => void attempt(() => api.bookmarkToggle(tab.id))}
+        >
+          <Icon name="star" size={15} filled={tab.bookmarked} />
         </button>
       )}
       {tab?.loading && <div className="omni-progress" role="progressbar" aria-label="Loading page" />}
@@ -248,19 +285,28 @@ export function Omnibox() {
               key={`${s.kind}-${s.url}-${i}`}
               role="option"
               aria-selected={i === selected}
-              className={i === selected ? "is-selected" : undefined}
+              className={cx(i === selected && "is-selected", i === 0 && "is-primary")}
               onMouseMove={() => selected !== i && setSelected(i)}
-              onClick={() => commit(s.kind === "search" ? text : s.url, s)}
+              onClick={(e) => commit(s.kind === "search" ? text : s.url, s, e.altKey)}
             >
-              <Icon name={KIND_ICON[s.kind]} size={16} />
+              <span className="sugg-icon">
+                <Icon name={KIND_ICON[s.kind]} size={15} />
+              </span>
               <span className="sugg-title truncate">{s.kind === "search" ? text : s.title || s.url}</span>
               {s.kind !== "search" && s.title && s.title !== s.url && <span className="sugg-url truncate">{s.url}</span>}
-              <span className="sugg-kind">{KIND_LABEL[s.kind]}</span>
+              <span className="sugg-kind">{s.kind === "search" ? `Search ${engineLabel(settings)}` : KIND_LABEL[s.kind]}</span>
             </li>
           ))}
+          <li className="omni-foot" aria-hidden="true">
+            <span><kbd>↑</kbd><kbd>↓</kbd> choose</span>
+            <span><kbd>Enter</kbd> open</span>
+            <span><kbd>Alt</kbd>+<kbd>Enter</kbd> new tab</span>
+            <span><kbd>Esc</kbd> close</span>
+          </li>
         </ul>
       )}
 
+      <EngineMenu open={engineOpen} onClose={() => setEngineOpen(false)} anchor={engineRef} />
       <SitePanel tab={tab} open={siteOpen} onClose={() => setSiteOpen(false)} anchor={wrapRef} />
       {fillOptions && fillTab && <FillPanel tab={fillTab} options={fillOptions} open={fillOpen} onClose={() => setFillOpen(false)} anchor={keyRef} />}
     </div>

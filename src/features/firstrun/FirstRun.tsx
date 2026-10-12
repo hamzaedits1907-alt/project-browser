@@ -2,7 +2,7 @@ import { useState } from "react";
 
 import { Button, TextField } from "../../components/ui/controls";
 import { Icon } from "../../components/ui/Icon";
-import { ACCENTS, SEARCH_ENGINES } from "../../lib/settings";
+import { ACCENTS, accentCss, SEARCH_ENGINES } from "../../lib/settings";
 import { api, errorMessage } from "../../lib/ipc";
 import { useOverlay } from "../../lib/overlay";
 import { markOnboarded, toast, useStore } from "../../lib/store";
@@ -77,7 +77,7 @@ export function FirstRun() {
               <label>Accent colour</label>
               <div className="swatches" role="radiogroup" aria-label="Accent colour">
                 {ACCENTS.map((a) => (
-                  <button key={a.id} type="button" role="radio" aria-checked={a.id === settings.accent} className={`swatch${a.id === settings.accent ? " is-on" : ""}`} style={{ "--sw": a.swatch } as React.CSSProperties} onClick={() => void update({ accent: a.id })}>
+                  <button key={a.id} type="button" role="radio" aria-checked={a.id === settings.accent} className={`swatch${a.id === settings.accent ? " is-on" : ""}`} style={{ "--sw": accentCss(a.hsl) } as React.CSSProperties} onClick={() => void update({ accent: a.id })}>
                     <span className="swatch-dot" />{a.label}
                   </button>
                 ))}

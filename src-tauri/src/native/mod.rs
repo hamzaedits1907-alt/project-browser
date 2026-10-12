@@ -4,6 +4,7 @@
 //! COM objects are single-threaded and are kept in thread-local registries.
 //! Event handlers never block; they only post work to the controller thread.
 
+pub mod context_menu;
 pub mod dialog;
 pub mod metrics;
 
@@ -209,7 +210,7 @@ fn tab_com(id: TabId) -> Option<TabCom> {
     TABS.with(|t| t.borrow().get(&id).cloned())
 }
 
-fn pwstr(f: impl FnOnce(&mut PWSTR) -> windows::core::Result<()>) -> String {
+pub(crate) fn pwstr(f: impl FnOnce(&mut PWSTR) -> windows::core::Result<()>) -> String {
     let mut p = PWSTR::null();
     match f(&mut p) {
         Ok(()) => take_pwstr(p),
@@ -217,7 +218,7 @@ fn pwstr(f: impl FnOnce(&mut PWSTR) -> windows::core::Result<()>) -> String {
     }
 }
 
-fn read_bool(f: impl FnOnce(&mut BOOL) -> windows::core::Result<()>) -> bool {
+pub(crate) fn read_bool(f: impl FnOnce(&mut BOOL) -> windows::core::Result<()>) -> bool {
     let mut b = BOOL::default();
     f(&mut b).map(|_| b.as_bool()).unwrap_or(false)
 }
@@ -488,6 +489,10 @@ unsafe fn install_tab_inner(id: TabId, pw: &PlatformWebview, ctl: &ControllerHan
 
     hook_accelerators(&controller, ctl, AccelOrigin::Tab(id))?;
 
+    if let Err(e) = context_menu::hook(&webview, context_menu::MenuOwner::Tab(id), ctl) {
+        log::warn!("tab {id}: the browser's own right-click menu is unavailable for this tab: {e}");
+    }
+
     if let Err(e) = hook_shield(&webview, &env, id, init.private, ctl) {
         log::warn!("tab {id}: request blocking is unavailable for this tab: {e}");
     }
@@ -626,6 +631,9 @@ pub fn install_shell(pw: PlatformWebview, ctl: ControllerHandle, devtools: bool,
                 s4.SetIsGeneralAutofillEnabled(false)?;
             }
             hook_accelerators(&controller, &ctl, AccelOrigin::Shell(label.clone()))?;
+            if let Err(e) = context_menu::hook(&webview, context_menu::MenuOwner::Shell(label.clone()), &ctl) {
+                log::warn!("window {label}: the browser's own right-click menu is unavailable in the shell: {e}");
+            }
             SHELLS.with(|s| s.borrow_mut().insert(label.clone(), TabCom { controller, webview, env: pw.environment() }));
             Ok(())
         })()
@@ -639,9 +647,27 @@ pub fn install_shell(pw: PlatformWebview, ctl: ControllerHandle, devtools: bool,
 /// A window is gone: forget its shell webview.
 pub fn remove_shell(label: &str) {
     SHELLS.with(|s| s.borrow_mut().remove(label));
+    context_menu::forget(&context_menu::MenuOwner::Shell(label.to_string()));
+}
+
+/// The top-level window under a screen point (physical pixels), as a raw handle value. Used to find the browser
+/// window a dragged tab is over; `WindowFromPoint` answers for the topmost window, so overlapping windows and other
+/// programs covering ours are handled.
+pub fn top_level_window_at(x: i32, y: i32) -> Option<isize> {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::UI::WindowsAndMessaging::{GetAncestor, WindowFromPoint, GA_ROOT};
+    unsafe {
+        let hwnd = WindowFromPoint(POINT { x, y });
+        if hwnd.0.is_null() {
+            return None;
+        }
+        let root = GetAncestor(hwnd, GA_ROOT);
+        (!root.0.is_null()).then_some(root.0 as isize)
+    }
 }
 
 pub fn remove_tab(id: TabId) {
+    context_menu::forget(&context_menu::MenuOwner::Tab(id));
     TABS.with(|t| t.borrow_mut().remove(&id));
     TOP_HOST.with(|t| t.borrow_mut().remove(&id));
     POPUP_INTENT.with(|m| m.borrow_mut().remove(&id));

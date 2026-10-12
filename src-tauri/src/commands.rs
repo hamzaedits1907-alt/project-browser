@@ -1205,10 +1205,75 @@ pub async fn windows_list(window: tauri::Window, s: State<'_, AppState>) -> Resu
     s.ctl.call(move |c| c.windows_brief(&label)).await
 }
 
-/// Moves a tab to another window (`target` is its label) or to a new one (`None`). The page keeps running.
+/// Moves a tab to another window (`target` is its label) or to a new one (`None`), at `index` of the target strip when
+/// given (a drop position). The page keeps running.
 #[tauri::command]
-pub async fn tab_to_window(s: State<'_, AppState>, id: TabId, target: Option<String>) -> Result<String> {
-    s.ctl.call(move |c| c.move_tab_to_window(id, target)).await?
+pub async fn tab_to_window(s: State<'_, AppState>, id: TabId, target: Option<String>, index: Option<usize>) -> Result<String> {
+    s.ctl.call(move |c| c.move_tab_to_window_at(id, target, index, None)).await?
+}
+
+/// A tab is being dragged outside its window's tab strip: tells the browser window under the pointer (if any) so it can
+/// show where the tab would land. Returns that window's label.
+#[tauri::command]
+pub async fn tab_drag_hover(window: tauri::Window, s: State<'_, AppState>, id: TabId) -> Result<Option<String>> {
+    let label = window.label().to_string();
+    s.ctl.call(move |c| c.tab_drag_hover(&label, id)).await
+}
+
+/// The drag of a tab ended. A tab pulled out of its strip joins the browser window under the pointer, or becomes a new
+/// window there.
+#[tauri::command]
+pub async fn tab_drag_end(
+    window: tauri::Window,
+    s: State<'_, AppState>,
+    id: TabId,
+    detached: bool,
+    cancel: Option<bool>,
+) -> Result<crate::controller::DragOutcome> {
+    let label = window.label().to_string();
+    s.ctl.call(move |c| c.tab_drag_end(&label, id, detached, cancel.unwrap_or(false))).await?
+}
+
+/// Opens a new browser window, optionally with a page (an address or search text) and as a private window.
+#[tauri::command]
+pub async fn window_new(s: State<'_, AppState>, url: Option<String>, private: Option<bool>) -> Result<()> {
+    s.ctl
+        .call(move |c| {
+            let resolved = url.filter(|u| !u.trim().is_empty()).and_then(|u| resolve_input(&u, &c.settings.search_template())).map(|r| r.into_url());
+            c.open_in_new_window(resolved, private.unwrap_or(false)).map(|_| ()).ok_or_else(|| Error::msg("Could not open a new window."))
+        })
+        .await?
+}
+
+/// Creates, changes, dissolves or closes a tab group in the window that asked (or the window of the tab named).
+#[tauri::command]
+pub async fn tab_group(window: tauri::Window, s: State<'_, AppState>, op: crate::controller::GroupOp) -> Result<Option<crate::tabs::GroupId>> {
+    let label = window.label().to_string();
+    s.ctl
+        .call(move |c| {
+            let tab = match &op {
+                crate::controller::GroupOp::Add { tab, .. } | crate::controller::GroupOp::Remove { tab } => Some(*tab),
+                crate::controller::GroupOp::Create { tabs, .. } => tabs.first().copied(),
+                _ => None,
+            };
+            match tab {
+                Some(t) if c.select_tab_window(t) => {}
+                _ => {
+                    c.select_window(&label);
+                }
+            }
+            c.group_op(op)
+        })
+        .await?
+}
+
+// ---- right-click menus ------------------------------------------------------------------------
+
+/// The shell closed the right-click menu `request`, with one of WebView2's own commands chosen (`command`, an id
+/// WebView2 offered for that menu) or none.
+#[tauri::command]
+pub async fn context_menu_choose(window: tauri::Window, s: State<'_, AppState>, request: u64, command: Option<i32>) -> Result<()> {
+    s.ctl.call_in(window.label().to_string(), move |c| c.context_menu_done(request, command)).await
 }
 
 // ---- Project Shield ----------------------------------------------------------------------
@@ -1393,6 +1458,11 @@ macro_rules! all_commands {
             $crate::commands::tunnel_restart,
             $crate::commands::windows_list,
             $crate::commands::tab_to_window,
+            $crate::commands::tab_drag_hover,
+            $crate::commands::tab_drag_end,
+            $crate::commands::window_new,
+            $crate::commands::tab_group,
+            $crate::commands::context_menu_choose,
             $crate::commands::shield_state,
             $crate::commands::shield_tab,
             $crate::commands::shield_set,

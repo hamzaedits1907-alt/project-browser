@@ -1,7 +1,9 @@
-import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ReactNode, RefObject } from "react";
+import { createContext, useContext, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from "react";
 
+import { usePresence } from "../../lib/motion";
 import { useOverlay } from "../../lib/overlay";
+import { cue } from "../../lib/sounds";
 import { Icon } from "./Icon";
 import type { IconName } from "./Icon";
 import { cx } from "./controls";
@@ -13,28 +15,51 @@ export interface PopoverProps {
   onClose: () => void;
   /** Element the popover hangs from (excluded from outside-click detection). */
   anchor?: RefObject<HTMLElement | null>;
-  /** Or a fixed screen point (context menus). */
+  /** Or a fixed point (context menus). */
   point?: { x: number; y: number } | null;
   align?: "start" | "end";
   width?: number;
   className?: string;
   label: string;
+  /** Move keyboard focus into the popover when it opens (menus opened from the keyboard). */
+  focusFirst?: boolean;
+  /** Keep the page visible behind it (the page is not dimmed). */
+  clearBackdrop?: boolean;
+  /** Called once the popover has finished closing and the page behind it is being given back. */
+  onExited?: () => void;
   children: ReactNode;
 }
 
 const MARGIN = 8;
 
+function focusables(root: HTMLElement): HTMLElement[] {
+  return [...root.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled), [role="menuitemcheckbox"]:not(:disabled), [role="menuitemradio"]:not(:disabled)')];
+}
+
 /**
- * Floating panel drawn by the shell. It hides the native page while open (see
- * lib/overlay.ts) so it never ends up underneath the web content.
+ * Floating panel drawn by the shell. Native pages are drawn above the shell, so while a popover is open the page is
+ * hidden and a snapshot of it shown instead (see lib/overlay.ts); the popover therefore never ends up under the page.
+ * It animates in from its anchor and out again; the page comes back once the exit animation has finished.
  */
-export function Popover({ open, onClose, anchor, point, align = "start", width, className, label, children }: PopoverProps) {
-  const ready = useOverlay(open);
+export function Popover({ open, onClose, anchor, point, align = "start", width, className, label, focusFirst, clearBackdrop, onExited, children }: PopoverProps) {
+  const { mounted, leaving } = usePresence(open, 110);
+  const ready = useOverlay(mounted, clearBackdrop ? "clear" : "dim");
+  const wasMounted = useRef(false);
+  const fireExited = useEffectEvent(() => onExited?.());
+
+  // Declared after useOverlay on purpose: its cleanup (giving the page back) has been queued by the time this runs.
+  useEffect(() => {
+    if (mounted) wasMounted.current = true;
+    else if (wasMounted.current) {
+      wasMounted.current = false;
+      fireExited();
+    }
+  }, [mounted]);
   const ref = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ top: number; left: number; maxHeight: number } | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; maxHeight: number; origin: string } | null>(null);
 
   useLayoutEffect(() => {
-    if (!ready) return;
+    if (!ready || !open) return;
     const el = ref.current;
     if (!el) return;
     const vw = window.innerWidth;
@@ -43,21 +68,32 @@ export function Popover({ open, onClose, anchor, point, align = "start", width, 
     const h = el.offsetHeight;
     let left: number;
     let top: number;
+    let originX = align === "end" ? "right" : "left";
+    let originY = "top";
     if (point) {
       left = point.x;
       top = point.y;
+      if (left + w > vw - MARGIN) {
+        left = Math.max(MARGIN, point.x - w);
+        originX = "right";
+      }
+      if (top + h > vh - MARGIN) {
+        top = Math.max(MARGIN, point.y - h);
+        originY = "bottom";
+      }
     } else {
       const r = anchor?.current?.getBoundingClientRect();
       left = r ? (align === "end" ? r.right - w : r.left) : MARGIN;
       top = r ? r.bottom + 6 : MARGIN;
+      if (top + h > vh - MARGIN) top = Math.max(MARGIN, vh - h - MARGIN);
     }
     left = Math.max(MARGIN, Math.min(left, vw - w - MARGIN));
-    if (top + h > vh - MARGIN) top = Math.max(MARGIN, point ? vh - h - MARGIN : vh - h - MARGIN);
-    setPos({ top, left, maxHeight: vh - top - MARGIN });
-  }, [ready, anchor, point, align]);
+    setPos({ top, left, maxHeight: vh - top - MARGIN, origin: `${originY} ${originX}` });
+  }, [ready, open, anchor, point, align]);
 
   useEffect(() => {
     if (!open) return;
+    cue("open");
     const onDown = (e: PointerEvent) => {
       const t = e.target as Node;
       if (ref.current?.contains(t) || anchor?.current?.contains(t)) return;
@@ -79,6 +115,27 @@ export function Popover({ open, onClose, anchor, point, align = "start", width, 
     };
   }, [open, onClose, anchor]);
 
+  // Keyboard users start inside the menu; mouse users keep focus where it was until they press an arrow key.
+  useEffect(() => {
+    if (!ready || !open || !pos) return;
+    const el = ref.current;
+    if (!el) return;
+    if (focusFirst) focusables(el)[0]?.focus();
+    else if (!el.contains(document.activeElement)) el.focus({ preventScroll: true });
+  }, [ready, open, pos, focusFirst]);
+
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    const el = ref.current;
+    if (!el || !["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
+    const items = focusables(el);
+    if (items.length === 0) return;
+    e.preventDefault();
+    const at = items.indexOf(document.activeElement as HTMLElement);
+    const next =
+      e.key === "Home" ? 0 : e.key === "End" ? items.length - 1 : e.key === "ArrowDown" ? (at + 1) % items.length : at <= 0 ? items.length - 1 : at - 1;
+    items[next]?.focus();
+  };
+
   if (!ready) return null;
   return (
     <PopoverContext.Provider value={{ close: onClose }}>
@@ -86,8 +143,17 @@ export function Popover({ open, onClose, anchor, point, align = "start", width, 
         ref={ref}
         role="dialog"
         aria-label={label}
-        className={cx("popover", className)}
-        style={{ top: pos?.top ?? 0, left: pos?.left ?? 0, width, maxHeight: pos?.maxHeight, visibility: pos ? "visible" : "hidden" }}
+        tabIndex={-1}
+        className={cx("popover", className, leaving && "is-leaving")}
+        onKeyDown={onKeyDown}
+        style={{
+          top: pos?.top ?? 0,
+          left: pos?.left ?? 0,
+          width,
+          maxHeight: pos?.maxHeight,
+          visibility: pos ? "visible" : "hidden",
+          ["--origin" as string]: pos?.origin ?? "top left",
+        }}
       >
         {children}
       </div>
@@ -110,17 +176,21 @@ interface MenuItemProps {
   checked?: boolean;
   keepOpen?: boolean;
   trailing?: ReactNode;
+  title?: string;
 }
 
-export function MenuItem({ icon, filledIcon, label, hint, onSelect, danger, disabled, checked, keepOpen, trailing }: MenuItemProps) {
+export function MenuItem({ icon, filledIcon, label, hint, onSelect, danger, disabled, checked, keepOpen, trailing, title }: MenuItemProps) {
   const close = usePopoverClose();
   return (
     <button
       type="button"
-      role="menuitem"
+      role={checked === undefined ? "menuitem" : "menuitemcheckbox"}
+      aria-checked={checked}
       className={cx("menu-item", danger && "is-danger")}
       disabled={disabled}
+      title={title}
       onClick={() => {
+        cue("tap");
         if (!keepOpen) close();
         onSelect();
       }}

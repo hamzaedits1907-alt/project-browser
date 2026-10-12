@@ -70,7 +70,9 @@ export function ContentHost() {
       ) : (
         <>
           {!inTauri && tab && <DevPreviewNotice url={tab.url} />}
-          {overlay.open && overlay.snapshot ? <img className="overlay-snapshot" src={overlay.snapshot} alt="" draggable={false} /> : null}
+          {overlay.open && overlay.snapshot ? (
+            <img className={`overlay-snapshot is-${overlay.backdrop}`} src={overlay.snapshot} alt="" draggable={false} />
+          ) : null}
           {tab?.loading && tab.lifecycle !== "live" && <div className="web-loading"><Spinner size={22} /></div>}
         </>
       )}

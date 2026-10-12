@@ -48,6 +48,7 @@ pub(super) struct WindowSpec {
     pub private: bool,
     /// Create no tab at all (the caller is about to move one in).
     pub empty: bool,
+    pub groups: Vec<crate::tabs::TabGroup>,
 }
 
 /// One window as the "move to window" menu lists it.
@@ -64,7 +65,7 @@ pub struct WindowBrief {
 
 /// A saved-tab record for a page that has just been asked for.
 pub(super) fn session_tab(url: String) -> SessionTab {
-    SessionTab { url, title: String::new(), pinned: false, favicon: None }
+    SessionTab { url, title: String::new(), pinned: false, favicon: None, group: None }
 }
 
 fn tab_title(tabs: &TabStrip) -> String {
@@ -225,7 +226,7 @@ impl Controller {
             if spec.tabs.is_empty() {
                 self.new_tab(false, false);
             } else {
-                let plan = RestorePlan { tabs: spec.tabs, active: Some(spec.active) };
+                let plan = RestorePlan { tabs: spec.tabs, active: Some(spec.active), groups: spec.groups };
                 self.restore_window_tabs(plan, now_ms());
                 if self.tabs.is_empty() {
                     self.new_tab(false, false);
@@ -238,14 +239,15 @@ impl Controller {
     }
 
     pub fn new_window(&mut self, private: bool) -> Option<String> {
-        self.open_window(WindowSpec { tabs: Vec::new(), active: 0, geometry: None, private, empty: false })
+        self.open_window(WindowSpec { tabs: Vec::new(), active: 0, geometry: None, private, empty: false, groups: Vec::new() })
     }
 
     pub fn reopen_window(&mut self) -> bool {
         let Some(closed) = self.closed_windows.pop() else { return false };
         let s = closed.session;
         self.last_close_was_window = false;
-        self.open_window(WindowSpec { tabs: s.tabs, active: s.active, geometry: s.geometry, private: false, empty: false }).is_some()
+        self.open_window(WindowSpec { tabs: s.tabs, active: s.active, geometry: s.geometry, private: false, empty: false, groups: s.groups })
+            .is_some()
     }
 
     fn mark_all_windows_state(&mut self) {
@@ -333,6 +335,18 @@ impl Controller {
     /// Moves a tab to another window, or to a new one when `target` is `None`. The page keeps running: its native
     /// webview is re-parented, not recreated. Returns the label of the window the tab is now in.
     pub fn move_tab_to_window(&mut self, tab_id: TabId, target: Option<String>) -> Result<String> {
+        self.move_tab_to_window_at(tab_id, target, None, None)
+    }
+
+    /// Like `move_tab_to_window`, placing the tab at `index` of the target strip (a drop position) and, for a new
+    /// window, putting that window at `geometry` (a tab dragged out into empty space).
+    pub fn move_tab_to_window_at(
+        &mut self,
+        tab_id: TabId,
+        target: Option<String>,
+        index: Option<usize>,
+        geometry: Option<WindowGeometry>,
+    ) -> Result<String> {
         if !self.select_tab_window(tab_id) {
             return Err(Error::msg("That tab is no longer open."));
         }
@@ -361,7 +375,7 @@ impl Controller {
                 if self.tabs.len() <= 1 {
                     return Err(Error::msg("This is the only tab in its window."));
                 }
-                let geometry = self.cascade_geometry();
+                let geometry = geometry.or_else(|| self.cascade_geometry());
                 self.create_window(tab.private, geometry).ok_or_else(|| Error::msg("Could not open a new window."))?
             }
         };
@@ -392,6 +406,9 @@ impl Controller {
             return Err(Error::msg("That window is closed."));
         }
         self.tabs.attach(moved, true, now_ms());
+        if let Some(i) = index {
+            self.tabs.move_to(tab_id, i);
+        }
         if let Some(v) = view {
             let target_window = self.app.get_window(&target_label);
             match target_window.as_ref().map(|w| v.webview.reparent(w)) {

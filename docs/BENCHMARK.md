@@ -79,3 +79,20 @@ What this does and does not show:
   "nothing else running".
 
 Raw per-sample CSV and JSON summaries are written by the script (`bench-results/`); they are not kept in the repository.
+
+## 0.7.0 results (CI, GitHub Windows runner, 2026-10-12)
+
+Run 38298880872, artifact `benchmark-results`. Shared virtual hardware: use these to compare builds and browsers measured
+the same way, not as numbers for your PC. Pages loaded all at once (`--load-all`), 25 s load, 10 s settle, 30 s idle.
+
+| Tabs | Project Browser (private MB / processes) | Chrome (private MB / processes) |
+|---|---|---|
+| 1 | 121 / 8 | 143 / 9 |
+| 5 | 278 / 12 | 238 / 13 |
+| 10 | 422 / 17 | 362 / 18 |
+| 20 | 708 / 27 | 584 / 28 |
+
+Idle CPU median: 0 % for both. Startup (`scripts/startup-bench.ps1`, 3 runs, median): cold 1,861 ms to the interface and
+2,285 ms to the first page; warm 610 ms and 927 ms. With every tab loaded, Project Browser uses about 15-20 % more memory
+than Chrome at 5+ tabs (its own interface runs in a WebView2 view too); sleeping tabs and Gaming Mode are not part of
+this measurement.

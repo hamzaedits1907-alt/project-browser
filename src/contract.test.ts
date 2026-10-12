@@ -379,8 +379,7 @@ describe("native wiring", () => {
     expect(uses.length).toBeGreaterThanOrEqual(3); // shell, tab, popup
     for (const u of uses) expect(u).toMatch(/^(profile\.webview_dir\(\)|data_dir(\.clone\(\))?)$/);
     // One function supplies the arguments (plain ones plus the proxy, if one is set up), so no webview can differ.
-    const args = [...windowRs.matchAll(/\.additional_browser_args\(([^
-]*)\)$/gm)].map((m) => m[1] as string);
+    const args = [...windowRs.matchAll(/\.additional_browser_args\((.*)\)\s*$/gm)].map((m) => m[1] as string);
     expect(args.length).toBeGreaterThanOrEqual(3);
     expect(new Set(args)).toEqual(new Set(["&browser_args()"]));
   });

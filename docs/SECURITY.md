@@ -38,52 +38,65 @@ restore, downloads kept in memory only, and page text is never shared with the A
 
 ## Passwords and import
 
-* Password saving and autofill are WebView2's built-in features (stored, Windows-encrypted, in the profile).
+Full detail, with evidence from a real profile: [CHROME-MIGRATION.md](CHROME-MIGRATION.md).
+
+* Password saving and autofill *offered by websites* are WebView2's built-in features (stored, Windows-encrypted,
+  in the profile). Separately, logins and addresses the user **imports** live in the browser's own **vault**.
 * The import wizard reads bookmarks (`Bookmarks` and, for signed-in Chrome profiles, `AccountBookmarks`), history
-  and the default search engine. SQLite files are copied into a private scratch folder (with their journal) and read
-  there; the source browser's files are never opened for writing. Imports are idempotent: running one twice adds
-  nothing the second time.
-* It **does not import passwords, cookies, autofill, cards or extensions** and says so for each one it finds.
-  Chrome/Edge/Brave protect these (and `EncryptedAccountBookmarks2`) with app-bound keys that only they can use; this
-  browser does not attempt to defeat that, never copies those encrypted blobs, and cannot use them anyway.
+  (pages and every visit with its time), the default search engine, saved address profiles and the open tabs of the
+  last session. SQLite files are copied into a private scratch folder (with their journal) and read there; the
+  source browser's files are never opened for writing (a test compares every byte before and after). Imports are
+  idempotent: running one twice adds nothing the second time.
+* It **does not import cookies, payment cards, free-form form history or extensions** and says so, with the
+  reason. Chrome/Edge/Brave protect saved passwords, cookies (and `EncryptedAccountBookmarks2`) with app-bound keys
+  that only they can use; this browser does not attempt to defeat that and never copies those encrypted blobs.
+* **Passwords come only from a file the user exports** from the old browser and chooses in the Windows file
+  dialog. The chosen path stays in the Rust core (the UI cannot name a file to read). The file is read once into a
+  zeroed-on-drop buffer, parsed, and each password is **sealed with Windows DPAPI** (user scope, site and user name
+  as entropy). SQLite stores only `sealed` blobs next to the site and user name. The user can have the export
+  overwritten with zeros and deleted right after (best effort on SSDs and synced folders; the wizard says if it
+  failed). No password is logged, put in an event, returned from a command or sent to the UI.
+* **Filling** is a click on the address bar's key button. The core requires the active tab, https (or localhost), and
+  an exact match of scheme, host and port with the login's site; the script re-checks `location.origin`, fills
+  visible writable fields in the top frame only, and never submits or clicks. Passwords never go to the AI assistant.
 * The search-engine import only accepts an `https` template with exactly one search-terms placeholder and no
   credentials; Chromium's tracking placeholders are dropped and anything unknown is refused rather than guessed.
 
 ## AI assistant
 
-* Disabled until a model is configured. Nothing is sent until you press Send.
+* NVIDIA's hosted API is the only provider. Disabled until a key and a model are set. Nothing is sent until you press
+  Send, Connect or Test connection.
+* The key is sent only to `https://integrate.api.nvidia.com/v1`; redirects are not followed.
 * Page text is attached only when "Include this page" is on, never from private tabs, and is fenced and labelled
   as untrusted content in the prompt (prompt-injection hygiene).
-* Plain-http endpoints are accepted only for localhost; remote endpoints must use https.
+* Features that need image input or tool calling stay off until a real check of the selected model confirmed them.
 * The API key is a secret and is handled as one; see "Credential protection" below.
 
 ## Credential protection
 
-The AI API key is stored in the **Windows Credential Manager** (generic credential, target
-`ProjectBrowser/<profile-id>/ai-api-key`, one per profile). Windows encrypts it for the signed-in user with DPAPI;
+The NVIDIA API key is stored in the **Windows Credential Manager** (generic credential, target
+`ProjectBrowser/<profile-id>/nvidia-api-key`, one per profile). Windows encrypts it for the signed-in user with DPAPI;
 another Windows account, or anyone who copies the profile folder or database, cannot read it.
 
-* **Not in SQLite.** The profile database stores only provider, endpoint and model. The stored struct has no key
-  field; the one legacy field is `skip_serializing`, so it can never be written back.
+* **Not in SQLite.** The profile database stores only the chosen model id. The stored struct has no key field.
 * **No plaintext fallback.** If the Credential Manager refuses the write, saving fails with an error. The key is
   never parked in a file or setting instead.
-* **Out of the frontend.** The shell reads the key from an uncontrolled password field once, at the moment you press
-  Save, and passes it to `ai_config_set`, which writes it to the Credential Manager. It is not kept in React state,
-  localStorage, events or any command result. The shell only learns `hasKey: true/false`. There is no command that
-  returns the key. It is read natively, at request time, to set the `Authorization` / `x-api-key` header.
+* **Out of the frontend.** The shell reads the key from an uncontrolled password field once, when you press
+  Connect, and passes it to `ai_test` (to check it) and then `ai_config_set` (to store it). It is not kept in React
+  state, localStorage, events or any command result. The shell only learns `hasKey: true/false`. There is no command
+  that returns the key. It is read natively, at request time, to set the `Authorization` header.
 * **Not loggable.** Rust holds it as `Secret`, which has no `Serialize`/`Display`, prints as `Secret(***)`, and is zeroed
-  when dropped. Errors from the credential API never include it. Tests assert none of the AI code logs it.
-* **Migration.** Builds before this change kept the key in the profile database. On load the key is moved into
-  the Credential Manager and removed from the database once the move has succeeded. If the Credential Manager
-  refuses it, the old copy is **kept** (it was already there; nothing new is written in plaintext), Settings shows a
-  warning, saving other AI settings is refused until you re-enter the key, and the move is retried on every load.
-  If the Credential Manager already holds a key it wins and the old copy is just erased.
+  when dropped. Errors from the credential API never include it. Tests assert none of the AI, vault or import code
+  logs a secret-looking value.
+* **Older versions.** A key a build before 0.1.1 left in the profile database is erased from it (kept only when it was
+  an NVIDIA key). The credential used when any provider could be chosen (`.../ai-api-key`) is never used or sent
+  anywhere; Settings shows it and can remove it.
 * **Remove.** *Settings → AI assistant → Remove key from Credential Manager* deletes the credential. Uninstalling does
   not delete credentials automatically; remove them from *Windows Credential Manager → Windows Credentials* (entries
   starting with `ProjectBrowser/`) if you want them gone.
 
-Limits: malware running as your Windows user can ask the Credential Manager for your credentials just like this
-browser can; Windows has no per-app isolation for generic credentials. Use an API key with a spending limit.
+Limits: malware running as your Windows user can ask the Credential Manager, or DPAPI, for your secrets just like this
+browser can; Windows has no per-app isolation for either. Use an API key with a spending limit.
 
 ## Updates
 

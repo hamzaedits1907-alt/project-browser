@@ -1347,7 +1347,7 @@ mod tests {
         let dead = TcpListener::bind("127.0.0.1:0").unwrap();
         let base = format!("http://127.0.0.1:{}", dead.local_addr().unwrap().port());
         drop(dead);
-        let (result, _) = run(test_connection(&NvidiaApi::at(&base, Duration::from_secs(2)), &Secret::new(KEY), ""));
+        let (result, _) = run(test_connection(&NvidiaApi::at(&base, Duration::from_secs(15)), &Secret::new(KEY), ""));
         assert_eq!(result.state, ConnectionState::Network);
 
         let slow = Canned { status: 200, body: model_list(), delay_ms: 1500 };

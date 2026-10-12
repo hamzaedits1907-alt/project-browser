@@ -69,8 +69,30 @@ tab 1: native hooks installed, first navigation started
 | 17 | Sign in to a site, bookmark a page, close the app completely, start it again | Same tabs and selected tab, pinned order kept, still signed in, bookmark and history present | |
 | 18 | Check Task Manager after exiting | No `msedgewebview2.exe` left behind within ~5 s | |
 | 19 | Settings → Profiles: create "Test", switch (the app restarts) | The new profile is not signed in to the site from step 17; switching back restores it | |
-| 20 | Import wizard (Chrome, with Chrome open and again closed) | Counts match what the wizard showed; history is searchable; running it again says "Already up to date"; Chrome is unchanged; passwords/autofill/cookies listed as not imported | |
-| 21 | Settings → AI: save an API key | Entry `ProjectBrowser/<profile>/ai-api-key` appears in Credential Manager; the key does not appear in `browser.db` (search the file for it) | |
+| 20 | Import wizard (Chrome, with Chrome open and again closed) | Counts match what the wizard showed; history is searchable and shows the original visit dates; running it again says "Already up to date"; Chrome is unchanged; cookies and cards listed as not imported with a reason | |
+| 21 | Settings → AI assistant: paste an NVIDIA key, press Connect | Spinner, then "Connected"; entry `ProjectBrowser/<profile>/nvidia-api-key` appears in Credential Manager; the key does not appear in `browser.db` (search the file for it) | |
+| 22 | Same page: a wrong key | "NVIDIA rejected the key"; nothing is saved | |
+| 23 | Model drop-down: type "gemma", arrow keys, Enter; restart the app | Search filters; the choice is still selected after the restart | |
+| 24 | Turn off Wi-Fi, press Refresh list and Test connection | Clear "Can't reach NVIDIA" messages; the last list stays usable, marked old | |
+| 25 | Assistant panel: ask a question; ask with "Include this page" | Streams an answer from the selected model in both cases | |
+| 26 | Pick an embedding model (Show more that can't chat) and ask something | Refused with a clear message; no request is made | |
+
+## Migration 2.0 and NVIDIA (do these with your real Chrome profile)
+
+These need a real profile and a real key, which CI does not have. Mark each one.
+
+| # | Do this | Expect | Result |
+|---|---------|--------|--------|
+| M1 | Wizard with Chrome **running**: tick everything including Open tabs | Bookmarks, history (with dates) and addresses import; Open tabs reports that Chrome must be closed (not a crash, not a silent skip) | |
+| M2 | Close Chrome completely (also the tray), run the wizard again with Open tabs | The tabs you had open are listed, saved under Other bookmarks → Imported from … → Open tabs; "Open now" opens up to 20 | |
+| M3 | In Chrome: Settings → Autofill and passwords → Google Password Manager → Settings → Export passwords. In the wizard: Import passwords…, choose the CSV, keep "Overwrite and delete" ticked | Counts match the file (24 logins in the developer's profile); the file is gone afterwards; Chrome's own passwords are unchanged | |
+| M4 | Search `browser.db` and the log for one of your real passwords | Not found anywhere | |
+| M5 | Visit one of the imported sites (https) | A key button appears in the address bar; the menu lists the user name, never the password | |
+| M6 | Click Fill on a normal login page | User name and password filled; nothing submitted; a toast says how many fields | |
+| M7 | Try a site that asks for the e-mail first, then the password (two steps) | First fill: user name only, toast says to fill again on the next step | |
+| M8 | Import the same CSV again | "Already up to date", every login counted as already saved | |
+| M9 | Settings → Passwords & autofill: delete one login, then "Delete all…" | Removed; the key button disappears on that site | |
+| M10 | Compare: is a site that you were signed in to in Chrome still signed in here? | **No** (expected: cookies are not migrated). Sign in once with the filled login | |
 
 ## Known behaviour to expect (not defects)
 
@@ -78,7 +100,7 @@ tab 1: native hooks installed, first navigation started
   a navigation history, and replaying every page would defeat lazy loading.
 * Switching profiles restarts the app: WebView2 binds one user-data folder to the running browser process.
 * The very first run of an unsigned build shows SmartScreen (or is blocked by Smart App Control).
-* Saved passwords, autofill, cards and cookies are not imported from other browsers.
+* Cookies, payment cards and free-form form history are not imported from other browsers, by design.
 * Memory numbers on the Performance page are real measurements of this app's WebView2 processes. They say nothing about
   other browsers until someone measures both under comparable conditions.
 

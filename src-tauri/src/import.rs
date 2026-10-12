@@ -688,16 +688,17 @@ pub fn parse_session(data: &[u8]) -> Result<Vec<SessionTab>> {
 /// The newest session file of a profile: `Sessions/Session_<time>` in current versions, `Last Session` /
 /// `Current Session` in old ones. (`Tabs_*` files hold recently closed tabs, which are not wanted.)
 fn latest_session_file(profile_dir: &Path) -> Option<PathBuf> {
-    let newest = std::fs::read_dir(profile_dir.join("Sessions"))
-        .ok()?
-        .flatten()
-        .filter_map(|e| {
-            let name = e.file_name().to_string_lossy().into_owned();
-            let stamp = name.strip_prefix("Session_")?.parse::<u64>().ok()?;
-            Some((stamp, e.path()))
-        })
-        .max_by_key(|(stamp, _)| *stamp)
-        .map(|(_, path)| path);
+    let newest = std::fs::read_dir(profile_dir.join("Sessions")).ok().and_then(|entries| {
+        entries
+            .flatten()
+            .filter_map(|e| {
+                let name = e.file_name().to_string_lossy().into_owned();
+                let stamp = name.strip_prefix("Session_")?.parse::<u64>().ok()?;
+                Some((stamp, e.path()))
+            })
+            .max_by_key(|(stamp, _)| *stamp)
+            .map(|(_, path)| path)
+    });
     newest.or_else(|| ["Last Session", "Current Session"].iter().map(|n| profile_dir.join(n)).find(|p| p.is_file()))
 }
 

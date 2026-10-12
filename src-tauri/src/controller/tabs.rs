@@ -568,6 +568,13 @@ impl Controller {
         if self.layout.overlay != open {
             self.layout.overlay = open;
             self.relayout();
+            if open {
+                // The hidden page would otherwise keep keyboard focus: Escape and the arrow keys must reach the
+                // shell's menu (a right-click leaves focus in the page).
+                if let Some(shell) = self.app.get_webview(&self.current) {
+                    let _ = shell.set_focus();
+                }
+            }
             if !open && focus_page {
                 if let Some(v) = self.tabs.active_id().and_then(|a| self.views.get(&a)) {
                     if v.visible {

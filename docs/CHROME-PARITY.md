@@ -1,4 +1,4 @@
-# Chrome feature parity (0.5.0)
+# Chrome feature parity (0.6.0)
 
 Project Browser is **not** equivalent to Chrome and does not claim to be. This matrix says, feature by feature, what exists,
 what has actually been checked, and what is missing or impossible on this engine (WebView2). Use it to decide what to build
@@ -84,7 +84,7 @@ found the download bug fixed in 0.4.0.
 |---|---|---|
 | Multiple profiles | Built, unverified | Separate databases and WebView2 folders; one is open at a time. |
 | Import bookmarks, history, search engine, open tabs, addresses, passwords (via export) | Tested (logic) | Exact status per data type is shown after an import. |
-| Browser extensions | Platform limit (mostly) | WebView2 can load some unpacked Chromium extensions through an experimental API, but not the Chrome Web Store, and not reliably. Not offered; no fake button. |
+| Browser extensions | Built, unverified (0.6.0) | Unpacked Manifest V3 extensions through WebView2 (`ICoreWebView2Profile7`): load, list, enable/disable, remove (Settings > Extensions). No Chrome Web Store, no `.crx`, no toolbar pop-ups (platform limit). |
 | Chrome Sync, Google account services, Google Pay, Safe Browsing reporting | Google | Not available. |
 | Themes from the Chrome Web Store | Google | Not available; the browser has its own accent colours. |
 
@@ -102,5 +102,15 @@ facts, not measurements.
 | Side panels (bookmarks, history, downloads, Shield) | Tested (frontend) | Docked next to the page. |
 | Element hiding (cosmetic filters) | Tested (engine) | Site-specific rules only; generic/procedural counted, not applied. |
 | Vertical tabs, themes, density, customizable toolbar and sidebar | Tested (frontend) | |
-| Extensions | Platform limit | Unchanged: WebView2's extension API is experimental and has no Web Store; not offered. |
+| Extensions | Superseded | See 0.6.0 below. |
 | Installable web apps (PWA) | Platform limit | WebView2 has no install API; pinned sidebar sites cover quick access. |
+
+## 0.6.0 additions
+
+| Capability | Status | Notes |
+|---|---|---|
+| Listed in Windows Default apps / selectable as default browser | Installer registration CI-verified | `windows/hooks.nsh` writes ProgIDs, `StartMenuInternet` + Capabilities and `RegisteredApplications` (HKCU, per-user install). CI installs the real installer and checks every value. Choosing it in Windows Settings needs a person and has not been observed. |
+| Opening http/https links and .html files from other apps | CI-verified (registered command) | CI runs the registered `open` command: cold start, a second link forwarded to the running browser, a local file. `launch.rs` refuses `javascript:`/`data:` targets (unit-tested). |
+| Default browser status + button to Windows settings | Built, unverified | Settings > General. Reads the real registry; never writes the user's choice. |
+| Extensions | Built, unverified | See "Browser extensions" above. |
+| Own rendering engine (bundled Chromium / CEF) | Not done | Pages are still rendered by WebView2. See `docs/ENGINE.md` for why and what it would take. |

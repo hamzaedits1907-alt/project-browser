@@ -159,6 +159,25 @@ None of these has been seen working against NVIDIA; CI only runs mocked tests. M
 | U7 | Visit a news site with ads | Fewer empty ad boxes than 0.4.0 (element hiding) | |
 | U8 | Task Manager → Processes | "Project Browser" group with the WebView2 processes under it | |
 
+## 0.6.0 checks (not yet done on a real PC)
+
+1. Install 0.6.0 (or let 0.5.x update itself). Open Windows Settings > Apps > Default apps: **Project Browser** is listed.
+   Open it there and choose it for HTTP and HTTPS (or click "Set default").
+2. Settings > General > Default browser now says "Project Browser is your default browser" (it reads again when the
+   window gets focus).
+3. Click a link in another app (Mail, Discord, a PDF): it opens in a new tab of the open window. With the browser
+   closed, it starts the browser and opens the link.
+4. Right-click a `.html` file > Open with > Project Browser: the file opens.
+5. Right-click a web page, then press Escape: the menu closes. Right-click again and use the arrow keys and Enter.
+6. Settings > Extensions > Load unpacked: choose the `manifest.json` of an unpacked MV3 extension (for example Dark
+   Reader's unpacked build). It shows in the list and runs on pages. Switch it off and remove it.
+7. Tear a tab off into a new window: the page must be visible in the new window (the CI capture of this showed a black
+   page area, which may be a capture artifact and needs checking by eye).
+8. Uninstall: Project Browser disappears from Default apps.
+
+The CI job "Default-browser registration and link opening" (`scripts/verify-registration.ps1`) covers the registry
+values and link launching on a runner; it cannot click through Windows Settings.
+
 ## 0.5.1 checks (not yet done on a real PC)
 
 1. Right-click a web page: the menu appears quickly (well under a second), with the page still visible behind it.

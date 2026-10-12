@@ -9,7 +9,7 @@ use url::Url;
 pub const INTERNAL_SCHEME: &str = "browser";
 
 /// Internal pages the shell knows how to render. Anything else under `browser://` is rejected.
-pub const INTERNAL_PAGES: &[&str] = &["newtab", "settings", "history", "bookmarks", "downloads", "performance", "gaming"];
+pub const INTERNAL_PAGES: &[&str] = &["newtab", "settings", "history", "bookmarks", "downloads", "performance", "gaming", "memory", "research"];
 
 pub const NEW_TAB_URL: &str = "browser://newtab";
 

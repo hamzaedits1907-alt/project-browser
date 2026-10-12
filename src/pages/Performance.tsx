@@ -42,6 +42,12 @@ export default function Performance() {
         />
       </div>
 
+      <p className="dim small metric-note">
+        <strong>What “memory” means here:</strong> each process's <em>private working set</em> (the figure in Task Manager's Memory column), added up over the browser's own
+        processes. Pages shared between processes are not counted twice, so this is neither the larger “working set” nor the “commit size”. “n/a” means Windows did not
+        provide a reading; nothing on this page is estimated.
+      </p>
+
       <Card title="Tabs" subtitle="Memory is per renderer process. Tabs that share a process show the same figure.">
         {tabs.length === 0 ? (
           <EmptyState icon="tabs" title="No tabs open" />

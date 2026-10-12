@@ -24,6 +24,7 @@ export const DEFAULT_SETTINGS: Settings = {
   heavyTabMemoryMb: 500,
   protectPinnedTabs: true,
   memoryLimitMb: 0,
+  aiMaxContextChars: 24000,
   checkUpdates: true,
 };
 

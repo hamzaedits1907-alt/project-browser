@@ -44,6 +44,8 @@ export function MainMenu({ open, onClose, anchor, onImport }: { open: boolean; o
         <MenuItem icon="gamepad" label="Gaming dashboard" hint="Ctrl+Shift+D" onSelect={() => run({ type: "openGaming" })} />
         <MenuItem icon="gauge" label="Performance monitor" hint="Shift+Esc" onSelect={() => run({ type: "openPerformance" })} />
         <MenuItem icon="sparkle" label="AI assistant" onSelect={toggleAi} />
+        <MenuItem icon="layers" label="Research: compare pages" onSelect={() => void attempt(() => api.tabNew("browser://research"))} />
+        <MenuItem icon="bookmarks" label="Project Memory" onSelect={() => void attempt(() => api.tabNew("browser://memory"))} />
         <MenuSeparator />
         <MenuItem icon="history" label="History" hint="Ctrl+H" onSelect={() => run({ type: "openHistory" })} />
         <MenuItem icon="bookmarks" label="Bookmarks" hint="Ctrl+Shift+O" onSelect={() => run({ type: "openBookmarks" })} />

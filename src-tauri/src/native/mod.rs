@@ -877,8 +877,8 @@ pub fn capture_preview(id: TabId, reply: tokio::sync::oneshot::Sender<Option<Str
     }
 }
 
-/// Script that returns the readable text of the page and the current selection.
-const PAGE_TEXT_JS: &str = "(() => { const body = document.body;     const text = body ? (body.innerText || '') : '';     const selection = String(window.getSelection ? window.getSelection() : '');     return { text: text.slice(0, 200000), selection: selection.slice(0, 20000) }; })()";
+/// Script that returns the readable text of the page (boilerplate left out, form contents never read) and the current selection.
+const PAGE_TEXT_JS: &str = include_str!("page_extract.js");
 
 /// Reads the visible text of a tab for the AI assistant. Replies with the JSON
 /// the script returned, or `None` if the page could not be read.

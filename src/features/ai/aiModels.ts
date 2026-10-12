@@ -159,3 +159,74 @@ export function isModelProblem(state: ConnectionState | null | undefined): boole
 export function formatCount(n: number, one: string, many: string): string {
   return `${n.toLocaleString()} ${n === 1 ? one : many}`;
 }
+
+// ---- the setup state machine -------------------------------------------------------------------
+
+/** Where the user is on the way to a working assistant. The key can be entered at every one of these stages. */
+export type SetupStage =
+  /** The saved configuration hasn't been read yet. */
+  | { stage: "loading"; canEnterKey: true }
+  /** No key is saved. */
+  | { stage: "noKey"; canEnterKey: true }
+  /** Something is typed in the key field but not saved. */
+  | { stage: "keyEntered"; canEnterKey: true }
+  /** A key is saved; the model list hasn't been asked for yet. */
+  | { stage: "keySaved"; canEnterKey: true }
+  | { stage: "catalogLoading"; canEnterKey: true }
+  /** NVIDIA rejected the key. */
+  | { stage: "invalidKey"; canEnterKey: true }
+  /** Rate limit, network or provider failure while loading the list or testing. */
+  | { stage: "providerFailure"; canEnterKey: true; state: ConnectionState; message: string | null }
+  /** The list loaded but holds nothing the assistant can chat with. */
+  | { stage: "noUsableModels"; canEnterKey: true }
+  /** The list is there and no model is chosen. */
+  | { stage: "chooseModel"; canEnterKey: true }
+  /** The chosen model is retired, not in the list, or not a chat model. */
+  | { stage: "modelUnavailable"; canEnterKey: true; reason: string }
+  /** A real request with the key succeeded, but no usable model is chosen yet. */
+  | { stage: "verified"; canEnterKey: true }
+  /** A usable model is chosen. `verified`: a real request with the key and model has succeeded. */
+  | { stage: "ready"; canEnterKey: true; verified: boolean };
+
+export interface SetupInput {
+  /** `null` until the configuration has been read. */
+  hasKey: boolean | null;
+  keyTyped: boolean;
+  models: { phase: "idle" | "loading" | "ready" | "empty" | "error"; models: readonly ModelInfo[]; state: ConnectionState | null; message: string | null };
+  /** The latest Connect / Test result, if any. */
+  connection: { phase: "idle" | "testing" | "done"; state: ConnectionState | null; keyOk: boolean };
+  selectedModel: string;
+  unavailable: readonly string[];
+}
+
+/**
+ * Names the setup stage. Missing authentication is never reported as a model problem, and a model problem is never
+ * reported as a missing key: the key field is usable in every stage (`canEnterKey` is always true).
+ */
+export function setupStage(input: SetupInput): SetupStage {
+  const { hasKey, keyTyped, models, connection } = input;
+  if (hasKey === null) return { stage: keyTyped ? "keyEntered" : "loading", canEnterKey: true };
+  if (!hasKey) return { stage: keyTyped ? "keyEntered" : "noKey", canEnterKey: true };
+  if (connection.state === "invalidKey" || (models.phase === "error" && models.state === "invalidKey")) return { stage: "invalidKey", canEnterKey: true };
+  if (models.phase === "loading" && models.models.length === 0) return { stage: "catalogLoading", canEnterKey: true };
+  if (models.phase === "error") return { stage: "providerFailure", canEnterKey: true, state: models.state ?? "other", message: models.message };
+  if (models.phase === "idle") return { stage: "keySaved", canEnterKey: true };
+  if (models.phase === "empty" || !models.models.some(isChatModel)) return { stage: "noUsableModels", canEnterKey: true };
+  const verified = connection.phase === "done" && connection.state === "ok" && connection.keyOk;
+  const selection = resolveSelection(models.models, input.selectedModel, input.unavailable);
+  switch (selection.status) {
+    case "none":
+      return { stage: verified ? "verified" : "chooseModel", canEnterKey: true };
+    case "missing":
+      return { stage: "modelUnavailable", canEnterKey: true, reason: `“${selection.id}” is no longer in NVIDIA's list.` };
+    case "unsupported":
+      return { stage: "modelUnavailable", canEnterKey: true, reason: selection.reason };
+    default:
+      return { stage: "ready", canEnterKey: true, verified };
+  }
+}
+
+/** Failures that say nothing about the key itself: saving the key anyway (unchecked) is a reasonable choice. */
+export function isTransientFailure(state: ConnectionState | null | undefined): boolean {
+  return state === "network" || state === "timeout" || state === "rateLimited" || state === "serverError" || state === "badResponse" || state === "other";
+}

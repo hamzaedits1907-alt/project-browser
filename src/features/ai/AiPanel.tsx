@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 
-import { Button, IconButton, Spinner, Toggle } from "../../components/ui/controls";
+import { Button, IconButton, Segmented, Select, Spinner, Toggle } from "../../components/ui/controls";
 import { Icon } from "../../components/ui/Icon";
 import { api } from "../../lib/ipc";
+import { ActionsTab } from "../actions/ActionsTab";
+import { draftFromAnswer } from "../memory/memory";
+import { CITED_SUMMARY, EXPLAIN_SELECTION, EXTRACT_DATA, LANGUAGES, defaultLanguage, translateSelection } from "./tools";
 import { writeLocal } from "../../lib/storage";
-import { activeTab, attempt, useStore } from "../../lib/store";
+import { activeTab, attempt, toast, useStore } from "../../lib/store";
 import { isInternalUrl } from "../../lib/urls";
 import { assistantReady, resolveSelection } from "./aiModels";
 import { ai, clearConversation, loadAiConfig, loadModels, selectModel, sendMessage, setAiOpen, setIncludePage, stopStreaming } from "./aiStore";
@@ -30,7 +33,7 @@ function Spans({ spans }: { spans: Span[] }) {
   );
 }
 
-function Message({ m, streaming }: { m: AiMessage; streaming: boolean }) {
+function Message({ m, streaming, onSave }: { m: AiMessage; streaming: boolean; onSave: (m: AiMessage) => void }) {
   if (m.role === "user") return <div className="ai-msg ai-user" data-selectable>{m.content}</div>;
   if (m.error) {
     return (
@@ -44,6 +47,9 @@ function Message({ m, streaming }: { m: AiMessage; streaming: boolean }) {
   return (
     <div className="ai-msg ai-assistant" data-selectable>
       {blocks.length === 0 && streaming && <Spinner size={14} />}
+      {!streaming && m.content && (
+        <IconButton icon="bookmarks" label="Save this answer to Project Memory" size={14} className="ai-save" onClick={() => onSave(m)} />
+      )}
       {blocks.map((b, i) => {
         switch (b.type) {
           case "code":
@@ -70,6 +76,9 @@ export function AiPanel() {
   const { messages, streaming, includePage, config, models, unavailable } = ai.use((s) => s);
   const tab = useStore(activeTab);
   const [draft, setDraft] = useState("");
+  const [view, setView] = useState<"chat" | "act">("chat");
+  const [language, setLanguage] = useState<string>(() => defaultLanguage(navigator.language));
+  const maxContext = useStore((s) => s.settings.aiMaxContextChars);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -93,8 +102,22 @@ export function AiPanel() {
   const send = (text: string, page = includePage && pageAvailable) => {
     if (!text.trim()) return;
     setDraft("");
-    void sendMessage(text, page);
+    void sendMessage(text, page, page && tab ? { url: tab.url, title: tab.title } : undefined);
   };
+
+  const sendWithPage = (prompt: string) => {
+    setIncludePage(true);
+    send(prompt, true);
+  };
+
+  const saveAnswer = (m: AiMessage) => {
+    const first = m.content.split("\n").find((l) => l.trim())?.replace(/[#*`>-]/g, "").trim() ?? "";
+    const title = m.source?.title ? `Notes on ${m.source.title}` : first.slice(0, 80);
+    void attempt(() => api.memorySave(draftFromAnswer(title, m.content, m.source)), "Could not save").then((saved) => saved && toast("Saved to Project Memory"));
+  };
+
+  const openMemory = () => void attempt(() => api.tabNew("browser://memory"));
+  const openResearch = () => void attempt(() => api.tabNew("browser://research"));
 
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -113,11 +136,17 @@ export function AiPanel() {
       <header className="ai-head">
         <div className="ai-title"><Icon name="sparkle" size={17} /> Assistant</div>
         <div className="ai-head-actions">
-          <IconButton icon="trash" label="New conversation" size={16} disabled={messages.length === 0} onClick={clearConversation} />
+          <IconButton icon="layers" label="Research: compare pages" size={16} onClick={openResearch} />
+          <IconButton icon="bookmarks" label="Project Memory" size={16} onClick={openMemory} />
+          <IconButton icon="trash" label="New conversation" size={16} disabled={messages.length === 0 || view !== "chat"} onClick={clearConversation} />
           <IconButton icon="settings" label="AI settings" size={16} onClick={openAiSettings} />
           <IconButton icon="close" label="Close assistant" size={16} onClick={() => setAiOpen(false)} />
         </div>
       </header>
+
+      <div className="ai-view-bar">
+        <Segmented label="Assistant mode" value={view} options={[{ value: "chat", label: "Chat" }, { value: "act", label: "Act" }]} onChange={setView} />
+      </div>
 
       {config?.hasKey && models.models.length > 0 && (
         <div className="ai-model-bar">
@@ -132,6 +161,11 @@ export function AiPanel() {
         </div>
       )}
 
+      {view === "act" ? (
+        <div className="ai-messages">
+          <ActionsTab maxContext={maxContext} ready={configured} />
+        </div>
+      ) : (
       <div className="ai-messages" ref={listRef}>
         {config && !config.hasKey && (
           <div className="ai-setup">
@@ -167,15 +201,35 @@ export function AiPanel() {
             </div>
           </div>
         )}
-        {messages.map((m, i) => <Message key={m.id} m={m} streaming={streaming && i === messages.length - 1} />)}
+        {messages.map((m, i) => <Message key={m.id} m={m} streaming={streaming && i === messages.length - 1} onSave={saveAnswer} />)}
       </div>
+      )}
 
+      {view === "chat" && (
       <footer className="ai-compose">
+        {configured && (
+          <div className="ai-tools" aria-label="Quick actions">
+            <button type="button" className="chip" disabled={!pageAvailable || streaming} title="Explain the text you selected on the page" onClick={() => sendWithPage(EXPLAIN_SELECTION)}>Explain selection</button>
+            <span className="ai-translate">
+              <button type="button" className="chip" disabled={!pageAvailable || streaming} title="Translate the text you selected on the page" onClick={() => sendWithPage(translateSelection(language))}>Translate to</button>
+              <Select label="Translate into" value={language} options={LANGUAGES.map((l) => ({ value: l, label: l }))} onChange={setLanguage} />
+            </span>
+            <button type="button" className="chip" disabled={!pageAvailable || streaming} title="Pull names, numbers and dates out of the page" onClick={() => sendWithPage(EXTRACT_DATA)}>Extract data</button>
+            <button type="button" className="chip" disabled={!pageAvailable || streaming} title="Summary where every point quotes the page" onClick={() => sendWithPage(CITED_SUMMARY)}>Cited summary</button>
+            <button type="button" className="chip" onClick={() => setView("act")} title="Change how the page looks, locally and reversibly">Restyle page…</button>
+          </div>
+        )}
         <label className="ai-page-toggle">
           <Toggle label="Include this page" checked={includePage && pageAvailable} disabled={!pageAvailable} onChange={setIncludePage} />
           <span>
             Include this page
-            <small>{pageAvailable ? "Shares the page's text with the model" : tab?.private ? "Not available in private tabs" : "Open a web page to share it"}</small>
+            <small>
+              {pageAvailable
+                ? `Shares the page's text with NVIDIA: up to about ${Math.round(maxContext / 4).toLocaleString("en-US")} tokens`
+                : tab?.private
+                  ? "Not available in private tabs"
+                  : "Open a web page to share it"}
+            </small>
           </span>
         </label>
         <div className="ai-input">
@@ -187,6 +241,7 @@ export function AiPanel() {
           )}
         </div>
       </footer>
+      )}
     </aside>
   );
 }

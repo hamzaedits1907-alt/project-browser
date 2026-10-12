@@ -10,11 +10,14 @@ import {
   groupByPublisher,
   isChatModel,
   isModelProblem,
+  isTransientFailure,
   matchesQuery,
   resolveSelection,
+  setupStage,
   stateView,
   visibleModels,
 } from "./aiModels";
+import type { SetupInput } from "./aiModels";
 
 function model(id: string, kind: ModelInfo["kind"] = "chat", chat: "yes" | "no" = "yes", vision: "yes" | "unknown" = "unknown"): ModelInfo {
   const [publisher = "", name = id] = id.split("/");
@@ -164,5 +167,78 @@ describe("connection states", () => {
     for (const s of ALL.filter((s) => s !== "modelUnavailable" && s !== "modelRejected")) expect(isModelProblem(s)).toBe(false);
     expect(isModelProblem(null)).toBe(false);
     expect(isModelProblem(undefined)).toBe(false);
+  });
+});
+
+describe("the setup state machine", () => {
+  const idleModels: SetupInput["models"] = { phase: "idle", models: [], state: null, message: null };
+  const readyModels: SetupInput["models"] = { phase: "ready", models: LIST, state: "ok", message: null };
+  const noConnection: SetupInput["connection"] = { phase: "idle", state: null, keyOk: false };
+  const base: SetupInput = { hasKey: false, keyTyped: false, models: idleModels, connection: noConnection, selectedModel: "", unavailable: [] };
+  const stage = (over: Partial<SetupInput>) => setupStage({ ...base, ...over });
+
+  it("lets the key be entered at every stage", () => {
+    const cases: Partial<SetupInput>[] = [
+      { hasKey: null },
+      {},
+      { keyTyped: true },
+      { hasKey: true },
+      { hasKey: true, models: { ...idleModels, phase: "loading" } },
+      { hasKey: true, models: { phase: "error", models: [], state: "network", message: "x" } },
+      { hasKey: true, models: { phase: "error", models: [], state: "invalidKey", message: "x" } },
+      { hasKey: true, models: { ...idleModels, phase: "empty", state: "empty" } },
+      { hasKey: true, models: readyModels },
+      { hasKey: true, models: readyModels, selectedModel: "retired/model" },
+      { hasKey: true, models: readyModels, selectedModel: "google/gemma-3-4b-it" },
+    ];
+    for (const c of cases) expect(stage(c).canEnterKey, JSON.stringify(c)).toBe(true);
+  });
+
+  it("separates a missing key from a typed-but-unsaved key from a saved key", () => {
+    expect(stage({ hasKey: null }).stage).toBe("loading");
+    expect(stage({ hasKey: false }).stage).toBe("noKey");
+    expect(stage({ hasKey: false, keyTyped: true }).stage).toBe("keyEntered");
+    expect(stage({ hasKey: true }).stage).toBe("keySaved");
+  });
+
+  it("never reports a missing key as a model problem, even with a stale model choice", () => {
+    const s = stage({ hasKey: false, selectedModel: "retired/model", models: readyModels });
+    expect(s.stage).toBe("noKey");
+  });
+
+  it("walks from a saved key to a ready assistant", () => {
+    expect(stage({ hasKey: true, models: { ...idleModels, phase: "loading" } }).stage).toBe("catalogLoading");
+    expect(stage({ hasKey: true, models: readyModels }).stage).toBe("chooseModel");
+    const verified: SetupInput["connection"] = { phase: "done", state: "ok", keyOk: true };
+    expect(stage({ hasKey: true, models: readyModels, connection: verified }).stage).toBe("verified");
+    expect(stage({ hasKey: true, models: readyModels, selectedModel: "google/gemma-3-4b-it" })).toMatchObject({ stage: "ready", verified: false });
+    expect(stage({ hasKey: true, models: readyModels, selectedModel: "google/gemma-3-4b-it", connection: verified })).toMatchObject({ stage: "ready", verified: true });
+  });
+
+  it("tells a retired, unsupported or refused model apart from a key problem", () => {
+    const gone = stage({ hasKey: true, models: readyModels, selectedModel: "retired/model" });
+    expect(gone).toMatchObject({ stage: "modelUnavailable" });
+    expect(stage({ hasKey: true, models: readyModels, selectedModel: "nvidia/nv-embedqa-mistral-7b-v2" }).stage).toBe("modelUnavailable");
+    expect(stage({ hasKey: true, models: readyModels, selectedModel: "google/gemma-3-4b-it", unavailable: ["google/gemma-3-4b-it"] }).stage).toBe("modelUnavailable");
+  });
+
+  it("distinguishes an invalid key from rate limit, network and provider failures", () => {
+    const failed = (state: ConnectionState): Partial<SetupInput> => ({ hasKey: true, models: { phase: "error", models: [], state, message: "m" } });
+    expect(stage(failed("invalidKey")).stage).toBe("invalidKey");
+    for (const state of ["rateLimited", "network", "timeout", "serverError"] as const) {
+      expect(stage(failed(state))).toMatchObject({ stage: "providerFailure", state });
+    }
+    expect(stage({ hasKey: true, models: readyModels, connection: { phase: "done", state: "invalidKey", keyOk: false } }).stage).toBe("invalidKey");
+  });
+
+  it("reports a list with nothing to chat with, or an empty list, as having no usable models", () => {
+    expect(stage({ hasKey: true, models: { phase: "empty", models: [], state: "empty", message: null } }).stage).toBe("noUsableModels");
+    const onlyEmbeddings = [model("nvidia/nv-embedqa-mistral-7b-v2", "embedding", "no")];
+    expect(stage({ hasKey: true, models: { phase: "ready", models: onlyEmbeddings, state: "ok", message: null } }).stage).toBe("noUsableModels");
+  });
+
+  it("treats only failures that say nothing about the key as transient", () => {
+    for (const s of ["network", "timeout", "rateLimited", "serverError", "badResponse", "other"] as const) expect(isTransientFailure(s)).toBe(true);
+    for (const s of ["invalidKey", "ok", "noKey", "modelUnavailable", "modelRejected", "empty"] as const) expect(isTransientFailure(s)).toBe(false);
   });
 });

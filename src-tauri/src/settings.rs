@@ -63,6 +63,10 @@ pub struct Settings {
     /// sleep (then unloaded) until it is below the limit. 0 turns the limit off.
     pub memory_limit_mb: u32,
 
+    /// The most page text (in characters, about four per token) one AI request may carry. Every request is
+    /// checked against it in the core, whatever the shell asks for.
+    pub ai_max_context_chars: u32,
+
     /// Look for a new version once after startup (it is never installed without asking).
     pub check_updates: bool,
 }
@@ -92,6 +96,7 @@ impl Default for Settings {
             heavy_tab_memory_mb: 500,
             protect_pinned_tabs: true,
             memory_limit_mb: 0,
+            ai_max_context_chars: 24000,
             check_updates: true,
         }
     }
@@ -113,6 +118,7 @@ impl Settings {
         if self.memory_limit_mb != 0 {
             self.memory_limit_mb = self.memory_limit_mb.clamp(512, 65_536);
         }
+        self.ai_max_context_chars = self.ai_max_context_chars.clamp(4_000, 120_000);
         self.never_sleep_hosts = self
             .never_sleep_hosts
             .into_iter()
@@ -167,5 +173,13 @@ mod tests {
         assert!(s.is_never_sleep("music.youtube.com"));
         assert!(s.is_never_sleep("youtube.com"));
         assert!(!s.is_never_sleep("notyoutube.com"));
+    }
+
+    #[test]
+    fn the_ai_context_limit_is_kept_in_a_sane_range() {
+        let low = Settings { ai_max_context_chars: 0, ..Default::default() }.sanitized();
+        let high = Settings { ai_max_context_chars: u32::MAX, ..Default::default() }.sanitized();
+        assert_eq!((low.ai_max_context_chars, high.ai_max_context_chars), (4_000, 120_000));
+        assert_eq!(Settings::default().ai_max_context_chars, 24_000);
     }
 }

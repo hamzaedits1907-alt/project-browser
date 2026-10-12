@@ -14,6 +14,7 @@ use crate::controller::{DownloadCommand, ZoomMode};
 use crate::db::bookmarks::Bookmark;
 use crate::db::downloads::Download;
 use crate::db::history::{HistoryEntry, UrlRow};
+use crate::db::memory::{MemoryDraft, MemoryItem};
 use crate::db::permissions::SitePermission;
 use crate::db::vault::LoginSummary;
 use crate::error::{now_ms, Error, Result};
@@ -81,11 +82,11 @@ pub async fn run_command(s: State<'_, AppState>, command: Command) -> Result<()>
 // ---- tabs & navigation -----------------------------------------------------------
 
 #[tauri::command]
-pub async fn tab_new(s: State<'_, AppState>, url: Option<String>, private: Option<bool>) -> Result<()> {
+pub async fn tab_new(s: State<'_, AppState>, url: Option<String>, private: Option<bool>, background: Option<bool>) -> Result<()> {
     s.ctl
         .call(move |c| match url {
             Some(u) if !u.trim().is_empty() => {
-                c.open_url(u, true);
+                c.open_url_as(u, !background.unwrap_or(false), private.unwrap_or(false));
             }
             _ => {
                 c.new_tab(private.unwrap_or(false), true);
@@ -913,6 +914,51 @@ pub async fn ai_probe(s: State<'_, AppState>, ai_state: State<'_, AiState>, mode
     Ok(result)
 }
 
+/// The model and key a chat needs, or the reason there can be no chat yet.
+fn chat_ready(cfg: &ai::AiConfig, key: Option<Secret>) -> Result<(String, Secret)> {
+    let model = cfg.model.trim().to_string();
+    if model.is_empty() {
+        return Err(Error::msg("Choose a model in AI settings first"));
+    }
+    let key = key.ok_or_else(|| Error::msg("Add your NVIDIA API key in AI settings first"))?;
+    if let Some(why) = ai::chat_blocker(&model) {
+        return Err(Error::msg(why));
+    }
+    Ok((model, key))
+}
+
+fn check_conversation(request_id: &str, messages: &[ChatMessage]) -> Result<()> {
+    if request_id.is_empty() || request_id.len() > 100 {
+        return Err(Error::msg("Invalid request"));
+    }
+    if messages.is_empty() || messages.iter().any(|m| m.role != "user" && m.role != "assistant") {
+        return Err(Error::msg("Invalid conversation"));
+    }
+    Ok(())
+}
+
+/// Reads the visible text of a running tab (see `native::page_text`).
+async fn read_tab_text(app: &AppHandle, id: TabId) -> Result<PageSnapshot> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.run_on_main_thread(move || native::page_text(id, tx))?;
+    let raw = tokio::time::timeout(PAGE_TEXT_TIMEOUT, rx)
+        .await
+        .ok()
+        .and_then(|r| r.ok())
+        .flatten()
+        .ok_or_else(|| Error::msg("Could not read this page"))?;
+    serde_json::from_str(&raw).map_err(|_| Error::msg("Could not read this page"))
+}
+
+fn spawn_chat(app: AppHandle, ai_state: &AiState, job: ai::ChatJob) {
+    let cancel = ai_state.register(&job.request_id);
+    let id = job.request_id.clone();
+    tauri::async_runtime::spawn(async move {
+        ai::run_chat(app.clone(), job, cancel).await;
+        app.state::<AiState>().finish(&id);
+    });
+}
+
 /// Starts a streamed reply; text arrives as `pb:ai` events keyed by `request_id`.
 #[tauri::command]
 pub async fn ai_chat(
@@ -924,19 +970,11 @@ pub async fn ai_chat(
     include_page: bool,
 ) -> Result<()> {
     let (cfg, key) = stored_key(&s, &ai_state).await?;
-    let model = cfg.model.trim().to_string();
-    if model.is_empty() {
-        return Err(Error::msg("Choose a model in AI settings first"));
-    }
-    let key = key.ok_or_else(|| Error::msg("Add your NVIDIA API key in AI settings first"))?;
-    if let Some(why) = ai::chat_blocker(&model) {
-        return Err(Error::msg(why));
-    }
-    if messages.is_empty() || messages.iter().any(|m| m.role != "user" && m.role != "assistant") {
-        return Err(Error::msg("Invalid conversation"));
-    }
+    let (model, key) = chat_ready(&cfg, key)?;
+    check_conversation(&request_id, &messages)?;
     let skip = messages.len().saturating_sub(ai::MAX_HISTORY);
     let messages: Vec<ChatMessage> = messages.into_iter().skip(skip).collect();
+    let max_context = s.ctl.call(|c| c.settings.ai_max_context_chars).await?;
 
     let mut system = ai::system_prompt(None, "", "");
     if include_page {
@@ -947,25 +985,117 @@ pub async fn ai_chat(
         if private {
             return Err(Error::msg("Page sharing is disabled in private tabs"));
         }
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        app.run_on_main_thread(move || native::page_text(id, tx))?;
-        let raw = tokio::time::timeout(PAGE_TEXT_TIMEOUT, rx)
-            .await
-            .ok()
-            .and_then(|r| r.ok())
-            .flatten()
-            .ok_or_else(|| Error::msg("Could not read this page"))?;
-        let page: PageSnapshot = serde_json::from_str(&raw).map_err(|_| Error::msg("Could not read this page"))?;
-        system = ai::system_prompt(Some(&page), &title, &url);
+        let page = read_tab_text(&app, id).await?;
+        system = ai::system_prompt_limited(Some(&page), &title, &url, max_context as usize);
     }
+    ai::check_context(&system, &messages, max_context)?;
 
-    let cancel = ai_state.register(&request_id);
-    let id = request_id.clone();
-    tauri::async_runtime::spawn(async move {
-        ai::run_chat(app.clone(), request_id, model, key, system, messages, cancel).await;
-        app.state::<AiState>().finish(&id);
-    });
+    spawn_chat(app, &ai_state, ai::ChatJob { request_id, model, key, system, messages, max_tokens: ai::clamp_max_tokens(None) });
     Ok(())
+}
+
+/// A streamed reply to a request the shell built itself (a comparison, a claim check, a plan): its own
+/// instructions, the user's text, and page text the user chose. The same checks as a chat apply: a model and a key
+/// must be set, and the request may not carry more text than the user's context limit allows. The reply arrives as
+/// `pb:ai` events keyed by `request_id`.
+#[tauri::command]
+pub async fn ai_ask(
+    app: AppHandle,
+    s: State<'_, AppState>,
+    ai_state: State<'_, AiState>,
+    request_id: String,
+    system: String,
+    messages: Vec<ChatMessage>,
+    max_tokens: Option<u32>,
+) -> Result<()> {
+    let (cfg, key) = stored_key(&s, &ai_state).await?;
+    let (model, key) = chat_ready(&cfg, key)?;
+    check_conversation(&request_id, &messages)?;
+    let max_context = s.ctl.call(|c| c.settings.ai_max_context_chars).await?;
+    ai::check_context(&system, &messages, max_context)?;
+    spawn_chat(app, &ai_state, ai::ChatJob { request_id, model, key, system, messages, max_tokens: ai::clamp_max_tokens(max_tokens) });
+    Ok(())
+}
+
+/// The readable text of one open tab, cut to `max_chars` (never more than the user's context limit). Private tabs,
+/// browser pages, files and tabs without a running page are refused here, not in the shell.
+#[tauri::command]
+pub async fn ai_page_snapshot(app: AppHandle, s: State<'_, AppState>, tab_id: TabId, max_chars: Option<u32>) -> Result<ai::PageSnapshotView> {
+    let (title, url, limit) = s
+        .ctl
+        .call(move |c| -> Result<(String, String, u32)> {
+            let tab = c.tabs.get(tab_id).ok_or_else(|| Error::msg("That tab is no longer open."))?;
+            if let Some(why) = ai::page_read_blocker(tab.private, &tab.url, tab.lifecycle, c.tab_has_view(tab_id)) {
+                return Err(Error::msg(why));
+            }
+            Ok((tab.title.clone(), tab.url.clone(), c.settings.ai_max_context_chars))
+        })
+        .await??;
+    let cap = max_chars.map_or(limit, |m| m.min(limit)).max(500) as usize;
+    let page = read_tab_text(&app, tab_id).await?;
+    Ok(ai::PageSnapshotView::new(tab_id, title, url, page, cap))
+}
+
+/// Adds (`Some`) or removes (`None`) the assistant's style in the active page. Local to this view: nothing is sent to
+/// the site, and reloading the page also removes it. The style is checked first (see `ai::check_page_css`).
+#[tauri::command]
+pub async fn page_style(app: AppHandle, s: State<'_, AppState>, tab_id: TabId, css: Option<String>) -> Result<bool> {
+    if let Some(css) = css.as_deref() {
+        ai::check_page_css(css)?;
+    }
+    s.ctl
+        .call(move |c| -> Result<()> {
+            if c.active_tab_with_view() != Some(tab_id) {
+                return Err(Error::msg("Switch to the page you want to change first."));
+            }
+            let tab = c.tabs.get(tab_id).ok_or_else(|| Error::msg("That tab is no longer open."))?;
+            match ai::page_read_blocker(false, &tab.url, tab.lifecycle, true) {
+                Some(why) => Err(Error::msg(why)),
+                None => Ok(()),
+            }
+        })
+        .await??;
+    let script = ai::page_style_script(css.as_deref());
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.run_on_main_thread(move || native::run_script(tab_id, script, tx))?;
+    let reply = tokio::time::timeout(FILL_TIMEOUT, rx)
+        .await
+        .ok()
+        .and_then(|r| r.ok())
+        .flatten()
+        .ok_or_else(|| Error::msg("The page didn't respond, so its style was not changed."))?;
+    Ok(reply.trim() == "true")
+}
+
+// ---- Project Memory ------------------------------------------------------------------------
+
+/// Saved records matching `query` (every word must match), best first; without a query, newest first.
+#[tauri::command]
+pub async fn memory_list(s: State<'_, AppState>, query: Option<String>, limit: Option<u32>) -> Result<Vec<MemoryItem>> {
+    let limit = limit.unwrap_or(200).clamp(1, 1000) as usize;
+    s.ctl.call(move |c| c.db.memory_search(query.as_deref().unwrap_or(""), limit)).await?
+}
+
+/// Creates a record, or replaces record `id`. Only ever called from a button the user pressed.
+#[tauri::command]
+pub async fn memory_save(s: State<'_, AppState>, draft: MemoryDraft, id: Option<i64>) -> Result<MemoryItem> {
+    s.ctl
+        .call(move |c| match id {
+            Some(id) => c.db.memory_replace(id, draft, now_ms()),
+            None => c.db.memory_create(draft, now_ms()),
+        })
+        .await?
+}
+
+#[tauri::command]
+pub async fn memory_delete(s: State<'_, AppState>, id: i64) -> Result<bool> {
+    s.ctl.call(move |c| c.db.memory_delete(id)).await?
+}
+
+/// Deletes every record. Returns how many there were.
+#[tauri::command]
+pub async fn memory_clear(s: State<'_, AppState>) -> Result<usize> {
+    s.ctl.call(|c| c.db.memory_clear()).await?
 }
 
 #[tauri::command]
@@ -1084,6 +1214,13 @@ macro_rules! all_commands {
             $crate::commands::ai_test,
             $crate::commands::ai_probe,
             $crate::commands::ai_chat,
+            $crate::commands::ai_ask,
+            $crate::commands::ai_page_snapshot,
+            $crate::commands::page_style,
+            $crate::commands::memory_list,
+            $crate::commands::memory_save,
+            $crate::commands::memory_delete,
+            $crate::commands::memory_clear,
             $crate::commands::ai_cancel,
             $crate::commands::app_info,
             $crate::commands::update_check,

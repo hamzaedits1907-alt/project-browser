@@ -29,6 +29,8 @@ pub fn internal_title(url: &str) -> &'static str {
         Some("downloads") => "Downloads",
         Some("performance") => "Performance",
         Some("gaming") => "Gaming",
+        Some("memory") => "Project Memory",
+        Some("research") => "Research",
         _ => "",
     }
 }
@@ -63,8 +65,13 @@ impl Controller {
 
     /// Opens a URL (or omnibox text) in a new tab.
     pub fn open_url(&mut self, input: String, activate: bool) -> Option<TabId> {
+        self.open_url_as(input, activate, false)
+    }
+
+    /// Opens `input` in a new tab; `private` makes it a private tab (nothing recorded, no shared profile data).
+    pub fn open_url_as(&mut self, input: String, activate: bool, private: bool) -> Option<TabId> {
         let resolved = resolve_input(&input, &self.settings.search_template())?;
-        let id = self.tabs.create(NewTab { url: resolved.into_url(), activate, ..Default::default() }, now_ms());
+        let id = self.tabs.create(NewTab { url: resolved.into_url(), activate, private, ..Default::default() }, now_ms());
         self.refresh_tab_meta(id);
         if activate {
             self.after_activation();
@@ -504,6 +511,11 @@ impl Controller {
     pub fn active_tab_with_view(&self) -> Option<TabId> {
         let id = self.tabs.active_id()?;
         self.views.contains_key(&id).then_some(id)
+    }
+
+    /// Whether a native webview currently exists for the tab (shown, hidden or asleep).
+    pub fn tab_has_view(&self, id: TabId) -> bool {
+        self.views.contains_key(&id)
     }
 
     pub fn toggle_browser_fullscreen(&mut self) {

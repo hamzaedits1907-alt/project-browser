@@ -26,7 +26,7 @@ vi.mock("../../lib/ipc", async (original) => {
   };
 });
 
-import { ai, connect, loadAiConfig, loadModels, probeFeature, removeKey, resetAiStoreForTests, selectModel, sendMessage, testSaved } from "./aiStore";
+import { ai, connect, loadAiConfig, loadModels, probeFeature, removeKey, resetAiStoreForTests, saveKeyUnchecked, selectModel, sendMessage, testSaved } from "./aiStore";
 
 const KEY = "nvapi-super-secret-key-1234567890";
 
@@ -167,6 +167,25 @@ describe("connecting with a key", () => {
       await connect(KEY);
     }
     expect(api.aiConfigSet).not.toHaveBeenCalled();
+  });
+
+  it("can save a key the network wouldn't let NVIDIA check, but only after such a failure and never one NVIDIA rejected", async () => {
+    api.aiTest.mockResolvedValue(test({ state: "network", keyOk: false, message: "Couldn't reach NVIDIA." }));
+    await connect(KEY);
+    expect(api.aiConfigSet).not.toHaveBeenCalled();
+    api.aiConfigSet.mockResolvedValue(config({ hasKey: true }));
+    api.aiModels.mockResolvedValue(models({ state: "network", models: [], message: "offline" }));
+    expect(await saveKeyUnchecked(KEY)).toBe(true);
+    expect(api.aiConfigSet).toHaveBeenCalledWith({ apiKey: KEY });
+    expect(ai.get().config?.hasKey).toBe(true);
+    expect(JSON.stringify(ai.get())).not.toContain(KEY);
+
+    api.aiConfigSet.mockClear();
+    api.aiTest.mockResolvedValue(test({ state: "invalidKey", keyOk: false }));
+    await connect(KEY);
+    expect(await saveKeyUnchecked(KEY)).toBe(false);
+    expect(api.aiConfigSet).not.toHaveBeenCalled();
+    expect(ai.get().connection.error).toContain("rejected");
   });
 
   it("saves a working key even when the previously chosen model is gone, and says so", async () => {

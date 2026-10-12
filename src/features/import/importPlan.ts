@@ -171,3 +171,167 @@ export function summarizePasswordReport(r: PasswordImportReport): PasswordSummar
       : { tone: "warn", text: "The export file still holds your passwords as plain text. Delete it now, including from the Recycle Bin." };
   return { tone, title, rows, fileNote };
 }
+
+// ---- the checklist shown after an import -------------------------------------------------------
+
+export type ChecklistStatus =
+  /** Added by this import. */
+  | "imported"
+  /** Found, but everything was already here from an earlier import. */
+  | "already"
+  /** Cannot be imported, by design or because it isn't possible. */
+  | "unsupported"
+  /** Needs the other browser closed, then a retry of just this item. */
+  | "needsBrowserClosed"
+  /** Waiting for something the user does. */
+  | "needsAction"
+  | "failed"
+  /** Nothing of this kind was found. */
+  | "notFound";
+
+export interface ChecklistRow {
+  key: string;
+  label: string;
+  status: ChecklistStatus;
+  text: string;
+  /** Repeats only this item, not the whole import. */
+  retry?: keyof ImportChoices;
+  /** A button the row offers, handled by the wizard. */
+  action?: "passwords" | "google";
+}
+
+export type KindReports = Partial<Record<keyof ImportChoices, ImportReport>>;
+
+export interface ChecklistInput {
+  plan: ImportPlan;
+  /** What was selected in the wizard (after `effectiveChoices`). */
+  chosen: ImportChoices;
+  /** The latest report for each kind of data that has been imported (a retry replaces only its own kind). */
+  reports: KindReports;
+  /** The result of the password import, if one was done. */
+  passwords: PasswordImportReport | null;
+  browserLabel: string;
+}
+
+function countText(added: number, already: number, noun: [string, string]): string {
+  const parts: string[] = [];
+  if (added > 0) parts.push(`${plural(added, noun[0], noun[1])} added`);
+  if (already > 0) parts.push(`${already.toLocaleString()} already there`);
+  return parts.join(", ");
+}
+
+type Verdict = { status: ChecklistStatus; text: string };
+
+/**
+ * One row per kind of data, each saying plainly what happened and what is left. It only claims what a report says was
+ * written; a kind that was not imported is never shown as done.
+ */
+export function buildChecklist({ plan, chosen, reports, passwords, browserLabel }: ChecklistInput): ChecklistRow[] {
+  const rows: ChecklistRow[] = [];
+
+  const kind = (key: keyof ImportChoices, label: string, option: ImportOption, judge: (r: ImportReport) => Verdict | null) => {
+    if (!option.available) {
+      rows.push({ key, label, status: "notFound", text: option.detail });
+      return;
+    }
+    const r = reports[key];
+    if (!r) {
+      rows.push({ key, label, status: "needsAction", text: chosen[key] ? "Not imported yet." : "Not selected. You can bring it over now without repeating the rest.", retry: key });
+      return;
+    }
+    const verdict = judge(r);
+    if (verdict) {
+      rows.push({ key, label, ...verdict, ...(verdict.status === "needsBrowserClosed" ? { retry: key } : {}) });
+    } else if (r.errors.length > 0) {
+      rows.push({ key, label, status: "failed", text: "Something went wrong (see the problems above). You can try just this item again.", retry: key });
+    } else {
+      rows.push({ key, label, status: "notFound", text: "Nothing of this kind was found to import." });
+    }
+  };
+
+  kind("bookmarks", "Bookmarks", plan.bookmarks, (r) =>
+    r.bookmarksImported > 0
+      ? { status: "imported", text: countText(r.bookmarksImported, r.bookmarksSkipped, ["bookmark", "bookmarks"]) }
+      : r.bookmarksSkipped > 0
+        ? { status: "already", text: `${r.bookmarksSkipped.toLocaleString()} already imported earlier` }
+        : null,
+  );
+  kind("history", "History", plan.history, (r) =>
+    r.historyImported + r.historyVisitsImported > 0
+      ? {
+          status: "imported",
+          text: [countText(r.historyImported, r.historySkipped, ["page", "pages"]), r.historyVisitsImported > 0 ? `${plural(r.historyVisitsImported, "visit", "visits")} with their dates` : ""]
+            .filter(Boolean)
+            .join("; "),
+        }
+      : r.historySkipped > 0
+        ? { status: "already", text: `${r.historySkipped.toLocaleString()} already imported earlier` }
+        : null,
+  );
+  kind("searchEngine", "Search engine", plan.searchEngine, (r) => (r.searchEngine ? { status: "imported", text: `Default set to ${r.searchEngine}` } : null));
+  kind("addresses", "Saved addresses", plan.addresses, (r) =>
+    r.addressesImported > 0
+      ? { status: "imported", text: `${plural(r.addressesImported, "address", "addresses")} saved (encrypted)` }
+      : r.addressesSkipped > 0
+        ? { status: "already", text: `${r.addressesSkipped.toLocaleString()} already saved or empty` }
+        : null,
+  );
+  kind("session", "Open tabs", plan.session, (r) => {
+    if (r.sessionTabs > 0) {
+      return r.sessionTabsSaved > 0
+        ? { status: "imported", text: `${plural(r.sessionTabsSaved, "tab", "tabs")} saved under Other bookmarks, in “Open tabs”` }
+        : { status: "already", text: `${plural(r.sessionTabs, "tab", "tabs")} found, all already saved or not web pages` };
+    }
+    if (r.errors.length > 0) return null;
+    return { status: "needsBrowserClosed", text: `No open tabs could be read. ${browserLabel} keeps its current tabs locked while it runs: close it completely, then try just this item again.` };
+  });
+
+  // Passwords never come from the other browser's files: the user exports them.
+  if (!plan.passwords.available) {
+    rows.push({ key: "passwords", label: "Saved passwords", status: "notFound", text: plan.passwords.detail });
+  } else if (!passwords) {
+    rows.push({ key: "passwords", label: "Saved passwords", status: "needsAction", text: `Export them from ${browserLabel} and choose the file. They are stored encrypted for your Windows account.`, action: "passwords" });
+  } else if (passwords.imported + passwords.updated > 0) {
+    rows.push({
+      key: "passwords",
+      label: "Saved passwords",
+      status: "imported",
+      text: `${plural(passwords.imported + passwords.updated, "login", "logins")} stored encrypted${passwords.fileErased ? "; the export file was deleted" : "; the export file still exists: delete it yourself"}`,
+    });
+  } else if (passwords.duplicates > 0) {
+    rows.push({ key: "passwords", label: "Saved passwords", status: "already", text: `${passwords.duplicates.toLocaleString()} logins were already saved` });
+  } else {
+    rows.push({ key: "passwords", label: "Saved passwords", status: "failed", text: passwords.errors[0] ?? "No logins could be imported from that file.", action: "passwords" });
+  }
+
+  for (const u of plan.unsupported) {
+    rows.push({ key: u.kind, label: u.label, status: "unsupported", text: u.detail });
+  }
+  rows.push({
+    key: "google",
+    label: "Google sign-in",
+    status: "needsAction",
+    text: "Sign in once with Google's own page. This browser keeps you signed in across restarts. It is separate from Chrome Sync and from your other sites.",
+    action: "google",
+  });
+  rows.push({ key: "sites", label: "Other sites", status: "needsAction", text: "Sign in once to each site. Imported passwords are offered when you click them, and are never filled or submitted automatically." });
+  return rows;
+}
+
+/** Records a run's report for every kind it covered. A retry of one kind replaces only that kind's report. */
+export function recordReport(reports: KindReports, kinds: readonly (keyof ImportChoices)[], report: ImportReport): KindReports {
+  const next: KindReports = { ...reports };
+  for (const k of kinds) next[k] = report;
+  return next;
+}
+
+export function chosenKinds(choices: ImportChoices): (keyof ImportChoices)[] {
+  return (Object.keys(choices) as (keyof ImportChoices)[]).filter((k) => choices[k]);
+}
+
+/** The choices for repeating exactly one kind of data. */
+export function onlyChoice(key: keyof ImportChoices): ImportChoices {
+  return { bookmarks: false, history: false, searchEngine: false, addresses: false, session: false, [key]: true };
+}
+
+export const GOOGLE_SIGN_IN_URL = "https://accounts.google.com/";

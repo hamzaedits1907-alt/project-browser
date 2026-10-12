@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 
-import { Badge, Button, Spinner } from "../../components/ui/controls";
+import { Badge, Button, Slider, Spinner } from "../../components/ui/controls";
 import { Icon } from "../../components/ui/Icon";
-import { Card, Notice } from "../../components/ui/Section";
-import { capabilityView, featureGate, formatCount, KIND_LABEL, resolveSelection, stateView } from "../../features/ai/aiModels";
-import { ai, connect, loadAiConfig, loadModels, probeFeature, removeKey, removeStaleKey, selectModel, testSaved } from "../../features/ai/aiStore";
+import { Card, Notice, SettingRow } from "../../components/ui/Section";
+import { capabilityView, featureGate, formatCount, isTransientFailure, KIND_LABEL, resolveSelection, setupStage, stateView } from "../../features/ai/aiModels";
+import type { SetupStage } from "../../features/ai/aiModels";
+import { ai, connect, loadAiConfig, loadModels, probeFeature, removeKey, removeStaleKey, saveKeyUnchecked, selectModel, testSaved } from "../../features/ai/aiStore";
 import type { ConnectionUi } from "../../features/ai/aiStore";
 import { ModelPicker } from "../../features/ai/ModelPicker";
+import { api } from "../../lib/ipc";
 import { toast } from "../../lib/store";
+import { useSettings } from "../../lib/useSettings";
 import type { AiCapabilities, AiFeature, ModelInfo } from "../../lib/types";
 
 const NOTICE_TONE = { good: "good", warn: "warn", bad: "bad", neutral: "info" } as const;
@@ -34,6 +37,33 @@ function ConnectionStatus({ connection }: { connection: ConnectionUi }) {
       <strong>{view.headline}.</strong> {r.message}
       {facts.length > 0 && <div className="dim small">{facts.join(" · ")}</div>}
     </Notice>
+  );
+}
+
+const STAGE_TEXT: Record<SetupStage["stage"], { tone: "good" | "warn" | "bad" | "neutral"; text: string }> = {
+  loading: { tone: "neutral", text: "Reading your saved settings…" },
+  noKey: { tone: "neutral", text: "Step 1: paste your NVIDIA API key." },
+  keyEntered: { tone: "neutral", text: "Press Connect to check the key with NVIDIA and save it." },
+  keySaved: { tone: "neutral", text: "Your key is saved. Loading models…" },
+  catalogLoading: { tone: "neutral", text: "Loading NVIDIA's model list…" },
+  invalidKey: { tone: "bad", text: "NVIDIA rejected the key. Paste a new one." },
+  providerFailure: { tone: "warn", text: "Couldn't finish talking to NVIDIA. Your key is saved; try again." },
+  noUsableModels: { tone: "warn", text: "NVIDIA's list has no model the assistant can chat with right now." },
+  chooseModel: { tone: "neutral", text: "Step 2: choose a model below." },
+  modelUnavailable: { tone: "warn", text: "The chosen model can't be used. Choose another below." },
+  verified: { tone: "good", text: "Connected. Choose a model below to start." },
+  ready: { tone: "good", text: "Ready to chat." },
+};
+
+function StageLine({ stage }: { stage: SetupStage }) {
+  const view = STAGE_TEXT[stage.stage];
+  const detail = stage.stage === "modelUnavailable" ? ` ${stage.reason}` : stage.stage === "ready" && !stage.verified ? " (not yet tested: press Test connection to confirm)" : "";
+  return (
+    <p className={`setup-stage tone-${view.tone}`} role="status">
+      <Badge tone={view.tone}>{view.tone === "good" ? "OK" : view.tone === "bad" ? "Problem" : view.tone === "warn" ? "Attention" : "Next"}</Badge>{" "}
+      {view.text}
+      {detail}
+    </p>
   );
 }
 
@@ -104,6 +134,7 @@ export function AiSettings() {
   // The key is typed into an uncontrolled field and read once, so it never sits in React state or the store.
   const keyInput = useRef<HTMLInputElement>(null);
   const [keyTyped, setKeyTyped] = useState(false);
+  const { settings, updateSoon } = useSettings();
 
   useEffect(() => {
     void loadAiConfig().then((c) => {
@@ -112,6 +143,15 @@ export function AiSettings() {
   }, []);
 
   const hasKey = !!config?.hasKey;
+  const stage = setupStage({
+    hasKey: config ? config.hasKey : null,
+    keyTyped,
+    models,
+    connection: { phase: connection.phase, state: connection.result?.state ?? null, keyOk: connection.result?.keyOk ?? false },
+    selectedModel: config?.model ?? "",
+    unavailable,
+  });
+  const canSaveUnchecked = keyTyped && connection.phase === "done" && !!connection.result && !connection.result.keyOk && isTransientFailure(connection.result.state);
   const busy = connection.phase === "testing";
   const selection = resolveSelection(models.models, config?.model ?? "", unavailable);
   const selectedModel = selection.status === "ready" ? selection.model : selection.status === "unsupported" ? selection.model : null;
@@ -124,6 +164,16 @@ export function AiSettings() {
       if (keyInput.current) keyInput.current.value = "";
       setKeyTyped(false);
       toast("NVIDIA key saved");
+    }
+  };
+
+  const onSaveUnchecked = async () => {
+    const value = keyInput.current?.value.trim() ?? "";
+    if (!value) return;
+    if (await saveKeyUnchecked(value)) {
+      if (keyInput.current) keyInput.current.value = "";
+      setKeyTyped(false);
+      toast("NVIDIA key saved (not checked)");
     }
   };
 
@@ -151,12 +201,12 @@ export function AiSettings() {
               type="password"
               autoComplete="new-password"
               spellCheck={false}
-              disabled={!config || busy}
+              disabled={busy}
               placeholder={hasKey ? "Paste a new key to replace the saved one" : "nvapi-…"}
               onChange={(e) => setKeyTyped(e.target.value.trim().length > 0)}
               onKeyDown={(e) => e.key === "Enter" && void onConnect()}
             />
-            <Button variant="primary" disabled={!config || busy || !keyTyped} onClick={() => void onConnect()}>
+            <Button variant="primary" disabled={busy || !keyTyped} onClick={() => void onConnect()}>
               {busy && keyTyped ? "Checking…" : hasKey ? "Replace key" : "Connect"}
             </Button>
           </div>
@@ -172,7 +222,22 @@ export function AiSettings() {
           )}
         </div>
 
+        <StageLine stage={stage} />
+
         <ConnectionStatus connection={connection} />
+
+        {canSaveUnchecked && (
+          <Notice tone="info">
+            NVIDIA couldn't be reached to check this key, which says nothing about the key itself. You can save it anyway and test it later.{" "}
+            <Button size="sm" onClick={() => void onSaveUnchecked()}>Save without checking</Button>
+          </Notice>
+        )}
+        {!config && (
+          <Notice tone="warn">
+            Your saved AI settings couldn't be read, but you can still enter a key.{" "}
+            <Button size="sm" onClick={() => void loadAiConfig()}>Try again</Button>
+          </Notice>
+        )}
 
         {config?.staleKey && (
           <Notice tone="warn">
@@ -242,10 +307,35 @@ export function AiSettings() {
         )}
       </Card>
 
+      <Card title="Context and cost" subtitle="Every request that carries page text is cut to this size, and the core refuses anything larger, whatever the page or feature asks for.">
+        <SettingRow title="Most page text per request" description="About four characters make a token. Smaller is cheaper and faster; larger lets Research compare more or longer pages.">
+          <Slider
+            label="Most page text per request, in characters"
+            min={4000}
+            max={120000}
+            step={2000}
+            value={settings.aiMaxContextChars}
+            format={(v) => `${Math.round(v / 4).toLocaleString("en-US")} tokens`}
+            onChange={(aiMaxContextChars) => updateSoon({ aiMaxContextChars })}
+          />
+        </SettingRow>
+        <p className="dim small">Replies are limited to 4,096 tokens and stop after three minutes. Stop buttons cancel a request at once. A page's menus, footers and scripts are left out before anything is counted.</p>
+      </Card>
+
+      <Card title="Project Memory and Research">
+        <p className="dim">Notes, summaries and research you choose to keep stay on this computer, in your profile. Research and Actions read only the tabs you select.</p>
+        <div className="row-actions">
+          <Button icon="bookmarks" onClick={() => void api.tabNew("browser://memory")}>Open Project Memory</Button>
+          <Button icon="layers" onClick={() => void api.tabNew("browser://research")}>Open Research</Button>
+        </div>
+      </Card>
+
       <Card title="Privacy">
         <ul className="plain-list">
-          <li>Nothing is sent until you press Send in the assistant panel, Connect, or Test connection.</li>
-          <li>The page's text is shared only when you switch on “Include this page”, and never from private tabs.</li>
+          <li>Nothing is sent until you press Send in the assistant panel, Connect, Test connection, Run in Research, or Run on a plan you have read.</li>
+          <li>The page's text is shared only when you switch on “Include this page”, tick pages in Research, or confirm a plan that reads the page, and never from private tabs.</li>
+          <li>Web pages are treated as untrusted text. They cannot add steps to a plan or grant themselves permissions, and plans are made without seeing any page.</li>
+          <li>Your cookies, saved passwords and files are never part of a request.</li>
           <li>Your messages (and the page, if included) go to NVIDIA's hosted API at integrate.api.nvidia.com.</li>
           <li>
             Your API key is kept in Windows Credential Manager, encrypted for your Windows account. It is not written to the browser's database or

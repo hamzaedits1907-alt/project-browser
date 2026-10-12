@@ -68,6 +68,8 @@ export interface Settings {
   heavyTabMemoryMb: number;
   protectPinnedTabs: boolean;
   memoryLimitMb: number;
+  /** Most page text, in characters, one AI request may carry (about four characters per token). */
+  aiMaxContextChars: number;
   checkUpdates: boolean;
 }
 
@@ -487,3 +489,49 @@ export type BrowserCommand =
   | { type: "zoomReset" }
   | { type: "fullscreen" }
   | { type: "toggleGamingMode" };
+
+// ---- Project Memory and page reading -----------------------------------------------------
+
+export type MemoryKind = "note" | "page" | "research" | "session";
+
+/** A web page a saved record came from: its address and title only, never its text. */
+export interface MemorySource {
+  url: string;
+  title: string;
+}
+
+/** A record the user chose to keep. */
+export interface MemoryItem {
+  id: number;
+  kind: MemoryKind;
+  title: string;
+  body: string;
+  tags: string[];
+  sources: MemorySource[];
+  /** Ids of other records the user linked this one to. */
+  related: number[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** What is sent to create or replace a record. */
+export interface MemoryDraft {
+  kind: MemoryKind;
+  title: string;
+  body: string;
+  tags: string[];
+  sources: MemorySource[];
+  related: number[];
+}
+
+/** The readable text of one open tab, already cut to the size that was asked for. */
+export interface PageSnapshotView {
+  tabId: TabId;
+  title: string;
+  url: string;
+  text: string;
+  selection: string;
+  /** Characters of readable text the page has before it was cut. */
+  totalChars: number;
+  truncated: boolean;
+}

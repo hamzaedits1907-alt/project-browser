@@ -6,6 +6,7 @@
 pub mod bookmarks;
 pub mod downloads;
 pub mod history;
+pub mod memory;
 pub mod permissions;
 pub mod vault;
 
@@ -108,6 +109,21 @@ CREATE TABLE vault_profiles (
   sealed      BLOB NOT NULL,
   created_at  INTEGER NOT NULL
 );
+"#,
+    // v3: Project Memory. Records the user saved on purpose (notes, kept summaries, kept research), see db/memory.rs.
+    r#"
+CREATE TABLE memory_items (
+  id           INTEGER PRIMARY KEY,
+  kind         TEXT NOT NULL,
+  title        TEXT NOT NULL,
+  body         TEXT NOT NULL,
+  tags_json    TEXT NOT NULL DEFAULT '[]',
+  sources_json TEXT NOT NULL DEFAULT '[]',
+  related_json TEXT NOT NULL DEFAULT '[]',
+  created_at   INTEGER NOT NULL,
+  updated_at   INTEGER NOT NULL
+);
+CREATE INDEX memory_items_updated ON memory_items(updated_at DESC);
 "#,
 ];
 

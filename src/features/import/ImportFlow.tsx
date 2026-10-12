@@ -5,10 +5,11 @@ import { Icon } from "../../components/ui/Icon";
 import { EmptyState, Notice } from "../../components/ui/Section";
 import { api, errorMessage } from "../../lib/ipc";
 import { toast } from "../../lib/store";
-import { defaultChoices, effectiveChoices, hasAnyChoice, importPlan, profileKey, summarizeReport } from "./importPlan";
-import type { ImportPlan } from "./importPlan";
+import { buildChecklist, chosenKinds, defaultChoices, effectiveChoices, GOOGLE_SIGN_IN_URL, hasAnyChoice, importPlan, onlyChoice, profileKey, recordReport, summarizeReport } from "./importPlan";
+import type { ImportPlan, KindReports } from "./importPlan";
+import { ImportChecklist } from "./ImportChecklist";
 import { PasswordImport } from "./PasswordImport";
-import type { DetectedProfile, ImportChoices, ImportReport } from "../../lib/types";
+import type { DetectedProfile, ImportChoices, ImportReport, PasswordImportReport } from "../../lib/types";
 
 type Phase =
   | { name: "detecting" }
@@ -38,6 +39,11 @@ export function ImportFlow({ onClose, onDone, cancelLabel = "Cancel" }: { onClos
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [choices, setChoices] = useState<ImportChoices>({ bookmarks: true, history: true, searchEngine: true, addresses: true, session: false });
   const [attempt, setAttempt] = useState(0);
+  // The latest report for each kind of data, so a retry of one item replaces only that item's result.
+  const [kindReports, setKindReports] = useState<KindReports>({});
+  const [passwordReport, setPasswordReport] = useState<PasswordImportReport | null>(null);
+  const [sentChoices, setSentChoices] = useState<ImportChoices>({ bookmarks: false, history: false, searchEngine: false, addresses: false, session: false });
+  const [retrying, setRetrying] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -99,13 +105,37 @@ export function ImportFlow({ onClose, onDone, cancelLabel = "Cancel" }: { onClos
 
   if (phase.name === "passwords") {
     const { profile, after } = phase;
-    return <PasswordImport browserLabel={profile.browserLabel} onClose={() => setPhase(after)} />;
+    return <PasswordImport browserLabel={profile.browserLabel} onFinished={setPasswordReport} onClose={() => setPhase(after)} />;
   }
 
   if (phase.name === "done") {
     const { report, profile, plan } = phase;
     const s = summarizeReport(report);
-    const urls = report.sessionUrls.slice(0, OPEN_TABS_LIMIT);
+    const sessionUrls = kindReports.session?.sessionUrls ?? report.sessionUrls;
+    const urls = sessionUrls.slice(0, OPEN_TABS_LIMIT);
+    const checklist = buildChecklist({ plan, chosen: sentChoices, reports: kindReports, passwords: passwordReport, browserLabel: profile.browserLabel });
+    const retry = (key: keyof ImportChoices) => {
+      void (async () => {
+        setRetrying(true);
+        try {
+          const next = await api.importRun(profile.browser, profile.profileDir, onlyChoice(key));
+          setKindReports((cur) => recordReport(cur, [key], next));
+          setSentChoices((cur) => ({ ...cur, [key]: true }));
+          onDone?.(next);
+        } catch (e) {
+          toast(errorMessage(e));
+        } finally {
+          setRetrying(false);
+        }
+      })();
+    };
+    const act = (action: "passwords" | "google") => {
+      if (action === "passwords") setPhase({ name: "passwords", profile, after: phase });
+      else {
+        void api.tabNew(GOOGLE_SIGN_IN_URL).catch((e) => toast(errorMessage(e)));
+        onClose();
+      }
+    };
     const openTabs = () => {
       void (async () => {
         for (const url of urls) await api.tabNew(url).catch(() => undefined);
@@ -119,47 +149,23 @@ export function ImportFlow({ onClose, onDone, cancelLabel = "Cancel" }: { onClos
           <Icon name={s.tone === "bad" ? "warning" : "check"} size={26} />
           <div>
             <h3>{s.title}</h3>
-            {s.rows.length > 0 ? (
-              <ul className="result-rows">
-                {s.rows.map((r) => (
-                  <li key={r.key} className={`tone-${r.tone}`}>
-                    <strong>{r.label}</strong>
-                    <span>{r.text}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <ul className="plain-list">{s.lines.map((l) => <li key={l}>{l}</li>)}</ul>
-            )}
+            {s.rows.length === 0 && <ul className="plain-list">{s.lines.map((l) => <li key={l}>{l}</li>)}</ul>}
           </div>
         </div>
+        <ImportChecklist rows={checklist} busy={retrying} onRetry={retry} onAction={act} />
         {report.errors.length > 0 && (
           <Notice tone="warn">
             <strong>Not everything could be imported:</strong>
             {report.errors.map((e) => <div key={e}>{e}</div>)}
           </Notice>
         )}
-        {plan.unsupported.length > 0 && (
-          <p className="dim small">
-            Not imported, by design: {plan.unsupported.map((u) => u.label.toLowerCase()).join(", ")}. {plan.unsupported[0]?.kind === "cookies" ? "Sign in to your sites once here; your saved passwords make that quick." : ""}
-          </p>
-        )}
         {urls.length > 0 && (
           <div className="next-step">
             <div>
-              <strong>{report.sessionUrls.length > OPEN_TABS_LIMIT ? `Open the first ${OPEN_TABS_LIMIT} of ${report.sessionUrls.length} tabs` : `Open the ${urls.length} tab${urls.length === 1 ? "" : "s"} you had open`}</strong>
+              <strong>{sessionUrls.length > OPEN_TABS_LIMIT ? `Open the first ${OPEN_TABS_LIMIT} of ${sessionUrls.length} tabs` : `Open the ${urls.length} tab${urls.length === 1 ? "" : "s"} you had open`}</strong>
               <small>They are also saved under Other bookmarks, in “Open tabs”.</small>
             </div>
             <Button icon="tabs" onClick={openTabs}>Open now</Button>
-          </div>
-        )}
-        {plan.passwords.available && (
-          <div className="next-step">
-            <div>
-              <strong>Bring your saved passwords too</strong>
-              <small>Export them from {profile.browserLabel} and choose the file. Takes about a minute.</small>
-            </div>
-            <Button icon="lock" onClick={() => setPhase({ name: "passwords", profile, after: phase })}>Import passwords…</Button>
           </div>
         )}
         <div className="wizard-actions"><Button variant="primary" onClick={onClose}>Done</Button></div>
@@ -195,6 +201,9 @@ export function ImportFlow({ onClose, onDone, cancelLabel = "Cancel" }: { onClos
     setPhase({ name: "running" });
     try {
       const report = await api.importRun(chosen.browser, chosen.profileDir, sent);
+      setKindReports(recordReport({}, chosenKinds(sent), report));
+      setSentChoices(sent);
+      setPasswordReport(null);
       onDone?.(report);
       setPhase({ name: "done", report, profile: chosen, plan });
     } catch (e) {

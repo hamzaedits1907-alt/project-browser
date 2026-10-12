@@ -26,8 +26,11 @@ import type {
   ImportChoices,
   ImportReport,
   LoginSummary,
+  MemoryDraft,
+  MemoryItem,
   ModelsResponse,
   NtpData,
+  PageSnapshotView,
   PasswordImportReport,
   PerfSample,
   PermissionPrompt,
@@ -116,6 +119,13 @@ export const COMMANDS = [
   "ai_test",
   "ai_probe",
   "ai_chat",
+  "ai_ask",
+  "ai_page_snapshot",
+  "page_style",
+  "memory_list",
+  "memory_save",
+  "memory_delete",
+  "memory_clear",
   "ai_cancel",
   "app_info",
   "update_check",
@@ -142,7 +152,7 @@ export const api = {
   overlayClose: (focusPage = true) => call("overlay_close", { focusPage }),
   runCommand: (command: BrowserCommand) => call("run_command", { command }),
 
-  tabNew: (url?: string, isPrivate?: boolean) => call("tab_new", { url, private: isPrivate }),
+  tabNew: (url?: string, isPrivate?: boolean, background?: boolean) => call("tab_new", { url, private: isPrivate, background }),
   tabClose: (id: TabId) => call("tab_close", { id }),
   tabCloseOthers: (id: TabId) => call("tab_close_others", { id }),
   tabActivate: (id: TabId) => call("tab_activate", { id }),
@@ -223,6 +233,22 @@ export const api = {
   aiChat: (requestId: string, messages: AiChatMessage[], includePage: boolean) =>
     call("ai_chat", { requestId, messages, includePage }),
   aiCancel: (requestId: string) => call("ai_cancel", { requestId }),
+  /**
+   * A streamed reply to a request the shell built (comparison, claim check, plan). Text arrives as `pb:ai` events for
+   * `requestId`. The core refuses requests above the user's context limit.
+   */
+  aiAsk: (requestId: string, system: string, messages: AiChatMessage[], maxTokens?: number) =>
+    call("ai_ask", { requestId, system, messages, maxTokens }),
+  /** The readable text of one open tab. The core refuses private tabs, browser pages and tabs that are not running. */
+  aiPageSnapshot: (tabId: TabId, maxChars?: number) => call<PageSnapshotView>("ai_page_snapshot", { tabId, maxChars }),
+  /** Adds (a string) or removes (`null`) the assistant's style in the active page. Local to that view. */
+  pageStyle: (tabId: TabId, css: string | null) => call<boolean>("page_style", { tabId, css }),
+
+  memoryList: (query?: string, limit?: number) => call<MemoryItem[]>("memory_list", { query, limit }),
+  /** Creates a record, or replaces record `id`. */
+  memorySave: (draft: MemoryDraft, id?: number) => call<MemoryItem>("memory_save", { draft, id }),
+  memoryDelete: (id: number) => call<boolean>("memory_delete", { id }),
+  memoryClear: () => call<number>("memory_clear"),
 
   appInfo: () => call<AppInfo>("app_info"),
   updateCheck: () => call<UpdateStatus>("update_check"),

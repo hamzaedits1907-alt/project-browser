@@ -1,11 +1,13 @@
 import { createStore } from "../../lib/createStore";
 import { api, errorMessage, on } from "../../lib/ipc";
 import type { AiChatMessage, AiConfigView, AiFeature, AiProbeResult, AiTestResult, ConnectionState, ModelInfo } from "../../lib/types";
-import { isModelProblem } from "./aiModels";
+import { isModelProblem, isTransientFailure } from "./aiModels";
 
 export interface AiMessage extends AiChatMessage {
   id: number;
   error?: boolean;
+  /** The page an assistant answer was based on, when the user shared one. Only used to credit it if the answer is saved. */
+  source?: { url: string; title: string };
 }
 
 /** The model list as the UI sees it: what was loaded, or why it could not be. */
@@ -174,6 +176,27 @@ export async function connect(key: string): Promise<AiTestResult | null> {
   return result;
 }
 
+/**
+ * Saves a key without NVIDIA having confirmed it. Offered only when the check failed for a reason that says nothing
+ * about the key (the network is down, NVIDIA is rate limiting). A key NVIDIA actively rejected is never saved this way.
+ */
+export async function saveKeyUnchecked(key: string): Promise<boolean> {
+  const last = ai.get().connection.result;
+  if (last && !isTransientFailure(last.state)) {
+    ai.set({ connection: { phase: "done", result: last, error: "That key was rejected, so it wasn't saved." } });
+    return false;
+  }
+  try {
+    const config = await api.aiConfigSet({ apiKey: key });
+    ai.set({ config, models: NO_MODELS, connection: { phase: "idle", result: null, error: null } });
+    await loadModels(true);
+    return true;
+  } catch (e) {
+    ai.set({ connection: { phase: "done", result: last ?? null, error: errorMessage(e) } });
+    return false;
+  }
+}
+
 /** Re-checks the saved key and the selected model. */
 export async function testSaved(): Promise<AiTestResult | null> {
   ai.set({ connection: { phase: "testing", result: null, error: null } });
@@ -243,7 +266,7 @@ export function clearConversation(): void {
   ai.set({ messages: [], streaming: false, requestId: null });
 }
 
-export async function sendMessage(text: string, includePage?: boolean): Promise<void> {
+export async function sendMessage(text: string, includePage?: boolean, source?: AiMessage["source"]): Promise<void> {
   const prompt = text.trim();
   const s = ai.get();
   if (!prompt || s.streaming) return;
@@ -253,7 +276,7 @@ export async function sendMessage(text: string, includePage?: boolean): Promise<
   const messages: AiMessage[] = [
     ...s.messages,
     { id: seq++, role: "user", content: prompt },
-    { id: seq++, role: "assistant", content: "" },
+    { id: seq++, role: "assistant", content: "", ...(source ? { source } : {}) },
   ];
   ai.set({ messages, streaming: true, requestId });
   try {

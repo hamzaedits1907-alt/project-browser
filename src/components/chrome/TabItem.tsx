@@ -106,5 +106,7 @@ function internalIcon(url: string) {
   if (url.includes("downloads")) return "download" as const;
   if (url.includes("performance")) return "gauge" as const;
   if (url.includes("gaming")) return "gamepad" as const;
+  if (url.includes("memory")) return "bookmarks" as const;
+  if (url.includes("research")) return "search" as const;
   return "sparkle" as const;
 }

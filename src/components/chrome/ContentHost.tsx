@@ -17,6 +17,8 @@ const Bookmarks = lazy(() => import("../../pages/Bookmarks"));
 const Downloads = lazy(() => import("../../pages/Downloads"));
 const Performance = lazy(() => import("../../pages/Performance"));
 const Gaming = lazy(() => import("../../pages/Gaming"));
+const Memory = lazy(() => import("../../pages/Memory"));
+const Research = lazy(() => import("../../pages/Research"));
 
 function InternalPage({ page }: { page: string }) {
   switch (page) {
@@ -32,6 +34,10 @@ function InternalPage({ page }: { page: string }) {
       return <Performance />;
     case "gaming":
       return <Gaming />;
+    case "memory":
+      return <Memory />;
+    case "research":
+      return <Research />;
     default:
       return <NewTab />;
   }

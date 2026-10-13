@@ -106,6 +106,7 @@
     "allow-windows-list",
     "allow-tab-to-window",
     "allow-context-menu-choose",
+    "core:event:allow-emit-to",
     "allow-tab-drag-hover",
     "allow-tab-drag-end",
     "allow-window-new",

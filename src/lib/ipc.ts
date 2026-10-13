@@ -167,6 +167,9 @@ export const COMMANDS = [
   "window_new",
   "tab_group",
   "context_menu_choose",
+  "menu_surface_ready",
+  "menu_present",
+  "menu_dismiss",
   "shield_state",
   "shield_tab",
   "shield_set",
@@ -341,6 +344,12 @@ export const api = {
   tabGroup: (op: GroupOp) => call<GroupId | null>("tab_group", { op }),
   /** Closes right-click menu `request`, running WebView2's command `command` if one was chosen. */
   contextMenuChoose: (request: number, command: number | null) => call("context_menu_choose", { request, command }),
+  /** The menu window (only) has loaded. */
+  menuSurfaceReady: () => call("menu_surface_ready"),
+  /** The menu window (only): place the rendered menu of this CSS size at the click and show it. */
+  menuPresent: (width: number, height: number) => call("menu_present", { width, height }),
+  /** The menu window (only): hide. */
+  menuDismiss: (refocus: boolean) => call("menu_dismiss", { refocus }),
   shieldTest: (url: string, page: string) => call<string>("shield_test", { url, page }),
   /** Opens, closes, swaps or resizes this window's split view. */
   splitView: (op: SplitOp) => call("split_view", { op }),

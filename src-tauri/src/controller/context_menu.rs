@@ -21,6 +21,8 @@ pub struct ContextMenuEvent {
     pub private: bool,
     pub target: ContextTarget,
     pub items: Vec<NativeMenuItem>,
+    /// The menu window is ready: the shell sends the menu there (drawn over the live page) instead of drawing it itself.
+    pub popup: bool,
 }
 
 /// Picks the menu position: the mouse pointer when it is inside the clicked area (a right-click), otherwise the point
@@ -79,7 +81,20 @@ impl Controller {
             req.items.len()
         );
         let private = tab_id.and_then(|id| self.tabs.get(id)).map(|t| t.private).unwrap_or(self.private_window);
-        self.emit("pb:contextmenu", ContextMenuEvent { request_id: req.id, tab_id, x, y, private, target: req.target, items: req.items });
+        let popup = crate::menu_surface::is_ready() && self.set_menu_anchor(x, y);
+        self.emit("pb:contextmenu", ContextMenuEvent { request_id: req.id, tab_id, x, y, private, target: req.target, items: req.items, popup });
+    }
+
+    /// Records where the menu window should open: point `(x, y)` of this window (CSS pixels) on the screen.
+    fn set_menu_anchor(&self, x: f64, y: f64) -> bool {
+        let Some(window) = self.app.get_window(&self.current) else { return false };
+        let (Ok(inner), Ok(scale)) = (window.inner_position(), window.scale_factor()) else { return false };
+        crate::menu_surface::set_anchor(crate::menu_surface::Anchor {
+            owner: self.current.clone(),
+            x: inner.x + (x * scale).round() as i32,
+            y: inner.y + (y * scale).round() as i32,
+        });
+        true
     }
 
     /// Completes a menu without running a WebView2 command (dismissed, superseded or not for this window).
@@ -97,6 +112,13 @@ impl Controller {
         log::info!("context menu {id}: closed{}", if command.is_some() { " with a WebView2 command" } else { "" });
         if self.layout.context_menu == Some(id) {
             self.layout.context_menu = None;
+        }
+        if command.is_some() && !self.layout.overlay {
+            // Menu window path: the page never lost its place, but it lost keyboard focus to the menu. Commands such
+            // as Paste act on the focused field, so the page gets focus back first.
+            if let Some(v) = self.tabs.active_id().and_then(|a| self.views.get(&a)).filter(|v| v.visible) {
+                let _ = v.webview.set_focus();
+            }
         }
         let _ = self.app.run_on_main_thread(move || {
             crate::native::context_menu::choose(id, command);

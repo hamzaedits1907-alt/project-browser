@@ -204,9 +204,11 @@ pub unsafe fn hook(webview: &ICoreWebView2, owner: MenuOwner, ctl: &ControllerHa
             args.SetHandled(true)?;
             let target = args.ContextMenuTarget().map(|t| read_target(&t)).unwrap_or_default();
             if let MenuOwner::Tab(tab) = &owner {
-                // The shell hides the page behind a snapshot while its menu is open; capture it now, in parallel with
-                // the trip through the shell, instead of after it.
-                super::prefetch_capture(*tab);
+                // Only the fallback menu (drawn by the shell while the page is hidden behind a snapshot) needs a
+                // capture; the menu window draws over the live page, so nothing is captured on that path.
+                if !crate::menu_surface::is_ready() {
+                    super::prefetch_capture(*tab);
+                }
             }
             if let MenuOwner::Shell(_) = &owner {
                 // The shell draws its own menus for tabs, bookmarks and the toolbar; only its text fields and selected

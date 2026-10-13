@@ -999,3 +999,23 @@ kbd {
 .tile {
   border-radius: var(--r-lg);
 }
+
+/* ---- The right-click menu's own window (menu_surface.rs): the window is the menu ------------------- */
+html.is-menu-surface,
+html.is-menu-surface body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--bg-2);
+}
+html.is-menu-surface #root {
+  display: inline-block;
+}
+.popover.menu-surface {
+  position: static;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  animation: none;
+  overflow: hidden;
+  outline: none;
+}

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { emitTo, listen } from "@tauri-apps/api/event";
 
 import { Icon } from "../../components/ui/Icon";
 import { MenuHeading, MenuItem, MenuSeparator, Popover, usePopoverClose } from "../../components/ui/Popover";
@@ -10,11 +11,14 @@ import { cue } from "../../lib/sounds";
 import { attempt, emitBus, getState, toast } from "../../lib/store";
 import type { ContextMenuEvent } from "../../lib/types";
 import { canOfferFill } from "../../lib/vault";
+import { windowLabel } from "../../lib/window";
 import { sendMessage, setAiOpen, setIncludePage } from "../ai/aiStore";
 import { EXPLAIN_SELECTION, defaultLanguage, translateSelection } from "../ai/tools";
 import { draftFromAnswer } from "../memory/memory";
 import { buildMenu } from "./model";
 import type { CustomAction, MenuEntry, MenuModel } from "./model";
+import { MENU_LABEL, MENU_PICK, MENU_SHOW, entryForKey } from "./surface";
+import type { MenuPick, MenuShow } from "./surface";
 
 function copy(text: string, what: string): void {
   navigator.clipboard
@@ -133,6 +137,8 @@ export function ContextMenuHost() {
   const pending = useRef<{ requestId: number; command: number | null } | null>(null);
   const answered = useRef(new Set<number>());
   const shownId = useRef<number | null>(null);
+  // Menus shown by the menu window (over the live page), by request id, until it reports the pick.
+  const popups = useRef(new Map<number, { event: ContextMenuEvent; model: MenuModel }>());
 
   const answer = useCallback((requestId: number, command: number | null) => {
     if (answered.current.has(requestId)) return;
@@ -157,6 +163,18 @@ export function ContextMenuHost() {
         answer(event.requestId, null);
         return;
       }
+      if (event.popup) {
+        // The menu window draws it over the page, which stays visible and keeps running (no overlay, no capture).
+        for (const old of popups.current.keys()) if (old !== event.requestId) answer(old, null);
+        popups.current.clear();
+        popups.current.set(event.requestId, { event, model });
+        const show: MenuShow = { requestId: event.requestId, owner: windowLabel(), model };
+        void emitTo(MENU_LABEL, MENU_SHOW, show).catch(() => {
+          popups.current.delete(event.requestId);
+          answer(event.requestId, null);
+        });
+        return;
+      }
       // A newer right-click replaces a menu that is still open; the old request is completed without a command.
       if (shownId.current !== null && shownId.current !== event.requestId) answer(shownId.current, null);
       shownId.current = event.requestId;
@@ -167,9 +185,26 @@ export function ContextMenuHost() {
       if (disposed) u();
       else unlisten = u;
     });
+    let unlistenPick: (() => void) | undefined;
+    void listen<MenuPick>(MENU_PICK, (e) => {
+      const shown = popups.current.get(e.payload.requestId);
+      if (!shown) return;
+      popups.current.delete(e.payload.requestId);
+      const entry = entryForKey(shown.model, e.payload.key);
+      if (entry?.native !== undefined) {
+        answer(e.payload.requestId, entry.native);
+        return;
+      }
+      answer(e.payload.requestId, null);
+      if (entry?.custom) runCustom(entry.custom, shown.event);
+    }).then((u) => {
+      if (disposed) u();
+      else unlistenPick = u;
+    });
     return () => {
       disposed = true;
       unlisten?.();
+      unlistenPick?.();
     };
   }, [answer]);
 

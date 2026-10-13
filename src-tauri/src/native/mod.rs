@@ -778,6 +778,16 @@ pub fn top_level_window_at(x: i32, y: i32) -> Option<isize> {
     }
 }
 
+/// Makes `owner` the owner window of the top-level window `hwnd` (the menu window): it then stays above its owner and
+/// Windows gives activation back to the owner when it hides.
+pub fn set_owner(hwnd: isize, owner: isize) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{SetWindowLongPtrW, GWLP_HWNDPARENT};
+    unsafe {
+        SetWindowLongPtrW(HWND(hwnd as *mut _), GWLP_HWNDPARENT, owner);
+    }
+}
+
 /// Makes a tab's webview render again after it moved to another browser window (tab tear-off or move).
 ///
 /// wry moves a webview by re-parenting its container window, which WebView2 never hears about: the controller's

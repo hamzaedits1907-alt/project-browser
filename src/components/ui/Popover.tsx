@@ -8,7 +8,7 @@ import { Icon } from "./Icon";
 import type { IconName } from "./Icon";
 import { cx } from "./controls";
 
-const PopoverContext = createContext<{ close: () => void }>({ close: () => {} });
+export const PopoverContext = createContext<{ close: () => void }>({ close: () => {} });
 
 export interface PopoverProps {
   open: boolean;

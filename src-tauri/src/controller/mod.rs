@@ -839,6 +839,9 @@ impl Controller {
             for id in self.views.keys().copied().collect::<Vec<_>>() {
                 let _ = self.app.run_on_main_thread(move || crate::native::rehost(id));
             }
+            // The right-click menu's own window, created once the first browser window is up (see menu_surface.rs).
+            let (app, profile) = (self.app.clone(), self.profile.clone());
+            std::thread::spawn(move || crate::menu_surface::ensure(&app, &profile));
         }
         self.dirty = Dirty { state: true, downloads: true, prompts: true, find: true, settings: true, bookmarks: false };
         Bootstrap {

@@ -12,6 +12,7 @@ pub mod import;
 pub mod launch;
 pub mod linkclean;
 pub mod logging;
+pub mod menu_surface;
 pub mod native;
 pub mod navigation;
 pub mod profile;

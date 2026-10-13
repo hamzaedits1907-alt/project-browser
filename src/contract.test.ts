@@ -14,6 +14,8 @@ import { INTERNAL_PAGES } from "./lib/urls";
 const root = process.cwd();
 const read = (rel: string) => readFileSync(join(root, rel), "utf8");
 const camel = (s: string) => s.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
+/** Commands only the right-click menu's own window may call (capabilities/menu.json). */
+const MENU_COMMANDS = ["menu_surface_ready", "menu_present", "menu_dismiss"];
 const sorted = <T,>(xs: T[]) => [...xs].sort();
 
 const commandsRs = read("src-tauri/src/commands.rs");
@@ -49,10 +51,20 @@ describe("command registry", () => {
     expect(build).toContain("app_manifest");
   });
 
+  it("is granted to the menu window (only its own commands) in capabilities/menu.json", () => {
+    const cap = JSON.parse(read("src-tauri/capabilities/menu.json")) as { webviews: string[]; permissions: string[]; local: boolean };
+    expect(cap.webviews).toEqual(["ctxmenu"]);
+    expect(cap.local).toBe(true);
+    const allowed = cap.permissions.filter((p) => p.startsWith("allow-")).map((p) => p.slice("allow-".length).replace(/-/g, "_"));
+    expect(sorted(allowed)).toEqual(sorted(MENU_COMMANDS));
+    for (const p of cap.permissions) expect(p.startsWith("core:event:") || p.startsWith("allow-")).toBe(true);
+    expect(JSON.parse(read("src-tauri/tauri.conf.json")).app.security.capabilities).toEqual(["shell", "menu"]);
+  });
+
   it("is granted to the shell (and only the shell) in capabilities/shell.json", () => {
     const cap = JSON.parse(read("src-tauri/capabilities/shell.json")) as { webviews: string[]; permissions: string[]; local: boolean; remote?: unknown; windows?: unknown };
     const allowed = cap.permissions.filter((p) => p.startsWith("allow-")).map((p) => p.slice("allow-".length).replace(/-/g, "_"));
-    expect(sorted(allowed)).toEqual(sorted(rust));
+    expect(sorted(allowed)).toEqual(sorted(rust.filter((c) => !MENU_COMMANDS.includes(c))));
     // Only the browser windows' own shell webviews: "main" and the extra windows "win-<n>". Tab webviews ("tab-<n>") and
     // popups ("popup-<n>") show remote content and must never match.
     expect(cap.webviews).toEqual(["main", "win-*"]);
@@ -79,8 +91,8 @@ describe("security configuration", () => {
     }
     expect(csp["connect-src"]).toBe("ipc: http://ipc.localhost");
   });
-  it("only loads the shell capability and builds a normal Windows installer", () => {
-    expect(conf.app.security.capabilities).toEqual(["shell"]);
+  it("only loads the shell and menu capabilities and builds a normal Windows installer", () => {
+    expect(conf.app.security.capabilities).toEqual(["shell", "menu"]);
     expect(conf.bundle.targets).toContain("nsis");
   });
   it("never injects raw HTML or evaluates strings in the shell", () => {

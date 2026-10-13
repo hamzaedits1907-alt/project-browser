@@ -829,6 +829,8 @@ export interface ContextMenuEvent {
   private: boolean;
   target: ContextTarget;
   items: NativeMenuItem[];
+  /** The menu window is ready: show the menu there, over the live page (see menu_surface.rs). */
+  popup?: boolean;
 }
 
 // ---- Tab drag between windows ------------------------------------------------------------------

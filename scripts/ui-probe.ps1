@@ -2,9 +2,10 @@
   Native UI probe: drives the real executable with real mouse and keyboard input and captures its own windows.
 
   What it does, against a throwaway data folder:
-    1. starts the browser on https://example.com and waits until the page area is actually painted;
-    2. right-clicks the page (the browser's own menu must appear, not WebView2's) and checks the pixels changed;
-    3. presses Escape: the menu must be gone from the pixels (not just from the log);
+    1. starts the browser on a local animated page and waits until the page area is actually painted;
+    2. right-clicks the page: the browser's own menu window must appear (latency measured) while the page under it
+       keeps animating (two captures of the page differ);
+    3. presses Escape: the menu window must be hidden again;
     4. opens a new tab (Ctrl+T);
     5. drags the first tab out of the strip: a NEW top-level window (a handle that did not exist before) must appear,
        its page area must be painted (not black), and the page must still take input (Tab + Enter follows the
@@ -77,7 +78,11 @@ $env:PROJECT_BROWSER_DATA_DIR = $DataDir
 $env:PROJECT_BROWSER_SKIP_ONBOARDING = "1"
 $logPath = Join-Path $DataDir "logs\project-browser.log"
 $windowsLog = Join-Path $ReportDir "windows.txt"
-$p = Start-Process -FilePath $Exe -ArgumentList "https://example.com" -PassThru
+# A local animated page (scripts/fixture-server.py): the probe needs a page that visibly runs.
+$python = (Get-Command python -ErrorAction SilentlyContinue).Source
+$server = Start-Process -FilePath $python -ArgumentList @("-I", (Join-Path $PSScriptRoot "fixture-server.py"), "8766") -PassThru -WindowStyle Hidden
+for ($i = 0; $i -lt 50; $i++) { try { if ((Invoke-WebRequest "http://127.0.0.1:8766/anim.html" -UseBasicParsing -TimeoutSec 2).StatusCode -eq 200) { break } } catch { Start-Sleep -Milliseconds 200 } }
+$p = Start-Process -FilePath $Exe -ArgumentList "http://127.0.0.1:8766/anim.html" -PassThru
 $log = { if (Test-Path $logPath) { Get-Content $logPath -Raw } else { "" } }
 $steps = [ordered]@{}
 $notes = [ordered]@{}
@@ -149,6 +154,11 @@ function DumpWindows([string]$label) {
       $r.Left, $r.Top, ($r.Right - $r.Left), ($r.Bottom - $r.Top), [Probe]::Text($h))
   }
 }
+function WaitForLog([string]$pattern, [int]$seconds) {
+  $deadline = (Get-Date).AddSeconds($seconds)
+  while ((Get-Date) -lt $deadline) { if ((& $log) -match $pattern) { return $true }; Start-Sleep -Milliseconds 100 }
+  return $false
+}
 # Waits until the page area (below the toolbar) of window $h is painted, i.e. no longer the dark shell background.
 function WaitPainted([IntPtr]$h, [int]$seconds) {
   $deadline = (Get-Date).AddSeconds($seconds)
@@ -178,23 +188,40 @@ try {
   $before = Capture $main "01-page"
   $steps["page area painted"] = ($b -gt 120)
 
-  # 2. Right-click the middle of the page area: our menu must appear (pixels around the pointer change).
+  # 2. Right-click the middle of the page area. The menu is a window of its own (menu_surface.rs), owned by the browser
+  #    window, drawn over the LIVE page: it must appear quickly, and the page under it must keep animating (the old
+  #    menu replaced the page with a still capture while open).
+  $menuReady = [bool](WaitForLog "menu window ready" 20)
+  $steps["menu window loaded"] = $menuReady
   $pt = ClientPoint $main 700 450
+  $sw = [Diagnostics.Stopwatch]::StartNew()
   Click $pt.X $pt.Y $true
-  Start-Sleep -Milliseconds 1500
-  $menu = Capture $main "02-right-click"
-  $d = PixelDiff $before $menu $main 700 450 240 260
-  $notes["pixel change under the menu"] = $d
-  $steps["right-click shows a menu"] = ($d -gt 8)
+  $menuWin = [IntPtr]::Zero
+  while ($sw.ElapsedMilliseconds -lt 3000 -and $menuWin -eq [IntPtr]::Zero) {
+    foreach ($h in [Probe]::All([uint32]$p.Id)) { if ([Probe]::IsWindowVisible($h) -and [Probe]::GetWindow($h, 4) -eq $main) { $menuWin = $h } }
+    if ($menuWin -eq [IntPtr]::Zero) { Start-Sleep -Milliseconds 5 }
+  }
+  $latency = $sw.ElapsedMilliseconds
+  DumpWindows "menu open"
+  $notes["right-click to visible menu (ms, includes 180 ms of simulated mouse input)"] = $latency
+  $steps["right-click shows our menu window"] = ($menuWin -ne [IntPtr]::Zero)
+  $steps["menu visible within 600 ms"] = ($menuWin -ne [IntPtr]::Zero -and $latency -lt 600)
   $steps["log: our menu, not WebView2's"] = ((& $log) -match "context menu \d+: page target")
+  if ($menuWin -ne [IntPtr]::Zero) { [void](Capture $menuWin "02-menu-window") }
+  $a1 = Capture $main "02-page-under-menu-a"
+  Start-Sleep -Milliseconds 400
+  $a2 = Capture $main "02-page-under-menu-b"
+  $live = PixelDiff $a1 $a2 $main 60 150 300 180
+  $notes["page change under an open menu (animated page)"] = $live
+  $steps["page keeps running while the menu is open"] = ($live -gt 6)
 
-  # 3. Escape closes it: the pixels return to the page.
+  # 3. Escape closes it: the menu window is hidden again.
   Key @(0x1B)
-  Start-Sleep -Milliseconds 900
+  $gone = $false
+  for ($i = 0; $i -lt 100 -and -not $gone; $i++) { Start-Sleep -Milliseconds 20; $gone = ($menuWin -eq [IntPtr]::Zero) -or -not [Probe]::IsWindowVisible($menuWin) }
   $after = Capture $main "03-escape"
-  $d2 = PixelDiff $before $after $main 700 450 240 260
-  $notes["pixel change after Escape"] = $d2
-  $steps["Escape removes the menu"] = ($d2 -lt 4)
+  $steps["Escape removes the menu"] = $gone
+  $steps["log: menu closed"] = ((& $log) -match "context menu \d+: closed")
 
   # 4. Ctrl+T opens a tab.
   Key @(0x11, 0x54)
@@ -243,6 +270,7 @@ try {
 }
 finally {
   if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force }
+  if ($server -and -not $server.HasExited) { Stop-Process -Id $server.Id -Force }
   Start-Sleep -Milliseconds 500
   if (Test-Path $logPath) { Copy-Item $logPath (Join-Path $ReportDir "project-browser.log") -Force }
 }

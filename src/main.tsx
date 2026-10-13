@@ -13,7 +13,7 @@ import "./styles/tools.css";
 
 import { App } from "./App";
 import { applyCachedLook } from "./lib/theme";
-import { inTauri } from "./lib/window";
+import { inTauri, windowLabel } from "./lib/window";
 
 async function start(): Promise<void> {
   // Outside Tauri (plain `npm run dev` in a browser) there is no Rust core: run against a mock so the UI can be developed and screenshotted.
@@ -25,6 +25,12 @@ async function start(): Promise<void> {
   applyCachedLook();
   const root = document.getElementById("root");
   if (!root) throw new Error("missing #root");
+  // The right-click menu's own window (menu_surface.rs) shows only menus; it is not a browser window.
+  if (inTauri && windowLabel() === "ctxmenu") {
+    const { MenuSurface } = await import("./features/contextmenu/MenuSurface");
+    createRoot(root).render(<MenuSurface />);
+    return;
+  }
   createRoot(root).render(
     <StrictMode>
       <App />

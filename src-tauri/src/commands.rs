@@ -1356,6 +1356,36 @@ pub async fn context_menu_choose(window: tauri::Window, s: State<'_, AppState>, 
     s.ctl.call_in(window.label().to_string(), move |c| c.context_menu_done(request, command)).await
 }
 
+// ---- the right-click menu's own window (menu_surface.rs) ----------------------------------
+
+/// The menu window has loaded and can show menus.
+#[tauri::command]
+pub async fn menu_surface_ready(window: tauri::Window) -> Result<()> {
+    if window.label() == crate::menu_surface::LABEL {
+        crate::menu_surface::set_ready(true);
+        log::info!("menu window ready");
+    }
+    Ok(())
+}
+
+/// The menu window rendered a menu of this size (CSS pixels): place it at the click and show it.
+#[tauri::command]
+pub async fn menu_present(window: tauri::Window, app: AppHandle, width: f64, height: f64) -> Result<()> {
+    if window.label() != crate::menu_surface::LABEL {
+        return Err(Error::msg("not the menu window"));
+    }
+    crate::menu_surface::present(&app, width, height).map_err(Error::msg)
+}
+
+/// Hides the menu window (a pick or a dismissal; the shell that owns the menu is told separately).
+#[tauri::command]
+pub async fn menu_dismiss(window: tauri::Window, app: AppHandle, refocus: bool) -> Result<()> {
+    if window.label() == crate::menu_surface::LABEL {
+        crate::menu_surface::dismiss(&app, refocus);
+    }
+    Ok(())
+}
+
 // ---- Project Shield ----------------------------------------------------------------------
 
 fn running_shield() -> Result<&'static std::sync::Arc<crate::shield::Shield>> {
@@ -1733,6 +1763,9 @@ macro_rules! all_commands {
             $crate::commands::window_new,
             $crate::commands::tab_group,
             $crate::commands::context_menu_choose,
+            $crate::commands::menu_surface_ready,
+            $crate::commands::menu_present,
+            $crate::commands::menu_dismiss,
             $crate::commands::shield_state,
             $crate::commands::shield_tab,
             $crate::commands::shield_set,
@@ -1753,7 +1786,10 @@ mod tests {
     use super::*;
 
     fn folder_with(manifest: Option<&str>) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("pb-ext-test-{}-{}", std::process::id(), now_ms()));
+        // A counter, not only the time: two folders made in the same millisecond must not be the same folder.
+        static SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!("pb-ext-test-{}-{}-{n}", std::process::id(), now_ms()));
         std::fs::create_dir_all(&dir).unwrap();
         if let Some(m) = manifest {
             std::fs::write(dir.join("manifest.json"), m).unwrap();

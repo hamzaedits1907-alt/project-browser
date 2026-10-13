@@ -54,6 +54,17 @@ PAGES = {
 <li><a id="redirect" href="/redirect">redirect</a>
 <li><a id="zip" href="/files/target.zip" download>zip with download attribute</a>
 </ul>""",
+    "/anim.html": """<!doctype html><title>Animated page</title>
+<style>body{margin:0;background:#fff;font:16px system-ui}#box{width:420px;height:320px}p{margin:16px}</style>
+<canvas id="box" width="420" height="320"></canvas>
+<p>This page repaints every frame, so a capture taken while a menu is open shows whether it is still running.</p>
+<p><a href="/links.html">Next page</a></p>
+<script>
+const c = document.getElementById("box").getContext("2d"); let n = 0;
+function frame() { n++; c.fillStyle = "hsl(" + ((n * 7) % 360) + " 85% 62%)"; c.fillRect(0, 0, 420, 320);
+  c.fillStyle = "#000"; c.font = "48px system-ui"; c.fillText(String(n), 30, 180); requestAnimationFrame(frame); }
+requestAnimationFrame(frame);
+</script>""",
     "/blob.html": """<!doctype html><title>Blob download</title><h1>Blob download</h1>
 <script>
 const text = %s;

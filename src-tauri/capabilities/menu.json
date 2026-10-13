@@ -1,0 +1,17 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "menu",
+  "description": "The right-click menu's own window (menu_surface.rs): it renders menus a shell sends it and reports the pick. Nothing else.",
+  "webviews": [
+    "ctxmenu"
+  ],
+  "local": true,
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:event:allow-emit-to",
+    "allow-menu-surface-ready",
+    "allow-menu-present",
+    "allow-menu-dismiss"
+  ]
+}

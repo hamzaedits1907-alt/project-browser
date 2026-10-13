@@ -105,7 +105,7 @@ function Expect([string]$name, [string]$order, [string]$active, [int]$seconds = 
   $last = $null
   $ok = WaitFor { $script:last = Session; (($script:last.order -join " ") -eq $order) -and (-not $active -or $script:last.active -eq $active) } $seconds
   $checks[$name] = $ok
-  $notes[$name] = "order: $($last.order -join ' '), active: $($last.active)"
+  $notes[$name] = "order: $($script:last.order -join ' '), active: $($script:last.active)"
 }
 function Pt([int]$x, [int]$y) {
   $s = [TP]::GetDpiForWindow($script:main) / 96.0

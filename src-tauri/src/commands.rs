@@ -54,7 +54,9 @@ pub async fn set_layout(window: tauri::Window, s: State<'_, AppState>, content: 
 /// the page to show underneath (native webviews always render above the shell).
 #[tauri::command]
 pub async fn overlay_open(window: tauri::Window, app: AppHandle, s: State<'_, AppState>) -> Result<tauri::ipc::Response> {
+    let started = std::time::Instant::now();
     let tab = s.ctl.call_in(window.label().to_string(), |c| c.active_live_tab()).await?;
+    log::info!("overlay: a shell popup asked to cover the page (tab {tab:?})");
     let snapshot = match tab {
         Some(id) => {
             // Raw JPEG bytes (no base64 string through JSON): the shell turns them into a blob URL.
@@ -72,12 +74,14 @@ pub async fn overlay_open(window: tauri::Window, app: AppHandle, s: State<'_, Ap
         None => None,
     };
     s.ctl.call_in(window.label().to_string(), |c| c.set_overlay(true, false)).await?;
+    log::info!("overlay: page covered after {} ms (snapshot: {})", started.elapsed().as_millis(), snapshot.is_some());
     Ok(tauri::ipc::Response::new(snapshot.unwrap_or_default()))
 }
 
 #[tauri::command]
 pub async fn overlay_close(window: tauri::Window, s: State<'_, AppState>, focus_page: Option<bool>) -> Result<()> {
     let focus_page = focus_page.unwrap_or(true);
+    log::info!("overlay: page given back");
     s.ctl.call_in(window.label().to_string(), move |c| c.set_overlay(false, focus_page)).await
 }
 

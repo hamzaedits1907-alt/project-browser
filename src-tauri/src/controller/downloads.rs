@@ -137,6 +137,31 @@ impl Controller {
         }
     }
 
+    /// WebView2 restarts a transfer that was cut off as a new download (same address) and never reports on the earlier
+    /// attempts again. Once one attempt has ended, earlier attempts that never received a byte are dropped from the list
+    /// (they wrote nothing), so one failed link does not leave several "running" entries.
+    fn drop_restarts(&mut self, url: &str, ended: i64) {
+        let Some(end) = self.downloads.iter().find(|d| d.id == ended).map(|d| d.started_at) else { return };
+        let ghosts: Vec<i64> = self
+            .downloads
+            .iter()
+            .filter(|d| d.id != ended && d.url == url && d.state.is_active() && d.received_bytes == 0 && !d.checking && d.started_at <= end)
+            .map(|d| d.id)
+            .collect();
+        if ghosts.is_empty() {
+            return;
+        }
+        log::info!("download {ended}: dropped {} earlier attempts of the same transfer that never received data", ghosts.len());
+        for g in &ghosts {
+            let _ = self.db.download_remove(*g);
+            self.download_tabs.remove(g);
+            let id = *g;
+            let _ = self.app.run_on_main_thread(move || native::forget_download(id));
+        }
+        self.downloads.retain(|d| !ghosts.contains(&d.id));
+        self.mark_downloads();
+    }
+
     fn schedule_held_check(&self, id: i64, step: usize) {
         let Some(delay) = HELD_CHECKS.get(step).copied() else { return };
         let h = self.handle.clone();
@@ -241,6 +266,7 @@ impl Controller {
         }
         if !snapshot.state.is_active() {
             self.refresh_same_url(&snapshot.url, id);
+            self.drop_restarts(&snapshot.url, id);
         }
     }
 

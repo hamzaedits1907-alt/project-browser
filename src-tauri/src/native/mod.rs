@@ -1123,6 +1123,11 @@ pub enum DownloadAction {
     Cancel,
 }
 
+/// Stops tracking download `id` (an attempt WebView2 replaced with a new one).
+pub fn forget_download(id: i64) {
+    DOWNLOADS.with(|d| d.borrow_mut().remove(&id));
+}
+
 /// Reads WebView2's own state for download `id` and reports it, so the list never keeps showing a download as
 /// running that WebView2 has already ended (or restarted under a new id).
 pub fn refresh_download_state(id: i64, ctl: ControllerHandle) {

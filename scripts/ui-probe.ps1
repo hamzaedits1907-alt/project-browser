@@ -159,6 +159,30 @@ function WaitForLog([string]$pattern, [int]$seconds) {
   while ((Get-Date) -lt $deadline) { if ((& $log) -match $pattern) { return $true }; Start-Sleep -Milliseconds 100 }
   return $false
 }
+# Clicks the toolbar's "more" button (right end) and checks a popup is drawn below it and is still there 1.5 s later.
+function ToolbarMenu([string]$label) {
+  $base = Snap $main
+  $mb = ClientPoint $main 1253 63
+  $sw = [Diagnostics.Stopwatch]::StartNew()
+  Click $mb.X $mb.Y $false
+  $shownAt = -1
+  while ($sw.ElapsedMilliseconds -lt 3000) {
+    $c = Snap $main; $dd = PixelDiff $base $c $main 940 90 330 300; $c.Dispose()
+    if ($dd -gt 8) { $shownAt = $sw.ElapsedMilliseconds; break }
+    Start-Sleep -Milliseconds 30
+  }
+  $script:notes["toolbar menu ($label): click to drawn (ms, -1 = never)"] = $shownAt
+  $script:steps["toolbar menu opens ($label)"] = ($shownAt -ge 0)
+  Start-Sleep -Milliseconds 1500
+  $still = Snap $main
+  $still.Save((Join-Path $ReportDir ("toolbar-" + ($label -replace '[^a-z]', '-') + ".png")), [System.Drawing.Imaging.ImageFormat]::Png)
+  $dd2 = PixelDiff $base $still $main 940 90 330 300
+  $script:steps["toolbar menu stays open ($label)"] = ($dd2 -gt 8)
+  Key @(0x1B)
+  Start-Sleep -Milliseconds 700
+  $base.Dispose(); $still.Dispose()
+}
+
 # Waits until the page area (below the toolbar) of window $h is painted, i.e. no longer the dark shell background.
 function WaitPainted([IntPtr]$h, [int]$seconds) {
   $deadline = (Get-Date).AddSeconds($seconds)
@@ -187,6 +211,9 @@ try {
   $notes["page brightness at start"] = $b
   $before = Capture $main "01-page"
   $steps["page area painted"] = ($b -gt 120)
+
+  ToolbarMenu "web page, clean state"
+  $before = Capture $main "01b-page-again"
 
   # 2. Right-click the middle of the page area. The menu is a window of its own (menu_surface.rs), owned by the browser
   #    window, drawn over the LIVE page: it must appear quickly, and the page under it must keep animating (the old
@@ -223,28 +250,7 @@ try {
   $steps["Escape removes the menu"] = $gone
   $steps["log: menu closed"] = ((& $log) -match "context menu \d+: closed")
 
-  # 3b. A toolbar popup over a web page (the "more" menu at the right end of the toolbar): it must appear and STAY open
-  #     (a report said toolbar buttons mostly do nothing on web pages). Judged by pixels below the button.
-  $base3 = Capture $main "03b-before-toolbar"
-  $mb = ClientPoint $main 1253 63
-  $sw = [Diagnostics.Stopwatch]::StartNew()
-  Click $mb.X $mb.Y $false
-  $shownAt = -1
-  while ($sw.ElapsedMilliseconds -lt 3000) {
-    $c = Snap $main; $dd = PixelDiff $base3 $c $main 940 90 330 300; $c.Dispose()
-    if ($dd -gt 8) { $shownAt = $sw.ElapsedMilliseconds; break }
-    Start-Sleep -Milliseconds 30
-  }
-  $notes["toolbar menu: click to drawn (ms, -1 = never)"] = $shownAt
-  $steps["toolbar menu opens on a web page"] = ($shownAt -ge 0)
-  Start-Sleep -Milliseconds 1500
-  $still = Capture $main "03c-toolbar-menu-after-1500ms"
-  $dd2 = PixelDiff $base3 $still $main 940 90 330 300
-  $notes["toolbar menu: pixel change 1.5 s later"] = $dd2
-  $steps["toolbar menu stays open"] = ($dd2 -gt 8)
-  Key @(0x1B)
-  Start-Sleep -Milliseconds 600
-  $after = Capture $main "03d-toolbar-menu-closed"
+  ToolbarMenu "web page, after a right-click menu"
 
   # 4. Ctrl+T opens a tab.
   Key @(0x11, 0x54)
@@ -253,6 +259,8 @@ try {
   $d4 = PixelDiff $after $newTab $main 200 250 700 350
   $notes["pixel change after Ctrl+T"] = $d4
   $steps["Ctrl+T shows the new-tab page"] = ($d4 -gt 20)
+
+  ToolbarMenu "New Tab page (control, no page to cover)"
 
   # 5. Drag the first tab down out of the strip: it must become a new window that paints and takes input.
   $known = @([Probe]::Windows([uint32]$p.Id))

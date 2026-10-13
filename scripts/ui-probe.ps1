@@ -167,7 +167,7 @@ function ToolbarMenu([string]$label) {
   # The "more" button is the last thing on the toolbar: aim from the window's right edge (physical pixels), since the
   # shell's CSS pixels need not match the window's (a click aimed at 1253 landed in the address bar, per the shell trace).
   $cr = New-Object Probe+RECT; [void][Probe]::GetClientRect($main, [ref]$cr)
-  $mb = New-Object Probe+POINT; $mb.X = $cr.Right - 45; $mb.Y = 81
+  $mb = New-Object Probe+POINT; $mb.X = $cr.Right - 28; $mb.Y = 63
   [void][Probe]::ClientToScreen($main, [ref]$mb)
   $under = [Probe]::WindowFromPoint($mb)
   $script:notes["toolbar menu ($label): window under the click"] = "{0} class={1} (main={2})" -f $under, [Probe]::Class($under), $main

@@ -210,7 +210,10 @@ pub fn dismiss(app: &AppHandle) {
     OPEN.store(false, Ordering::SeqCst);
     crate::native::outside_click_watch(false);
     if let Some(w) = app.get_webview_window(LABEL) {
-        let _ = w.hide();
+        // Shown natively (without activation), so hidden natively too: Tauri's hide() believes it is already hidden.
+        if let Ok(h) = w.hwnd() {
+            crate::native::hide_window(h.0 as isize);
+        }
         // Hidden most of the time: WebView2 may trim its memory meanwhile.
         let _ = w.with_webview(|pw| crate::native::set_view_memory_target(&pw, true));
     }

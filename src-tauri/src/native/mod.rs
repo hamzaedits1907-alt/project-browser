@@ -851,6 +851,15 @@ pub fn show_without_focus(hwnd: isize) {
     }
 }
 
+/// Hides `hwnd` (the menu window is shown natively, so Tauri's own `hide` would think it is already hidden).
+pub fn hide_window(hwnd: isize) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
+    unsafe {
+        let _ = ShowWindow(HWND(hwnd as *mut _), SW_HIDE);
+    }
+}
+
 static MOUSE_HOOK: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
 
 /// Low-level mouse hook, installed only while a menu is open: a press anywhere outside the menu window closes it.

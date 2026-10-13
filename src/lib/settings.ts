@@ -233,12 +233,16 @@ export function backgroundOrDefault(id: string): string {
 export type MotionMode = "off" | "subtle" | "standard" | "expressive";
 
 /** True when motion-heavy effects should be off (user choice, the Performance theme, or Gaming Mode's reduce-animations). */
+/** Motion is switched off: Reduce motion, or the Performance theme. (Windows' own setting is applied by CSS.) */
 export function motionReduced(s: Settings): boolean {
-  return s.reduceMotion || s.theme === "performance" || (s.gamingMode && s.gamingReduceAnimations);
+  return s.reduceMotion || s.theme === "performance";
 }
 
+/** The motion in effect. Gaming Mode's "Reduce animations" makes motion subtle (shorter, smaller), not absent. */
 export function motionMode(s: Settings): MotionMode {
-  return motionReduced(s) ? "off" : s.motion;
+  if (motionReduced(s)) return "off";
+  if (s.gamingMode && s.gamingReduceAnimations) return "subtle";
+  return s.motion;
 }
 
 /** Returns a copy of `s` with the given changes applied. */

@@ -171,6 +171,9 @@ export function Appearance() {
             onChange={(darkPages) => void update({ darkPages })}
           />
         </SettingRow>
+        {settings.gamingMode && settings.gamingReduceAnimations && !settings.reduceMotion && (
+          <p className="dim small">Gaming Mode is on with “Reduce animations”, so motion is Subtle right now. It goes back to your choice when Gaming Mode ends.</p>
+        )}
         <SettingRow title="Reduce motion" description="Turns interface animation off. The Performance theme and Gaming Mode (if set) do this too; Windows' own setting is always respected.">
           <Toggle label="Reduce motion" checked={settings.reduceMotion} onChange={(reduceMotion) => void update({ reduceMotion })} />
         </SettingRow>

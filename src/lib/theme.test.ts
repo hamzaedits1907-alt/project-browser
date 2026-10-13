@@ -27,7 +27,7 @@ describe("themes", () => {
     expect(motionMode({ ...DEFAULT_SETTINGS, motion: "expressive" })).toBe("expressive");
     expect(motionMode({ ...DEFAULT_SETTINGS, reduceMotion: true })).toBe("off");
     expect(motionMode({ ...DEFAULT_SETTINGS, theme: "performance" })).toBe("off");
-    expect(motionMode({ ...DEFAULT_SETTINGS, gamingMode: true, gamingReduceAnimations: true })).toBe("off");
+    expect(motionMode({ ...DEFAULT_SETTINGS, gamingMode: true, gamingReduceAnimations: true })).toBe("subtle");
     expect(motionMode({ ...DEFAULT_SETTINGS, gamingMode: true, gamingReduceAnimations: false })).toBe("standard");
   });
 });

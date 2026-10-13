@@ -15,7 +15,7 @@ describe("settings helpers", () => {
   it("reduces motion by preference or by Gaming Mode", () => {
     expect(motionReduced(DEFAULT_SETTINGS)).toBe(false);
     expect(motionReduced(patch(DEFAULT_SETTINGS, { reduceMotion: true }))).toBe(true);
-    expect(motionReduced(patch(DEFAULT_SETTINGS, { gamingMode: true }))).toBe(true);
+    expect(motionReduced(patch(DEFAULT_SETTINGS, { gamingMode: true }))).toBe(false);
     expect(motionReduced(patch(DEFAULT_SETTINGS, { gamingMode: true, gamingReduceAnimations: false }))).toBe(false);
   });
   it("patch does not mutate", () => {

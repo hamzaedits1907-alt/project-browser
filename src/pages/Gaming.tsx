@@ -36,7 +36,7 @@ export default function Gaming() {
           <h2>{gaming ? "Gaming Mode is on" : "Gaming Mode is off"}</h2>
           <p className="dim">
             {gaming
-              ? `Background tabs ${settings.gamingBackgroundAction === "unload" ? "are unloaded" : "go to sleep"} after 10 seconds, ${settings.gamingPauseDownloads ? "downloads are on hold, " : ""}${settings.gamingReduceAnimations ? "animations are reduced, " : ""}and sampling slows to every 5 seconds.`
+              ? `Background tabs ${settings.gamingBackgroundAction === "unload" ? "are unloaded" : "go to sleep"} after 10 seconds, ${settings.gamingPauseDownloads ? "downloads are on hold, " : ""}${settings.gamingReduceAnimations ? "animations are subtler, " : ""}and sampling slows to every 5 seconds.`
               : "Turn it on before you launch a game. Your tabs stay safe: sleeping tabs wake instantly."}
           </p>
         </div>

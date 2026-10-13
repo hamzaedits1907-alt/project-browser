@@ -1,0 +1,120 @@
+/* ---- Motion system (0.8.2) -----------------------------------------------------------------------------------
+ * One place for interaction feedback across the interface. Durations come from tokens.css (--d1 90 ms, --d2 170 ms,
+ * --d3 250 ms, --d4 400 ms, all scaled by --m: Subtle 0.75, Standard 1, Expressive 1.25, Off 0) and travel from --md.
+ * Only transform, opacity and colours animate here (no layout, no blur), so nothing slows navigation. Motion "Off",
+ * the Performance theme and Windows' reduced-motion setting turn all of it off (base.css / tokens.css).
+ */
+
+/* Lists and grids that appear: children rise in one after another (first eight; later ones without delay). */
+.ntp-tiles > *,
+.settings-content > *,
+.panel-body > *,
+.dl-row {
+  animation: rise-in var(--d3) var(--e-out) both;
+}
+.ntp-tiles > :nth-child(2),
+.settings-content > :nth-child(2),
+.panel-body > :nth-child(2) {
+  animation-delay: calc(30ms * var(--m));
+}
+.ntp-tiles > :nth-child(3),
+.settings-content > :nth-child(3),
+.panel-body > :nth-child(3) {
+  animation-delay: calc(60ms * var(--m));
+}
+.ntp-tiles > :nth-child(4),
+.settings-content > :nth-child(4),
+.panel-body > :nth-child(4) {
+  animation-delay: calc(90ms * var(--m));
+}
+.ntp-tiles > :nth-child(5),
+.settings-content > :nth-child(5),
+.panel-body > :nth-child(5) {
+  animation-delay: calc(120ms * var(--m));
+}
+.ntp-tiles > :nth-child(n + 6),
+.settings-content > :nth-child(n + 6),
+.panel-body > :nth-child(n + 6) {
+  animation-delay: calc(150ms * var(--m));
+}
+
+/* New Tab tiles and cards: lift on hover, press in on click. */
+.ntp-tile,
+.ntp-widget,
+.card {
+  transition:
+    transform var(--d2) var(--e-out),
+    box-shadow var(--d2) var(--e-out),
+    border-color var(--d2),
+    background-color var(--d2);
+}
+.ntp-tile:hover {
+  transform: translateY(calc(-3px * var(--md)));
+  box-shadow: 0 10px 24px -14px rgb(0 0 0 / 0.6);
+}
+.ntp-tile:active {
+  transform: translateY(0) scale(0.97);
+  transition-duration: var(--d1);
+}
+
+/* Buttons: a short press-in everywhere (icon buttons already have theirs in ui.css). */
+.btn:active:not(:disabled),
+.rail-item:active,
+.panel-row:active,
+.dl-row:active {
+  transform: scale(0.97);
+}
+.btn,
+.rail-item,
+.panel-row {
+  transition:
+    background-color var(--d1),
+    color var(--d1),
+    border-color var(--d1),
+    transform var(--d1) var(--e-out),
+    box-shadow var(--d2);
+}
+
+/* Toggles: the thumb slides and the track fills. */
+.toggle,
+.toggle-thumb {
+  transition:
+    background-color var(--d2) var(--e-out),
+    border-color var(--d2),
+    transform var(--d2) var(--e-pop),
+    box-shadow var(--d2);
+}
+.toggle:active .toggle-thumb {
+  transform: scaleX(1.18);
+}
+
+/* The address bar: focus rings in, the field settles. */
+.omnibox {
+  transition:
+    box-shadow var(--d2) var(--e-out),
+    border-color var(--d2) var(--e-out),
+    background-color var(--d2);
+}
+
+/* Settings: switching section slides the new one in. */
+.settings-content {
+  animation: page-in var(--d3) var(--e-out);
+}
+
+/* Side panels and the sidebar: open from the edge, content follows. */
+.side-panel {
+  animation: slide-in-left var(--d3) var(--e-out);
+}
+.panel-head {
+  animation: rise-in var(--d2) var(--e-out) both;
+}
+
+/* Toolbar badges (blocked count, running downloads) pop when they change. */
+.tool-badge {
+  animation: badge-in var(--d2) var(--e-pop);
+}
+
+/* Keyboard focus is always visible and animates in. */
+:focus-visible {
+  transition: outline-offset var(--d1) var(--e-out);
+}

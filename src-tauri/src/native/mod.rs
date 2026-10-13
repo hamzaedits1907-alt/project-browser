@@ -1313,6 +1313,16 @@ pub fn try_suspend(id: TabId, ctl: ControllerHandle, epoch: u64) {
 }
 
 /// Asks WebView2 to trim memory for a background tab (or restore normal behaviour).
+/// WebView2's memory target for a webview that is not a tab (the hidden menu window).
+pub fn set_view_memory_target(pw: &PlatformWebview, low: bool) {
+    unsafe {
+        if let Ok(wv19) = pw.controller().CoreWebView2().and_then(|w| w.cast::<ICoreWebView2_19>()) {
+            let level = if low { COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW } else { COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL };
+            let _ = wv19.SetMemoryUsageTargetLevel(level);
+        }
+    }
+}
+
 pub fn set_memory_target(id: TabId, low: bool) {
     if let Some(wv19) = tab_com(id).and_then(|t| t.webview.cast::<ICoreWebView2_19>().ok()) {
         let level = if low { COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW } else { COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL };

@@ -119,6 +119,7 @@ pub fn present(app: &AppHandle, width: f64, height: f64) -> Result<(), String> {
     }
     window.set_size(PhysicalSize::new(size.0 as u32, size.1 as u32)).map_err(|e| e.to_string())?;
     window.set_position(PhysicalPosition::new(x, y)).map_err(|e| e.to_string())?;
+    let _ = window.with_webview(|pw| crate::native::set_view_memory_target(&pw, false));
     window.show().map_err(|e| e.to_string())?;
     // Focus both the window and its webview: keys (Escape, arrows) must reach the menu, and clicking elsewhere must
     // take focus away from it (that is how it closes).
@@ -133,6 +134,8 @@ pub fn present(app: &AppHandle, width: f64, height: f64) -> Result<(), String> {
 pub fn dismiss(app: &AppHandle, refocus: bool) {
     if let Some(w) = app.get_webview_window(LABEL) {
         let _ = w.hide();
+        // Hidden most of the time: WebView2 may trim its memory meanwhile.
+        let _ = w.with_webview(|pw| crate::native::set_view_memory_target(&pw, true));
     }
     if refocus {
         if let Some(owner) = anchor().and_then(|a| app.get_window(&a.owner)) {

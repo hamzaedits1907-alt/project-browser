@@ -213,7 +213,8 @@ impl Controller {
                 t.lifecycle = Lifecycle::Live;
             }
         }
-        if self.settings.gaming_mode && self.settings.gaming_low_memory_target && self.views.contains_key(&tab.id) {
+        // The tab in view runs at WebView2's normal memory target; background tabs at the low one (see on_backgrounded).
+        if self.views.contains_key(&tab.id) {
             let id = tab.id;
             let _ = self.app.run_on_main_thread(move || native::set_memory_target(id, false));
         }
@@ -441,7 +442,7 @@ impl Controller {
                 if let Err(e) = webview.with_webview(move |pw| native::install_tab(id, pw, ctl, init)) {
                     log::error!("with_webview failed for tab {id}: {e}");
                 }
-                if !visible && self.settings.gaming_mode && self.settings.gaming_low_memory_target {
+                if !visible {
                     let _ = self.app.run_on_main_thread(move || native::set_memory_target(id, true));
                 }
                 log::info!(

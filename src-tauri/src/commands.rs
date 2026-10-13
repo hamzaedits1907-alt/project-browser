@@ -1472,6 +1472,10 @@ pub async fn shell_trace(window: tauri::Window, message: String) -> Result<()> {
 pub async fn menu_surface_ready(window: tauri::Window) -> Result<()> {
     if window.label() == crate::menu_surface::LABEL {
         crate::menu_surface::set_ready(true);
+        // Hidden until the first right-click: let WebView2 keep its memory low meanwhile.
+        if let Some(w) = window.app_handle().get_webview_window(crate::menu_surface::LABEL) {
+            let _ = w.with_webview(|pw| native::set_view_memory_target(&pw, true));
+        }
         log::info!("menu window ready");
     }
     Ok(())

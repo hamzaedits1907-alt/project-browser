@@ -199,8 +199,10 @@ impl Controller {
     }
 
     /// Called when `id` stops being the active tab.
+    /// Background tabs always get WebView2's low memory target: the page keeps running (timers, audio, downloads), but
+    /// WebView2 trims caches and memory it can rebuild. (Before 0.8 this was a Gaming Mode option only.)
     pub(crate) fn on_backgrounded(&mut self, id: TabId) {
-        if self.settings.gaming_mode && self.settings.gaming_low_memory_target && self.views.contains_key(&id) {
+        if self.views.contains_key(&id) {
             let _ = self.app.run_on_main_thread(move || native::set_memory_target(id, true));
         }
     }
@@ -226,10 +228,6 @@ impl Controller {
             let action = self.settings.gaming_background_action;
             for id in background {
                 self.put_to_sleep(id, action, Reason::Auto);
-            }
-        } else {
-            for id in background {
-                let _ = self.app.run_on_main_thread(move || native::set_memory_target(id, false));
             }
         }
     }

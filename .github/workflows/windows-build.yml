@@ -166,6 +166,21 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+      # Real mouse drags on the tab strip; the tab order and active tab are read from the browser's saved session.
+      - name: Tab drag probe (informational)
+        shell: pwsh
+        continue-on-error: true
+        run: ./scripts/tab-probe.ps1 -Exe src-tauri/target/release/project-browser.exe -ReportDir tab-probe
+
+      - name: Upload tab probe evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tab-probe
+          path: tab-probe
+          if-no-files-found: ignore
+          retention-days: 14
+
       # Real downloads through the real executable from a local fixture server, checked on disk by size and SHA-256
       # (plain, Content-Disposition, Unicode, redirect, large, .exe, duplicates, blob, cookie session, 404, cut-off),
       # plus the download history before and after a restart. Three configurations isolate Gaming Mode and the Shield.

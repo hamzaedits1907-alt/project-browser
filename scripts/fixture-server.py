@@ -119,6 +119,10 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if path == "/manifest.json":
             return self.send_bytes(200, json.dumps(manifest()).encode(), "application/json; charset=utf-8")
+        if path.startswith("/t/") and path[3:].isalnum():
+            # A page whose title is its name, so the tab probe can tell tabs apart.
+            name = path[3:]
+            return self.send_bytes(200, ("<!doctype html><title>Tab %s</title><h1>Tab %s</h1>" % (name, name)).encode(), "text/html; charset=utf-8")
         if path in PAGES:
             return self.send_bytes(200, PAGES[path].encode(), "text/html; charset=utf-8")
         if path == "/redirect":

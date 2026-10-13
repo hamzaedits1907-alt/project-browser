@@ -31,6 +31,8 @@ pub struct Anchor {
 static ANCHOR: Mutex<Option<Anchor>> = Mutex::new(None);
 static READY: AtomicBool = AtomicBool::new(false);
 static CREATING: AtomicBool = AtomicBool::new(false);
+/// How often the open menu took focus back from its page (bounded, so a page that keeps grabbing focus cannot loop).
+static REFOCUSED: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
 /// The menu window has loaded and can show menus.
 pub fn is_ready() -> bool {
@@ -110,6 +112,7 @@ pub fn present(app: &AppHandle, width: f64, height: f64) -> Result<(), String> {
         }
         None => (1.0, (i32::MIN / 2, i32::MIN / 2, i32::MAX / 2, i32::MAX / 2)),
     };
+    REFOCUSED.store(0, Ordering::SeqCst);
     let size = ((width.max(40.0) * scale).ceil() as i32, (height.max(20.0) * scale).ceil() as i32);
     let (x, y) = place((a.x, a.y), size, work);
     if let Some(owner) = app.get_window(&a.owner) {
@@ -127,6 +130,25 @@ pub fn present(app: &AppHandle, width: f64, height: f64) -> Result<(), String> {
     let webview: &tauri::Webview = window.as_ref();
     let _ = webview.set_focus();
     Ok(())
+}
+
+/// The menu window lost keyboard focus. A real dismissal (a click somewhere, or another program came to the front) closes
+/// it; the page of its own browser window taking focus back on its own (WebView2 does that after the right-click) does
+/// not: the menu takes focus again and stays. Returns true when the menu should close.
+pub fn focus_lost(app: &AppHandle) -> bool {
+    let Some(a) = anchor() else { return true };
+    let Some(owner) = app.get_window(&a.owner) else { return true };
+    let Ok(hwnd) = owner.hwnd() else { return true };
+    if crate::native::mouse_button_down() || !crate::native::is_foreground(hwnd.0 as isize) || REFOCUSED.fetch_add(1, Ordering::SeqCst) >= 3 {
+        return true;
+    }
+    log::info!("menu window: focus taken back from the page (no click), the menu stays open");
+    if let Some(w) = app.get_webview_window(LABEL) {
+        let _ = w.set_focus();
+        let webview: &tauri::Webview = w.as_ref();
+        let _ = webview.set_focus();
+    }
+    false
 }
 
 /// Hides the menu window. `refocus`: the menu still had focus (a pick or Escape), so the browser window it belongs

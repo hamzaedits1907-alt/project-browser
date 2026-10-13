@@ -21,6 +21,7 @@ export const TOOLBAR_LABELS: Record<string, { label: string; icon: IconName; hin
   reader: { label: "Reader view and Listen", icon: "book", hint: "F9" },
   screenshot: { label: "Screenshot", icon: "crop", hint: "Ctrl+Shift+S" },
   commands: { label: "Command Center", icon: "command", hint: "Ctrl+K" },
+  dark: { label: "Dark page switch", icon: "moon", hint: "Darkens this site, or puts it back" },
 };
 
 function OrderList({ catalog, chosen, label, onChange }: { catalog: readonly string[]; chosen: string[]; label: (id: string) => { label: string; icon: IconName; hint?: string }; onChange: (next: string[]) => void }) {

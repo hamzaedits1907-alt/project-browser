@@ -51,7 +51,15 @@ export function MenuSurface() {
     // Clicking anywhere else (the page, another window) takes focus away: the menu closes, like any menu.
     void getCurrentWindow()
       .onFocusChanged(({ payload: focused }) => {
-        if (!focused) finish(null, false);
+        // WebView2 hands focus back to the page right after a right-click; only a real dismissal closes the menu.
+        if (!focused && current.current) {
+          void api
+            .menuFocusLost()
+            .catch(() => true)
+            .then((close) => {
+              if (close) finish(null, false);
+            });
+        }
       })
       .then(keep);
     const block = (e: MouseEvent) => e.preventDefault();

@@ -5,6 +5,7 @@ import { usePresence } from "../../lib/motion";
 import { useOverlay } from "../../lib/overlay";
 import { cue } from "../../lib/sounds";
 import { trace } from "../../lib/trace";
+import { windowIsActive } from "../../lib/window";
 import { Icon } from "./Icon";
 import type { IconName } from "./Icon";
 import { cx } from "./controls";
@@ -109,17 +110,19 @@ export function Popover({ open, onClose, anchor, point, align = "start", width, 
         onClose();
       }
     };
-    // Opening over a web page hides the page and moves keyboard focus to the shell (lib/overlay.ts), which can fire a
-    // blur that is immediately followed by focus again. Closing on that blur made toolbar popups on web pages vanish
-    // before they appeared. Only a blur after which the window really has no focus closes the popover.
+    // Opening over a web page hides the page, and focus moves between the webviews inside the window: the shell sees a
+    // blur although the browser window is still in front (that made popups on web pages close at once). Only when
+    // Windows says another window is in front does the popover close.
     let frame = 0;
     const onBlur = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
-        if (!document.hasFocus()) {
-          trace(`popover "${label}" closed: the window lost focus`);
-          onClose();
-        }
+        void windowIsActive().then((active) => {
+          if (!active) {
+            trace(`popover "${label}" closed: another window came to the front`);
+            onClose();
+          }
+        });
       });
     };
     document.addEventListener("pointerdown", onDown, true);

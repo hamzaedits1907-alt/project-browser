@@ -176,6 +176,8 @@ export const COMMANDS = [
   "menu_surface_ready",
   "menu_present",
   "menu_dismiss",
+  "menu_focus_lost",
+  "window_active",
   "shield_state",
   "shield_tab",
   "shield_set",
@@ -367,6 +369,10 @@ export const api = {
   menuPresent: (width: number, height: number) => call("menu_present", { width, height }),
   /** The menu window (only): hide. */
   menuDismiss: (refocus: boolean) => call("menu_dismiss", { refocus }),
+  /** The menu window (only) lost focus: true when it should close (a click elsewhere, another program). */
+  menuFocusLost: () => call<boolean>("menu_focus_lost"),
+  /** This browser window is the one Windows has in front. */
+  windowActive: () => call<boolean>("window_active"),
   shieldTest: (url: string, page: string) => call<string>("shield_test", { url, page }),
   /** Opens, closes, swaps or resizes this window's split view. */
   splitView: (op: SplitOp) => call("split_view", { op }),

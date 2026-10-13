@@ -111,6 +111,8 @@ const COMMANDS: &[&str] = &[
     "menu_surface_ready",
     "menu_present",
     "menu_dismiss",
+    "menu_focus_lost",
+    "window_active",
     "shield_state",
     "shield_tab",
     "shield_set",

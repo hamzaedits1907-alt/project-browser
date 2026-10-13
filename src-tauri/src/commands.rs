@@ -1523,6 +1523,28 @@ pub async fn menu_present(window: tauri::Window, app: AppHandle, width: f64, hei
     crate::menu_surface::present(&app, width, height).map_err(Error::msg)
 }
 
+/// The menu window lost focus: should it close (see menu_surface::focus_lost)?
+#[tauri::command]
+pub async fn menu_focus_lost(window: tauri::Window, app: AppHandle) -> Result<bool> {
+    if window.label() != crate::menu_surface::LABEL {
+        return Ok(true);
+    }
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let a = app.clone();
+    app.run_on_main_thread(move || {
+        let _ = tx.send(crate::menu_surface::focus_lost(&a));
+    })?;
+    Ok(rx.await.unwrap_or(true))
+}
+
+/// Whether this browser window is the one Windows has in front (popups close when it is not; focus moving between the
+/// page and the browser's own controls inside the window does not count).
+#[tauri::command]
+pub async fn window_active(window: tauri::Window) -> Result<bool> {
+    let hwnd = window.hwnd().map_err(|e| Error::msg(e.to_string()))?;
+    Ok(native::is_foreground(hwnd.0 as isize))
+}
+
 /// Hides the menu window (a pick or a dismissal; the shell that owns the menu is told separately).
 #[tauri::command]
 pub async fn menu_dismiss(window: tauri::Window, app: AppHandle, refocus: bool) -> Result<()> {
@@ -1917,6 +1939,8 @@ macro_rules! all_commands {
             $crate::commands::menu_surface_ready,
             $crate::commands::menu_present,
             $crate::commands::menu_dismiss,
+            $crate::commands::menu_focus_lost,
+            $crate::commands::window_active,
             $crate::commands::shield_state,
             $crate::commands::shield_tab,
             $crate::commands::shield_set,

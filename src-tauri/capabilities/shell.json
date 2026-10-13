@@ -107,6 +107,7 @@
     "allow-tab-to-window",
     "allow-context-menu-choose",
     "allow-shell-trace",
+    "allow-window-active",
     "allow-save-text-file",
     "allow-link-clean-undo",
     "allow-backup-export",

@@ -822,6 +822,29 @@ pub fn top_level_window_at(x: i32, y: i32) -> Option<isize> {
     }
 }
 
+/// Whether the window `hwnd` (or one of the windows it owns, such as the menu window) is the one Windows has in front.
+/// Focus moving between the webviews inside a browser window does not change this; switching to another program does.
+pub fn is_foreground(hwnd: isize) -> bool {
+    use windows::Win32::UI::WindowsAndMessaging::{GetAncestor, GetForegroundWindow, GetWindow, GA_ROOT, GW_OWNER};
+    unsafe {
+        let fg = GetForegroundWindow();
+        if fg.0.is_null() {
+            return false;
+        }
+        let root = GetAncestor(fg, GA_ROOT);
+        if root.0 as isize == hwnd {
+            return true;
+        }
+        GetWindow(root, GW_OWNER).map(|o| o.0 as isize == hwnd).unwrap_or(false)
+    }
+}
+
+/// Whether a mouse button is held down right now (a click is in progress somewhere).
+pub fn mouse_button_down() -> bool {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_MBUTTON, VK_RBUTTON};
+    unsafe { [VK_LBUTTON, VK_RBUTTON, VK_MBUTTON].iter().any(|k| (GetAsyncKeyState(k.0 as i32) as u16 & 0x8000) != 0) }
+}
+
 /// Makes `owner` the owner window of the top-level window `hwnd` (the menu window): it then stays above its owner and
 /// Windows gives activation back to the owner when it hides.
 pub fn set_owner(hwnd: isize, owner: isize) {

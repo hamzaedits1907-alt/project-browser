@@ -26,6 +26,17 @@ export async function onWindowMoved(fn: () => void): Promise<() => void> {
   return getCurrentWindow().onMoved(fn);
 }
 
+/** Whether this browser window is in front (Windows' foreground window). Outside Tauri: whether the page has focus. */
+export async function windowIsActive(): Promise<boolean> {
+  if (!inTauri) return document.hasFocus();
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return await invoke<boolean>("window_active");
+  } catch {
+    return true;
+  }
+}
+
 /** This window's label ("main", "win-2", …); "main" outside Tauri. */
 export function windowLabel(): string {
   return inTauri ? getCurrentWindow().label : "main";

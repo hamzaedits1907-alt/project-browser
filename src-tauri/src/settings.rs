@@ -355,6 +355,20 @@ impl Settings {
         self
     }
 
+    /// These settings with the fields of a JSON object (camelCase names) replaced. Used for the
+    /// `PROJECT_BROWSER_TEST_SETTINGS` test switch, so CI probes can start the real app in a known configuration.
+    pub fn with_overrides(self, json: &str) -> std::result::Result<Settings, String> {
+        let patch: serde_json::Value = serde_json::from_str(json).map_err(|e| e.to_string())?;
+        let serde_json::Value::Object(patch) = patch else { return Err("expected a JSON object".into()) };
+        let mut base = serde_json::to_value(&self).map_err(|e| e.to_string())?;
+        if let Some(obj) = base.as_object_mut() {
+            for (k, v) in patch {
+                obj.insert(k, v);
+            }
+        }
+        serde_json::from_value::<Settings>(base).map(Settings::sanitized).map_err(|e| e.to_string())
+    }
+
     /// True when `host` matches a never-sleep entry exactly or as a parent domain.
     pub fn is_never_sleep(&self, host: &str) -> bool {
         self.never_sleep_hosts.iter().any(|h| host == h || host.ends_with(&format!(".{h}")))
@@ -364,6 +378,16 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_overrides_replace_only_the_given_fields() {
+        let s = Settings::default().with_overrides(r#"{"gamingMode":true,"downloadDir":"C:\\dl"}"#).unwrap();
+        assert!(s.gaming_mode);
+        assert_eq!(s.download_dir.as_deref(), Some("C:\\dl"));
+        assert_eq!(s.sleep_after_minutes, 30);
+        assert!(Settings::default().with_overrides("[1]").is_err());
+        assert!(Settings::default().with_overrides("{").is_err());
+    }
 
     #[test]
     fn unknown_and_missing_fields_fall_back_to_defaults() {

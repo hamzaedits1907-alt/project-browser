@@ -102,8 +102,24 @@ pub fn run() {
                 log::info!("startup: --gaming given, Gaming Mode is on for this session");
                 settings.gaming_mode = true;
             }
+            // `PROJECT_BROWSER_TEST_SETTINGS='{"downloadDir":"..."}'`: test switch (CI probes) that starts this run with
+            // some settings replaced. It is not saved unless the user changes a setting.
+            if let Some(json) = std::env::var("PROJECT_BROWSER_TEST_SETTINGS").ok().filter(|v| !v.trim().is_empty()) {
+                match settings.clone().with_overrides(&json) {
+                    Ok(s) => {
+                        log::info!("startup: test settings applied");
+                        settings = s;
+                    }
+                    Err(e) => log::warn!("startup: test settings ignored: {e}"),
+                }
+            }
             // The Shield must exist before the controller creates the first tab webview.
-            let shield_config: shield::ShieldConfig = db.kv_get(shield::KV_KEY)?.unwrap_or_default();
+            let mut shield_config: shield::ShieldConfig = db.kv_get(shield::KV_KEY)?.unwrap_or_default();
+            // `PROJECT_BROWSER_TEST_SHIELD_OFF=1`: test switch (CI probes) that starts this run with the Shield off.
+            if std::env::var_os("PROJECT_BROWSER_TEST_SHIELD_OFF").is_some() {
+                log::info!("startup: test switch: Project Shield off for this run");
+                shield_config.enabled = false;
+            }
             shield::init(data_root.join("shield"), shield_config).start();
             log::info!("startup: Project Shield ready (starter rules active, stored lists loading)");
             let onboarded: bool = db.kv_get("onboarded")?.unwrap_or(false);

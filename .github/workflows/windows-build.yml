@@ -166,6 +166,32 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+      # Real downloads through the real executable from a local fixture server, checked on disk by size and SHA-256
+      # (plain, Content-Disposition, Unicode, redirect, large, .exe, duplicates, blob, cookie session, 404, cut-off),
+      # plus the download history before and after a restart. Three configurations isolate Gaming Mode and the Shield.
+      - name: Download probe (default settings)
+        shell: pwsh
+        run: ./scripts/download-probe.ps1 -Exe src-tauri/target/release/project-browser.exe -Config default -ReportDir download-probe
+
+      - name: Download probe (Gaming Mode, Windows Downloads folder)
+        if: always()
+        shell: pwsh
+        run: ./scripts/download-probe.ps1 -Exe src-tauri/target/release/project-browser.exe -Config gaming -ReportDir download-probe
+
+      - name: Download probe (Shield off)
+        if: always()
+        shell: pwsh
+        run: ./scripts/download-probe.ps1 -Exe src-tauri/target/release/project-browser.exe -Config noshield -ReportDir download-probe
+
+      - name: Upload download probe evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: download-probe
+          path: download-probe
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: List build output
         shell: pwsh
         run: Get-ChildItem -Recurse src-tauri/target/release/bundle | Where-Object { -not $_.PSIsContainer } | Select-Object FullName, Length

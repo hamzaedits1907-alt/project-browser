@@ -172,6 +172,8 @@ impl Db {
                 ended_at: r.get(11)?,
                 private: false,
                 paused_by_gaming: false,
+                missing: false,
+                checking: false,
             })
         })?;
         Ok(rows.collect::<std::result::Result<_, _>>()?)

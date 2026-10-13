@@ -533,9 +533,17 @@ impl Controller {
 
     /// Positions/shows the active tab's webview and hides all others.
     pub(crate) fn relayout(&mut self) {
-        let Some(area) = self.layout.content else { return };
+        let Some(mut area) = self.layout.content else { return };
         self.validate_split();
-        let placed = super::split::placements(self.tabs.active_id(), self.layout.split, area);
+        let mut placed = super::split::placements(self.tabs.active_id(), self.layout.split, area);
+        // A page in element fullscreen (a video's fullscreen button) covers the whole window, measured from the window
+        // itself: it no longer depends on the shell having hidden its chrome and re-measured the page area first.
+        if let Some(fs) = self.layout.element_fullscreen.filter(|id| Some(*id) == self.tabs.active_id()) {
+            if let Some(full) = self.window_area() {
+                area = full;
+                placed = vec![(fs, full)];
+            }
+        }
         for (id, _) in &placed {
             let needs_view = self.tabs.get(*id).is_some_and(|t| !is_internal(&t.url));
             if needs_view && !self.views.contains_key(id) && area.width > 0.0 && area.height > 0.0 {
@@ -616,6 +624,14 @@ impl Controller {
         self.layout.browser_fullscreen = !self.layout.browser_fullscreen;
         self.apply_window_fullscreen();
         self.mark_state();
+    }
+
+    /// The whole inside of this window in CSS pixels.
+    fn window_area(&self) -> Option<super::ContentRect> {
+        let w = self.app.get_window(&self.current)?;
+        let size = w.inner_size().ok()?;
+        let scale = w.scale_factor().ok().filter(|s| *s > 0.0)?;
+        Some(super::ContentRect { x: 0.0, y: 0.0, width: size.width as f64 / scale, height: size.height as f64 / scale })
     }
 
     pub(crate) fn apply_window_fullscreen(&self) {

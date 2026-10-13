@@ -69,13 +69,10 @@ function TabItemView({ tab, active, groupColor, shift, dragged, torn, dropBefore
       )}
       style={style}
       title={status.length ? `${title}\n${status.join(" · ")}` : title}
-      onPointerDown={(e) => {
-        if (e.button === 0) {
-          if (!active) cue("tap");
-          void attempt(() => api.tabActivate(tab.id));
-        }
-        onPointerDown(tab, e);
-      }}
+      // A press starts a possible drag; the tab is activated on release if it was a click (useTabDrag), so dragging a
+      // background tab never switches to it.
+      onPointerDown={(e) => onPointerDown(tab, e)}
+      onDragStart={(e) => e.preventDefault()}
       onAuxClick={(e) => {
         if (e.button === 1) {
           e.preventDefault();
@@ -89,6 +86,7 @@ function TabItemView({ tab, active, groupColor, shift, dragged, torn, dropBefore
       }}
       onKeyDown={(e) => {
         if (e.key === "Delete") void attempt(() => api.tabClose(tab.id));
+        if (e.key === "Enter" || e.key === " ") void attempt(() => api.tabActivate(tab.id));
         if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
           e.preventDefault();
           const r = e.currentTarget.getBoundingClientRect();

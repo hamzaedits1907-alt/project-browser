@@ -223,6 +223,29 @@ try {
   $steps["Escape removes the menu"] = $gone
   $steps["log: menu closed"] = ((& $log) -match "context menu \d+: closed")
 
+  # 3b. A toolbar popup over a web page (the "more" menu at the right end of the toolbar): it must appear and STAY open
+  #     (a report said toolbar buttons mostly do nothing on web pages). Judged by pixels below the button.
+  $base3 = Capture $main "03b-before-toolbar"
+  $mb = ClientPoint $main 1253 63
+  $sw = [Diagnostics.Stopwatch]::StartNew()
+  Click $mb.X $mb.Y $false
+  $shownAt = -1
+  while ($sw.ElapsedMilliseconds -lt 3000) {
+    $c = Snap $main; $dd = PixelDiff $base3 $c $main 940 90 330 300; $c.Dispose()
+    if ($dd -gt 8) { $shownAt = $sw.ElapsedMilliseconds; break }
+    Start-Sleep -Milliseconds 30
+  }
+  $notes["toolbar menu: click to drawn (ms, -1 = never)"] = $shownAt
+  $steps["toolbar menu opens on a web page"] = ($shownAt -ge 0)
+  Start-Sleep -Milliseconds 1500
+  $still = Capture $main "03c-toolbar-menu-after-1500ms"
+  $dd2 = PixelDiff $base3 $still $main 940 90 330 300
+  $notes["toolbar menu: pixel change 1.5 s later"] = $dd2
+  $steps["toolbar menu stays open"] = ($dd2 -gt 8)
+  Key @(0x1B)
+  Start-Sleep -Milliseconds 600
+  $after = Capture $main "03d-toolbar-menu-closed"
+
   # 4. Ctrl+T opens a tab.
   Key @(0x11, 0x54)
   Start-Sleep -Milliseconds 1500

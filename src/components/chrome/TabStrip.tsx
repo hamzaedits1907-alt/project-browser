@@ -6,6 +6,7 @@ import { useFlip } from "../../lib/motion";
 import { cue } from "../../lib/sounds";
 import { attempt, useStore } from "../../lib/store";
 import { shiftFor } from "../../lib/tabDrag";
+import { applyOrder, orderSettled } from "../../lib/tabDragMachine";
 import type { Tab, TabGroup } from "../../lib/types";
 import { IconButton, cx } from "../ui/controls";
 import { GroupChip, GroupContextMenu, TabContextMenu } from "./TabMenus";
@@ -19,17 +20,27 @@ import { useTabDrag } from "./useTabDrag";
  * into a new window, or dropped onto another window's strip; groups show as coloured chips that collapse their tabs.
  */
 export function TabStrip({ vertical = false }: { vertical?: boolean }) {
-  const tabs = useStore((s) => s.browser.tabs);
+  const coreTabs = useStore((s) => s.browser.tabs);
   const groups = useStore((s) => s.browser.groups);
   const activeId = useStore((s) => s.browser.activeId);
   const listRef = useRef<HTMLDivElement>(null);
   const axis = vertical ? "y" : "x";
-  const { drag, handlers } = useTabDrag(listRef, axis);
+  const captureFlip = useRef<() => void>(() => {});
+  const beforeReorder = useCallback(() => captureFlip.current(), []);
+  const { drag, order, settle, onPointerDown } = useTabDrag(listRef, axis, beforeReorder);
+  // Right after a drop the new order is shown at once; the core's state confirms it a moment later.
+  const tabs = applyOrder(coreTabs, order);
+  useEffect(() => {
+    if (order && orderSettled(coreTabs, order)) settle();
+  }, [coreTabs, order, settle]);
   const foreign = useForeignTabDrop(listRef, axis);
   const [tabMenu, setTabMenu] = useState<MenuAt<Tab> | null>(null);
   const [groupMenu, setGroupMenu] = useState<MenuAt<TabGroup> | null>(null);
 
-  useFlip(listRef, tabs, axis);
+  const flipCapture = useFlip(listRef, tabs, axis, drag !== null);
+  useEffect(() => {
+    captureFlip.current = flipCapture;
+  }, [flipCapture]);
 
   // Keep the active tab in view when the strip scrolls (many tabs).
   useEffect(() => {
@@ -37,7 +48,7 @@ export function TabStrip({ vertical = false }: { vertical?: boolean }) {
     el?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [activeId]);
 
-  const onTabPointerDown = useCallback((tab: Tab, e: PointerEvent<HTMLElement>) => handlers.onPointerDown(tab.id, e), [handlers]);
+  const onTabPointerDown = useCallback((tab: Tab, e: PointerEvent<HTMLElement>) => onPointerDown(tab.id, e), [onPointerDown]);
   const onTabMenu = useCallback((tab: Tab, e: MouseEvent) => setTabMenu({ item: tab, x: e.clientX, y: e.clientY }), []);
   const onGroupMenu = useCallback((group: TabGroup, x: number, y: number) => setGroupMenu({ item: group, x, y }), []);
   const closeTabMenu = useCallback(() => setTabMenu(null), []);
@@ -106,10 +117,6 @@ export function TabStrip({ vertical = false }: { vertical?: boolean }) {
         className={cx("tabs", foreign && foreign.before === null && "drop-at-end")}
         style={vertical ? undefined : { width: naturalWidth }}
         onWheel={onWheel}
-        onPointerMove={handlers.onPointerMove}
-        onPointerUp={handlers.onPointerUp}
-        onPointerCancel={handlers.onPointerCancel}
-        onLostPointerCapture={handlers.onLostPointerCapture}
       >
         {items}
       </div>

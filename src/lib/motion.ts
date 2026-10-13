@@ -42,11 +42,12 @@ export function usePresence(open: boolean, exitMs = 110): { mounted: boolean; le
  * FLIP: children with `data-flip` that moved since the last render glide from their old place to the new one
  * (transform only). Elements with `data-flip-skip` (the tab being dragged) are left alone.
  */
-export function useFlip(container: RefObject<HTMLElement | null>, key: unknown, axis: "x" | "y" = "x"): void {
+export function useFlip(container: RefObject<HTMLElement | null>, key: unknown, axis: "x" | "y" = "x", paused = false): () => void {
   const last = useRef(new Map<string, number>());
   useLayoutEffect(() => {
     const root = container.current;
-    if (!root) return;
+    // While paused (a tab drag in progress: tabs are moved by transforms) nothing is measured or animated.
+    if (!root || paused) return;
     const scale = motionScale();
     const next = new Map<string, number>();
     const items = root.querySelectorAll<HTMLElement>("[data-flip]");
@@ -75,4 +76,15 @@ export function useFlip(container: RefObject<HTMLElement | null>, key: unknown, 
   });
   // Reading `key` keeps the hook honest about what drives it; layout is measured after every render anyway.
   void key;
+  // Records where the items are drawn right now (transforms included), so the next render glides from there.
+  return () => {
+    const root = container.current;
+    if (!root) return;
+    const now = new Map<string, number>();
+    for (const el of root.querySelectorAll<HTMLElement>("[data-flip]")) {
+      const r = el.getBoundingClientRect();
+      now.set(el.dataset.flip as string, axis === "x" ? r.left : r.top);
+    }
+    last.current = now;
+  };
 }

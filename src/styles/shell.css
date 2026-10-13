@@ -1767,3 +1767,8 @@
 :root[data-tabs="pill"] .tab.in-group:not(.is-active) {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--group) 45%, transparent);
 }
+
+/* Favicons never start the browser's own image drag (it would cancel a tab drag with pointercancel). */
+.tab img {
+  -webkit-user-drag: none;
+}

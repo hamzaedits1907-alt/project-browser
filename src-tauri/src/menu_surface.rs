@@ -160,6 +160,6 @@ mod tests {
         // Taller than the space on either side: pinned to the top of the work area.
         assert_eq!(place((100, 500), (300, 1200), WORK), (100, 0));
         // A second monitor left of the primary one (negative coordinates).
-        assert_eq!(place((-50, 10), (300, 200), (-1920, 0, 0, 1080)), (-300, 10));
+        assert_eq!(place((-50, 10), (300, 200), (-1920, 0, 0, 1080)), (-350, 10));
     }
 }

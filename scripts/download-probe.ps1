@@ -134,6 +134,18 @@ try {
     $notes["$($c.key)"] = if ($got) { "$got in $([int]((Get-Date) - $t0).TotalMilliseconds) ms" } else { "no file with the expected bytes after $($c.wait) s" }
     if ($got) { $names[$c.path] = $got }
   }
+  # The .exe: on this runner Windows' security check (SmartScreen / Attachment Services) holds it after the transfer.
+  # The browser must then say so ("checking") or report it completed; never leave it looking stuck at 0 bytes.
+  $exeOutcome = $null
+  [void](WaitFor {
+    $t = LogText
+    if ($t -match "download \d+004: state 2") { $script:exeOutcome = "completed"; return $true }
+    if ($t -match "download \d+004: every byte is here but WebView2 has not finished it") { $script:exeOutcome = "held by the Windows security check, shown as such"; return $true }
+    if ($t -match "download \d+004: state 1") { $script:exeOutcome = "failed (reported as failed)"; return $true }
+    return $false
+  } 40)
+  $notes[".exe outcome"] = if ($exeOutcome) { $exeOutcome } else { "no report within 40 s" }
+  $checks[".exe: the browser reports what happened (completed, held for review, or failed)"] = [bool]$exeOutcome
   $checks["same name: two different files kept"] = ($names["/files/a/same.txt"] -and $names["/files/b/same.txt"] -and $names["/files/a/same.txt"] -ne $names["/files/b/same.txt"])
 
   # A transfer that is cut off must end as failed; nothing named broken.bin may be presented as complete.
@@ -146,7 +158,10 @@ try {
   $rows | ConvertTo-Json -Depth 3 | Set-Content (Join-Path $report "history-before-restart.json") -Encoding utf8
   $completed = @($rows | Where-Object { $_.state -eq "completed" }).Count
   $notes["history rows"] = "$(@($rows).Count) rows, $completed completed"
-  $checks["history: every finished download recorded as completed"] = ($completed -ge @($names.Keys).Count)
+  $exeDone = ($exeOutcome -eq "completed")
+  $expected = @($names.Keys | Where-Object { $_ -ne "/files/setup.exe" -or $exeDone }).Count
+  $checks["history: every finished download recorded as completed"] = ($completed -ge $expected)
+  $checks["history: no download left looking like it is still running"] = (@($rows | Where-Object { $_.state -eq "inprogress" -and $_.filename -notlike "setup*" }).Count -eq 0)
   $checks["history: the cut-off transfer is not completed"] = (@($rows | Where-Object { $_.filename -like "broken*" -and $_.state -eq "completed" }).Count -eq 0)
 
   # Restart: the history must come back unchanged.

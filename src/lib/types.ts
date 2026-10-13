@@ -214,6 +214,8 @@ export interface Download {
   pausedByGaming: boolean;
   /** Completed, but the file is no longer where it was saved. */
   missing?: boolean;
+  /** Every byte is here but Windows is still checking the file (SmartScreen may want a keep/delete decision). */
+  checking?: boolean;
 }
 
 /** What restoring a backup did (backup.rs). */
@@ -227,7 +229,7 @@ export interface RestoreReport {
   shell: Record<string, unknown> | null;
 }
 
-export type DownloadCommand = "pause" | "resume" | "cancel" | "open" | "openConfirmed" | "showInFolder" | "remove" | "retry";
+export type DownloadCommand = "pause" | "resume" | "cancel" | "open" | "openConfirmed" | "showInFolder" | "remove" | "retry" | "review";
 
 export interface PermissionPrompt {
   id: number;

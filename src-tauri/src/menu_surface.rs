@@ -120,7 +120,11 @@ pub fn present(app: &AppHandle, width: f64, height: f64) -> Result<(), String> {
     window.set_size(PhysicalSize::new(size.0 as u32, size.1 as u32)).map_err(|e| e.to_string())?;
     window.set_position(PhysicalPosition::new(x, y)).map_err(|e| e.to_string())?;
     window.show().map_err(|e| e.to_string())?;
+    // Focus both the window and its webview: keys (Escape, arrows) must reach the menu, and clicking elsewhere must
+    // take focus away from it (that is how it closes).
     window.set_focus().map_err(|e| e.to_string())?;
+    let webview: &tauri::Webview = window.as_ref();
+    let _ = webview.set_focus();
     Ok(())
 }
 

@@ -27,6 +27,7 @@ function rateOf(d: Download): number | null {
 function statusText(d: Download, rate: number | null): string {
   switch (d.state) {
     case "inprogress": {
+      if (d.checking) return `All ${formatBytes(d.totalBytes ?? d.receivedBytes)} received · Windows is checking this file`;
       const left = secondsLeft(d.receivedBytes, d.totalBytes, rate);
       return [
         `${formatBytes(d.receivedBytes)}${d.totalBytes ? ` of ${formatBytes(d.totalBytes)}` : ""}`,
@@ -88,7 +89,10 @@ export function DownloadRow({ d, compact }: { d: Download; compact?: boolean }) 
         {!confirming && d.state === "completed" && d.danger && <div className="dl-warning">{d.danger}</div>}
       </div>
       <div className="dl-actions">
-        {d.state === "inprogress" && <IconButton icon="pause" label="Pause" size={16} onClick={() => run("pause")} />}
+        {d.checking && (
+          <IconButton icon="shieldCheck" label="Review: Windows SmartScreen asks whether to keep this file" size={16} onClick={() => run("review")} />
+        )}
+        {d.state === "inprogress" && !d.checking && <IconButton icon="pause" label="Pause" size={16} onClick={() => run("pause")} />}
         {d.state === "paused" && <IconButton icon="play" label="Resume" size={16} onClick={() => run("resume")} />}
         {active && <IconButton icon="close" label="Cancel download" size={16} onClick={() => run("cancel")} />}
         {retryable && <IconButton icon="refresh" label="Retry (starts again from the beginning)" size={16} onClick={() => run("retry")} />}

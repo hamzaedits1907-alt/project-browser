@@ -1010,19 +1010,28 @@ unsafe fn track_download(
 
     let c = ctl.clone();
     let mut last = Instant::now().checked_sub(Duration::from_secs(1)).unwrap_or_else(Instant::now);
+    let mut all_received = false;
     let mut token = 0i64;
     if let Err(e) = op.add_BytesReceivedChanged(
         &BytesReceivedChangedEventHandler::create(Box::new(move |sender, _| {
-            // Progress fires very often; forward at most 4 updates per second.
-            if last.elapsed() < Duration::from_millis(250) {
-                return Ok(());
-            }
-            last = Instant::now();
             let Some(op) = sender else { return Ok(()) };
             let mut received = 0i64;
             let mut total = 0i64;
             let _ = op.BytesReceived(&mut received);
             let _ = op.TotalBytesToReceive(&mut total);
+            let done = total > 0 && received >= total;
+            if done && !all_received {
+                // Every byte is here; WebView2 still has to finish (Windows' security check of the file comes now).
+                all_received = true;
+                log::info!("download {id}: all {received} bytes received");
+                c.post(move |ctl| ctl.on_download_progress(id, received, Some(total)));
+                return Ok(());
+            }
+            // Progress fires very often; forward at most 4 updates per second.
+            if last.elapsed() < Duration::from_millis(250) {
+                return Ok(());
+            }
+            last = Instant::now();
             c.post(move |ctl| ctl.on_download_progress(id, received, (total > 0).then_some(total)));
             Ok(())
         })),
@@ -1080,6 +1089,11 @@ fn interrupt_text(reason: COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON) -> String {
         COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON_SERVER_FORBIDDEN => "Server refused the download",
         COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON_SERVER_UNAUTHORIZED => "Not authorised",
         COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON_USER_SHUTDOWN => "Browser closed",
+        COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON_FILE_FAILED => "The file could not be written or was rejected by a Windows security check",
+        COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON_SERVER_CONTENT_LENGTH_MISMATCH => "The server sent less than it announced (connection cut off)",
+        COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON_FILE_NAME_TOO_LONG => "File name too long",
+        COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON_SERVER_FAILED => "The server failed",
+        COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON_NETWORK_SERVER_DOWN => "The server is unreachable",
         _ => return format!("Download failed (code {})", reason.0),
     }
     .to_string()
@@ -1107,6 +1121,51 @@ pub enum DownloadAction {
     Pause,
     Resume,
     Cancel,
+}
+
+/// Reads WebView2's own state for download `id` and reports it, so the list never keeps showing a download as
+/// running that WebView2 has already ended (or restarted under a new id).
+pub fn refresh_download_state(id: i64, ctl: ControllerHandle) {
+    let Some(op) = DOWNLOADS.with(|d| d.borrow().get(&id).cloned()) else { return };
+    unsafe {
+        let mut state = COREWEBVIEW2_DOWNLOAD_STATE::default();
+        if op.State(&mut state).is_err() {
+            // The owning webview is gone: the operation can no longer be asked or controlled.
+            DOWNLOADS.with(|d| d.borrow_mut().remove(&id));
+            ctl.post(move |c| {
+                c.on_download_state(id, NativeDownloadState::Interrupted("The download was cut off before it finished".into()), String::new(), 0)
+            });
+            return;
+        }
+        if state == COREWEBVIEW2_DOWNLOAD_STATE_IN_PROGRESS {
+            return;
+        }
+        let mut reason = COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON::default();
+        let _ = op.InterruptReason(&mut reason);
+        let mut received = 0i64;
+        let _ = op.BytesReceived(&mut received);
+        let path = pwstr(|p| op.ResultFilePath(p));
+        let native = match state {
+            COREWEBVIEW2_DOWNLOAD_STATE_COMPLETED => NativeDownloadState::Completed,
+            _ if reason == COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON_USER_CANCELED => NativeDownloadState::Cancelled,
+            _ => NativeDownloadState::Interrupted(interrupt_text(reason)),
+        };
+        log::info!("download {id}: state {} read back (reason {})", state.0, reason.0);
+        DOWNLOADS.with(|d| d.borrow_mut().remove(&id));
+        ctl.post(move |c| c.on_download_state(id, native, path, received));
+    }
+}
+
+/// Opens WebView2's own download panel over tab `id` (top right, under the toolbar). It is where Windows SmartScreen
+/// asks to keep or delete a file it could not vouch for; nothing in it is bypassed or answered for the user.
+pub fn open_download_dialog(id: TabId) -> bool {
+    let Some(t) = tab_com(id) else { return false };
+    let Ok(wv9) = t.webview.cast::<ICoreWebView2_9>() else { return false };
+    unsafe {
+        let _ = wv9.SetDefaultDownloadDialogCornerAlignment(COREWEBVIEW2_DEFAULT_DOWNLOAD_DIALOG_CORNER_ALIGNMENT_TOP_RIGHT);
+        let _ = wv9.SetDefaultDownloadDialogMargin(windows::Win32::Foundation::POINT { x: 12, y: 8 });
+        wv9.OpenDefaultDownloadDialog().is_ok()
+    }
 }
 
 /// `ERROR_INVALID_STATE`: what WebView2 answers when the webview that owns a download has been closed.

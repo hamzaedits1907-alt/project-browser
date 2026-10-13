@@ -65,6 +65,10 @@ pub struct Download {
     /// A completed download whose file is no longer where it was saved (moved or deleted since). Checked, not stored.
     #[serde(default)]
     pub missing: bool,
+    /// Every byte arrived but WebView2 has not finished: Windows is checking the file, or SmartScreen waits for the
+    /// user to keep or delete it (Review opens that prompt). Not stored.
+    #[serde(default)]
+    pub checking: bool,
 }
 
 const DANGEROUS_EXTENSIONS: &[&str] = &[
@@ -215,6 +219,7 @@ mod tests {
             private: false,
             paused_by_gaming: false,
             missing: false,
+            checking: false,
         }
     }
 

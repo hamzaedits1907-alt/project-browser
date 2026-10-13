@@ -170,6 +170,7 @@ export const COMMANDS = [
   "context_menu_choose",
   "backup_export",
   "backup_restore",
+  "shell_trace",
   "menu_surface_ready",
   "menu_present",
   "menu_dismiss",
@@ -352,6 +353,8 @@ export const api = {
   backupExport: (shell: Record<string, unknown>) => call<string | null>("backup_export", { shell }),
   /** Restores a backup file the user picks. Null when cancelled. */
   backupRestore: () => call<RestoreReport | null>("backup_restore"),
+  /** One short diagnostic line into the log (lib/trace.ts). */
+  shellTrace: (message: string) => call("shell_trace", { message }),
   menuSurfaceReady: () => call("menu_surface_ready"),
   /** The menu window (only): place the rendered menu of this CSS size at the click and show it. */
   menuPresent: (width: number, height: number) => call("menu_present", { width, height }),

@@ -4,6 +4,7 @@ import type { KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from "
 import { usePresence } from "../../lib/motion";
 import { useOverlay } from "../../lib/overlay";
 import { cue } from "../../lib/sounds";
+import { trace } from "../../lib/trace";
 import { Icon } from "./Icon";
 import type { IconName } from "./Icon";
 import { cx } from "./controls";
@@ -85,7 +86,8 @@ export function Popover({ open, onClose, anchor, point, align = "start", width, 
       const r = anchor?.current?.getBoundingClientRect();
       left = r ? (align === "end" ? r.right - w : r.left) : MARGIN;
       top = r ? r.bottom + 6 : MARGIN;
-      if (top + h > vh - MARGIN) top = Math.max(MARGIN, vh - h - MARGIN);
+      // A popup hanging from a toolbar button stays below it (it scrolls when taller than the room left); it never
+      // slides up over its own button and the toolbar.
     }
     left = Math.max(MARGIN, Math.min(left, vw - w - MARGIN));
     setPos({ top, left, maxHeight: vh - top - MARGIN, origin: `${originY} ${originX}` });
@@ -93,10 +95,12 @@ export function Popover({ open, onClose, anchor, point, align = "start", width, 
 
   useEffect(() => {
     if (!open) return;
+    trace(`popover "${label}" opening`);
     cue("open");
     const onDown = (e: PointerEvent) => {
       const t = e.target as Node;
       if (ref.current?.contains(t) || anchor?.current?.contains(t)) return;
+      trace(`popover "${label}" closed: click outside`);
       onClose();
     };
     const onKey = (e: KeyboardEvent) => {
@@ -112,7 +116,10 @@ export function Popover({ open, onClose, anchor, point, align = "start", width, 
     const onBlur = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
-        if (!document.hasFocus()) onClose();
+        if (!document.hasFocus()) {
+          trace(`popover "${label}" closed: the window lost focus`);
+          onClose();
+        }
       });
     };
     document.addEventListener("pointerdown", onDown, true);
@@ -124,7 +131,7 @@ export function Popover({ open, onClose, anchor, point, align = "start", width, 
       document.removeEventListener("keydown", onKey, true);
       window.removeEventListener("blur", onBlur);
     };
-  }, [open, onClose, anchor]);
+  }, [open, onClose, anchor, label]);
 
   // Keyboard users start inside the menu; mouse users keep focus where it was until they press an arrow key.
   useEffect(() => {
@@ -146,6 +153,10 @@ export function Popover({ open, onClose, anchor, point, align = "start", width, 
       e.key === "Home" ? 0 : e.key === "End" ? items.length - 1 : e.key === "ArrowDown" ? (at + 1) % items.length : at <= 0 ? items.length - 1 : at - 1;
     items[next]?.focus();
   };
+
+  useEffect(() => {
+    if (ready && open) trace(`popover "${label}" shown`);
+  }, [ready, open, label]);
 
   if (!ready) return null;
   return (

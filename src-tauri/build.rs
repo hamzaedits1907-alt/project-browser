@@ -105,6 +105,7 @@ const COMMANDS: &[&str] = &[
     "context_menu_choose",
     "backup_export",
     "backup_restore",
+    "shell_trace",
     "menu_surface_ready",
     "menu_present",
     "menu_dismiss",

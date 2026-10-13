@@ -106,6 +106,7 @@
     "allow-windows-list",
     "allow-tab-to-window",
     "allow-context-menu-choose",
+    "allow-shell-trace",
     "allow-backup-export",
     "allow-backup-restore",
     "core:event:allow-emit-to",

@@ -1457,6 +1457,14 @@ pub async fn backup_restore(window: tauri::Window, s: State<'_, AppState>) -> Re
     Ok(Some(report))
 }
 
+/// A short diagnostic line from the shell (lib/trace.ts): bounded, one line, never page content.
+#[tauri::command]
+pub async fn shell_trace(window: tauri::Window, message: String) -> Result<()> {
+    let line: String = message.chars().filter(|c| !c.is_control()).take(200).collect();
+    log::info!("shell {}: {line}", window.label());
+    Ok(())
+}
+
 // ---- the right-click menu's own window (menu_surface.rs) ----------------------------------
 
 /// The menu window has loaded and can show menus.
@@ -1866,6 +1874,7 @@ macro_rules! all_commands {
             $crate::commands::context_menu_choose,
             $crate::commands::backup_export,
             $crate::commands::backup_restore,
+            $crate::commands::shell_trace,
             $crate::commands::menu_surface_ready,
             $crate::commands::menu_present,
             $crate::commands::menu_dismiss,

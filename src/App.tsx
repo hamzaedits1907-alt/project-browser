@@ -28,6 +28,7 @@ import { useScreenTime, useShellShortcuts, useSitePrefs } from "./features/shell
 import { ImportWizard } from "./features/import/ImportWizard";
 import { applyLook } from "./lib/theme";
 import { init, useStore } from "./lib/store";
+import { trace } from "./lib/trace";
 
 export function App() {
   const ready = useStore((s) => s.ready);
@@ -42,6 +43,14 @@ export function App() {
 
   useEffect(() => {
     void init();
+    trace("shell UI mounted");
+    // Where clicks land (diagnostics for the toolbar probe): the element under a press in the toolbar.
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest(".toolbar")) trace(`press in the toolbar on ${t.tagName.toLowerCase()}.${String(t.className).slice(0, 40)} at ${Math.round(e.clientX)},${Math.round(e.clientY)}`);
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
   }, []);
   useShellShortcuts();
   useScreenTime();

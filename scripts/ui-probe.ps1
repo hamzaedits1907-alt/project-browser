@@ -54,6 +54,7 @@ public static class Probe {
   [DllImport("user32.dll")] public static extern void mouse_event(uint f, int dx, int dy, uint d, IntPtr e);
   [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint f, IntPtr e);
   [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr h);
+  [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT p);
   public static string Text(IntPtr h) { var s = new StringBuilder(256); GetWindowText(h, s, 256); return s.ToString(); }
   public static string Class(IntPtr h) { var s = new StringBuilder(256); GetClassName(h, s, 256); return s.ToString(); }
   // Every top-level window of the process (owned or not, visible or not): for diagnostics.
@@ -163,6 +164,8 @@ function WaitForLog([string]$pattern, [int]$seconds) {
 function ToolbarMenu([string]$label) {
   $base = Snap $main
   $mb = ClientPoint $main 1253 63
+  $under = [Probe]::WindowFromPoint($mb)
+  $script:notes["toolbar menu ($label): window under the click"] = "{0} class={1} (main={2})" -f $under, [Probe]::Class($under), $main
   $sw = [Diagnostics.Stopwatch]::StartNew()
   Click $mb.X $mb.Y $false
   $shownAt = -1

@@ -1772,3 +1772,82 @@
 .tab img {
   -webkit-user-drag: none;
 }
+
+/* ---- Tab motion (0.8.1): closing, loading, pressing. Transform/opacity only, except the short close collapse. ---- */
+/* A closed tab collapses where it was; its neighbours slide into the gap. */
+.tab.tab-ghost {
+  pointer-events: none;
+  flex: 0 0 var(--ghost);
+  min-width: 0;
+  max-width: var(--ghost);
+  overflow: hidden;
+  animation: tab-out var(--d2) var(--e-out) forwards;
+}
+.tab.tab-ghost::before {
+  opacity: 0;
+}
+@keyframes tab-out {
+  from {
+    opacity: 0.85;
+    max-width: var(--ghost);
+    flex-basis: var(--ghost);
+  }
+  to {
+    opacity: 0;
+    max-width: 0;
+    flex-basis: 0;
+    padding: 0;
+    transform: scale(0.94);
+  }
+}
+.tabstrip.is-vertical .tab.tab-ghost {
+  flex: none;
+  max-width: none;
+  height: var(--ghost);
+  animation-name: vtab-out;
+}
+@keyframes vtab-out {
+  to {
+    opacity: 0;
+    height: 0;
+    padding: 0;
+  }
+}
+/* Becoming the active tab: the background settles in instead of snapping. */
+.tab {
+  transition:
+    background-color var(--d2) var(--e-out),
+    color var(--d2) var(--e-out),
+    box-shadow var(--d2) var(--e-out);
+}
+/* Press feedback (not while dragging). */
+.tab:active:not(.is-dragging) {
+  transform: scale(0.985);
+}
+/* The site icon fades in when loading finishes (the spinner hands over to it). */
+.tab-icon > :first-child:not(.tab-loader) {
+  animation: icon-in var(--d2) var(--e-out);
+}
+@keyframes icon-in {
+  from {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+}
+.new-tab-btn:active:not(:disabled) svg {
+  transform: rotate(90deg) scale(0.92);
+  transition: transform var(--d1) var(--e-out);
+}
+/* The right-click menu window: content fades up as the window appears. */
+.popover.menu-surface > * {
+  animation: menu-in var(--d1) var(--e-out);
+}
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(calc(-3px * var(--md)));
+  }
+}
+:root[data-motion="off"] .tab.tab-ghost {
+  display: none;
+}

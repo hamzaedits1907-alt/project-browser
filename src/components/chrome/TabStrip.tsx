@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { MouseEvent, PointerEvent, ReactNode, WheelEvent } from "react";
 
 import { api } from "../../lib/ipc";
-import { useFlip } from "../../lib/motion";
+import { motionScale, useFlip } from "../../lib/motion";
 import { cue } from "../../lib/sounds";
 import { attempt, useStore } from "../../lib/store";
 import { shiftFor } from "../../lib/tabDrag";
 import { applyOrder, orderSettled } from "../../lib/tabDragMachine";
+import { closedGhosts } from "../../lib/tabGhosts";
+import type { Drawn, Ghost } from "../../lib/tabGhosts";
 import type { Tab, TabGroup } from "../../lib/types";
 import { IconButton, cx } from "../ui/controls";
 import { GroupChip, GroupContextMenu, TabContextMenu } from "./TabMenus";
@@ -38,6 +40,35 @@ export function TabStrip({ vertical = false }: { vertical?: boolean }) {
   const [groupMenu, setGroupMenu] = useState<MenuAt<TabGroup> | null>(null);
 
   const flipCapture = useFlip(listRef, tabs, axis, drag !== null);
+
+  // Closing animation: tabs that just left are drawn once more, collapsing (lib/tabGhosts.ts).
+  const drawn = useRef<Drawn[]>([]);
+  const [ghosts, setGhosts] = useState<Ghost[]>([]);
+  useLayoutEffect(() => {
+    const root = listRef.current;
+    if (!root) return;
+    const ids = new Set(coreTabs.map((t) => t.id));
+    const gone = drag === null && motionScale() > 0 ? closedGhosts(drawn.current, ids) : [];
+    const titles = new Map(coreTabs.map((t) => [t.id, t.title]));
+    drawn.current = [...root.querySelectorAll<HTMLElement>("[data-tab-id]")].map((el) => {
+      const r = el.getBoundingClientRect();
+      const id = Number(el.dataset.tabId);
+      return { id, title: titles.get(id) ?? "", size: vertical ? r.height : r.width };
+    });
+    if (gone.length) setGhosts((g) => [...g.filter((x) => !gone.some((n) => n.id === x.id)), ...gone]);
+  }, [coreTabs, drag, vertical]);
+  const dropGhost = useCallback((id: number) => setGhosts((g) => g.filter((x) => x.id !== id)), []);
+  const ghostEl = (g: Ghost) => (
+    <div
+      key={`ghost-${g.id}`}
+      className="tab tab-ghost"
+      aria-hidden
+      style={{ ["--ghost" as string]: `${g.size}px` }}
+      onAnimationEnd={(e) => e.target === e.currentTarget && dropGhost(g.id)}
+    >
+      <span className="tab-title fade-end">{g.title}</span>
+    </div>
+  );
   useEffect(() => {
     captureFlip.current = flipCapture;
   }, [flipCapture]);
@@ -69,6 +100,7 @@ export function TabStrip({ vertical = false }: { vertical?: boolean }) {
   for (const t of tabs) if (t.group !== null) counts.set(t.group, (counts.get(t.group) ?? 0) + 1);
 
   const items: ReactNode[] = [];
+  const rendered = new Set<number>();
   let seenGroup: number | null = null;
   tabs.forEach((t, i) => {
     const group = t.group === null ? null : (groups.find((g) => g.id === t.group) ?? null);
@@ -77,6 +109,8 @@ export function TabStrip({ vertical = false }: { vertical?: boolean }) {
     }
     seenGroup = group?.id ?? null;
     if (group?.collapsed) return;
+    rendered.add(t.id);
+    for (const g of ghosts) if (g.before === t.id) items.push(ghostEl(g));
     const dragged = drag?.id === t.id;
     const shift = !drag ? 0 : dragged ? drag.offset : drag.torn ? 0 : shiftFor(i, drag.from, drag.to, drag.size);
     items.push(
@@ -95,6 +129,8 @@ export function TabStrip({ vertical = false }: { vertical?: boolean }) {
       />,
     );
   });
+
+  for (const g of ghosts) if (g.before === null || !rendered.has(g.before)) items.push(ghostEl(g));
 
   const newTab = (
     <IconButton

@@ -248,9 +248,7 @@ mod tests {
             bm(12, 11, false, "Docs", Some("https://docs.example/")),
             bm(13, OTHER_ID, false, "bad", Some("javascript:alert(1)")),
         ];
-        let mut settings = Settings::default();
-        settings.gaming_mode = true;
-        settings.download_dir = Some("Z:\\does\\not\\exist".into());
+        let settings = Settings { gaming_mode: true, download_dir: Some("Z:\\does\\not\\exist".into()), ..Settings::default() };
         build(
             &settings,
             &marks,

@@ -154,7 +154,10 @@ try {
   $checks["cut-off transfer leaves no finished file"] = -not (Test-Path (Join-Path $dest "broken.bin"))
   $checks["404 leaves no file"] = -not (Test-Path (Join-Path $dest "missing.bin"))
 
-  $rows = DbRows
+  # Earlier attempts of the cut-off transfer are dropped once they stalled (a few seconds after it ended).
+  $rows = $null
+  [void](WaitFor { $script:rows = DbRows; @($script:rows | Where-Object { $_.state -eq "inprogress" -and $_.filename -notlike "setup*" }).Count -eq 0 } 15)
+  $rows = $script:rows
   $rows | ConvertTo-Json -Depth 3 | Set-Content (Join-Path $report "history-before-restart.json") -Encoding utf8
   $completed = @($rows | Where-Object { $_.state -eq "completed" }).Count
   $notes["history rows"] = "$(@($rows).Count) rows, $completed completed"

@@ -228,6 +228,8 @@ pub struct Settings {
     pub motion: MotionLevel,
     /// Short, quiet interface sounds (off by default).
     pub ui_sounds: bool,
+    /// Volume of the interface sounds, 0-100.
+    pub ui_sound_volume: u32,
     pub tab_style: TabStyle,
     pub vertical_tabs: bool,
     pub compact_title_bar: bool,
@@ -285,6 +287,7 @@ impl Default for Settings {
             density: Density::Comfortable,
             motion: MotionLevel::Standard,
             ui_sounds: false,
+            ui_sound_volume: 60,
             tab_style: TabStyle::Shaped,
             vertical_tabs: false,
             compact_title_bar: false,
@@ -344,6 +347,7 @@ impl Settings {
             self.accent = "auto".into();
         }
         self.custom_hue %= 360;
+        self.ui_sound_volume = self.ui_sound_volume.min(100);
         if !NTP_BACKGROUNDS.contains(&self.new_tab_background.as_str()) {
             self.new_tab_background = "grid".into();
         }

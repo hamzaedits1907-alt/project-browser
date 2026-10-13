@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 
 import { api, errorMessage, on } from "./ipc";
 import { DEFAULT_SETTINGS } from "./settings";
+import { cue } from "./sounds";
 import type { BrowserState, Download, FindState, PermissionPrompt, ProfileMeta, Settings, Tab } from "./types";
 
 export interface Toast {
@@ -143,7 +144,12 @@ export async function init(): Promise<void> {
     await Promise.all([
       on("pb:state", (browser) => set({ browser })),
       on("pb:settings", (settings) => set({ settings })),
-      on("pb:downloads", (downloads) => set({ downloads })),
+      on("pb:downloads", (downloads) => {
+        // A download that just finished gets the "done" cue (when interface sounds are on).
+        const before = new Map(getState().downloads.map((d) => [d.id, d.state]));
+        if (downloads.some((d) => d.state === "completed" && before.has(d.id) && before.get(d.id) !== "completed")) cue("done");
+        set({ downloads });
+      }),
       on("pb:prompts", (prompts) => set({ prompts })),
       on("pb:find", (find) => set({ find })),
       on("pb:bookmarks", () => set({ bookmarksRev: state.bookmarksRev + 1 })),

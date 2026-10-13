@@ -1,3 +1,4 @@
+import { cue } from "../../lib/sounds";
 import { createStore } from "../../lib/createStore";
 import { api, errorMessage, on } from "../../lib/ipc";
 import { toast } from "../../lib/store";
@@ -40,7 +41,10 @@ export async function checkForUpdates(silent = false): Promise<void> {
     const status = await api.updateCheck();
     const next = applyStatus(update.get(), status, Date.now());
     update.set(next);
-    if (silent && shouldAnnounce(before, next)) toast(`Version ${next.version} is available. Open Settings → About to install it.`);
+    if (silent && shouldAnnounce(before, next)) {
+      cue("notice");
+      toast(`Version ${next.version} is available. Open Settings → About to install it.`);
+    }
   } catch (e) {
     update.set(silent ? { ...before, phase: before.phase === "checking" ? "idle" : before.phase } : applyFailure(update.get(), errorMessage(e)));
   }

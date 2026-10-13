@@ -167,6 +167,21 @@ export function Appearance() {
           )}
           <Toggle label="Interface sounds" checked={settings.uiSounds} onChange={(uiSounds) => void update({ uiSounds })} />
         </SettingRow>
+        {settings.uiSounds && (
+          <SettingRow title="Sound volume" description="Only the browser's own sounds; websites keep their own volume.">
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={5}
+              aria-label="Interface sound volume"
+              value={settings.uiSoundVolume}
+              onChange={(e) => void update({ uiSoundVolume: Number(e.target.value) })}
+              onPointerUp={() => cue("tap")}
+            />
+            <span className="num dim">{settings.uiSoundVolume}%</span>
+          </SettingRow>
+        )}
       </Card>
 
       <Card title="New Tab page">

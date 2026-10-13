@@ -169,6 +169,8 @@ export interface Settings {
   density: Density;
   motion: MotionLevel;
   uiSounds: boolean;
+  /** Interface sound volume, 0-100. */
+  uiSoundVolume: number;
   tabStyle: TabStyle;
   verticalTabs: boolean;
   compactTitleBar: boolean;

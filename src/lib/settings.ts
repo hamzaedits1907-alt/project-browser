@@ -50,6 +50,7 @@ export const DEFAULT_SETTINGS: Settings = {
   density: "comfortable",
   motion: "standard",
   uiSounds: false,
+  uiSoundVolume: 60,
   tabStyle: "shaped",
   verticalTabs: false,
   compactTitleBar: false,

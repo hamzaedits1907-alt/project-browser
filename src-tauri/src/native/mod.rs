@@ -54,6 +54,8 @@ thread_local! {
     static TOP_HOST: RefCell<HashMap<TabId, String>> = RefCell::new(HashMap::new());
     /// What WebView2 said about the latest new-window request of each tab (see `PopupIntent`).
     static POPUP_INTENT: RefCell<HashMap<TabId, PopupIntent>> = RefCell::new(HashMap::new());
+    /// An address the user asked to load as it was ("Undo" on Link Cleaner's notice): not cleaned once.
+    static CLEAN_BYPASS: RefCell<HashMap<TabId, String>> = RefCell::new(HashMap::new());
     /// The last address Link Cleaner produced per tab, and when: a site that adds the parameters back by redirecting
     /// gets its way the second time instead of looping.
     static LAST_CLEAN: RefCell<HashMap<TabId, (String, Instant)>> = RefCell::new(HashMap::new());
@@ -65,6 +67,8 @@ static POPUP_ALLOWED: Mutex<Vec<String>> = Mutex::new(Vec::new());
 static NEW_WINDOWS: AtomicBool = AtomicBool::new(false);
 /// Link Cleaner on (see `linkclean.rs`).
 static CLEAN_LINKS: AtomicBool = AtomicBool::new(true);
+/// Sites Link Cleaner leaves alone (settings.clean_links_exceptions).
+static CLEAN_EXCEPT: Mutex<Vec<String>> = Mutex::new(Vec::new());
 static NEXT_DOWNLOAD: AtomicI64 = AtomicI64::new(0);
 static DOWNLOAD_DIR: Mutex<Option<PathBuf>> = Mutex::new(None);
 /// "Ask where to save each file" (settings.download_ask).
@@ -200,9 +204,29 @@ pub fn set_clean_links(on: bool) {
     CLEAN_LINKS.store(on, Ordering::Relaxed);
 }
 
+pub fn set_clean_exceptions(sites: Vec<String>) {
+    if let Ok(mut e) = CLEAN_EXCEPT.lock() {
+        *e = sites;
+    }
+}
+
+/// Loads `url` in tab `id` exactly as it was, without Link Cleaner touching it this once.
+pub fn load_uncleaned(id: TabId, url: String) {
+    CLEAN_BYPASS.with(|b| b.borrow_mut().insert(id, url.clone()));
+    navigate(id, &url);
+}
+
 /// The address Link Cleaner loads instead of `uri`, if it applies (and is not looping on a redirect).
 fn link_clean_target(id: TabId, uri: &str) -> Option<String> {
     if !CLEAN_LINKS.load(Ordering::Relaxed) {
+        return None;
+    }
+    if CLEAN_BYPASS.with(|b| b.borrow().get(&id).is_some_and(|u| u == uri)) {
+        CLEAN_BYPASS.with(|b| b.borrow_mut().remove(&id));
+        return None;
+    }
+    let host = url::Url::parse(uri).ok().and_then(|u| u.host_str().map(str::to_ascii_lowercase)).unwrap_or_default();
+    if CLEAN_EXCEPT.lock().map(|e| e.iter().any(|site| crate::shield::rules::host_is_or_under(&host, site))).unwrap_or(false) {
         return None;
     }
     let clean = crate::linkclean::clean(uri)?;
@@ -350,7 +374,8 @@ unsafe fn install_tab_inner(id: TabId, pw: &PlatformWebview, ctl: &ControllerHan
             if let Some(clean) = link_clean_target(id, &uri) {
                 // Cancelled here, loaded again without the tracking parameters (the controller navigates).
                 args.SetCancel(true)?;
-                c.post_tab(id, move |ctl| ctl.on_link_cleaned(id, clean));
+                let original = uri.clone();
+                c.post_tab(id, move |ctl| ctl.on_link_cleaned(id, clean, original));
                 return Ok(());
             }
             note_top_navigation(id, &uri, &c);
@@ -855,6 +880,7 @@ pub fn remove_tab(id: TabId) {
     YT_GUARD.with(|g| g.borrow_mut().remove(&id));
     POPUP_INTENT.with(|m| m.borrow_mut().remove(&id));
     LAST_CLEAN.with(|m| m.borrow_mut().remove(&id));
+    CLEAN_BYPASS.with(|m| m.borrow_mut().remove(&id));
     if let Some(shield) = crate::shield::global() {
         shield.forget_tab(id);
     }
@@ -1313,6 +1339,19 @@ pub fn try_suspend(id: TabId, ctl: ControllerHandle, epoch: u64) {
 }
 
 /// Asks WebView2 to trim memory for a background tab (or restore normal behaviour).
+/// Tells sites whether the user prefers dark pages (`prefers-color-scheme`), for the whole profile (Dark pages: Auto).
+pub fn set_preferred_dark(dark: bool) {
+    let Some(shell) = any_shell() else { return };
+    unsafe {
+        if let Ok(profile) = shell.webview.cast::<ICoreWebView2_13>().and_then(|w| w.Profile()) {
+            let scheme = if dark { COREWEBVIEW2_PREFERRED_COLOR_SCHEME_DARK } else { COREWEBVIEW2_PREFERRED_COLOR_SCHEME_AUTO };
+            if let Err(e) = profile.SetPreferredColorScheme(scheme) {
+                log::warn!("dark pages: the preferred colour scheme could not be set: {e}");
+            }
+        }
+    }
+}
+
 /// WebView2's memory target for a webview that is not a tab (the hidden menu window).
 pub fn set_view_memory_target(pw: &PlatformWebview, low: bool) {
     unsafe {

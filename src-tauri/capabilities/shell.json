@@ -107,6 +107,8 @@
     "allow-tab-to-window",
     "allow-context-menu-choose",
     "allow-shell-trace",
+    "allow-save-text-file",
+    "allow-link-clean-undo",
     "allow-backup-export",
     "allow-backup-restore",
     "core:event:allow-emit-to",

@@ -5,9 +5,15 @@ import { DEFAULT_SETTINGS } from "./settings";
 import { cue } from "./sounds";
 import type { BrowserState, Download, FindState, PermissionPrompt, ProfileMeta, Settings, Tab } from "./types";
 
+export interface ToastAction {
+  label: string;
+  run: () => void;
+}
+
 export interface Toast {
   id: number;
   message: string;
+  actions?: ToastAction[];
 }
 
 export interface AppState {
@@ -104,10 +110,11 @@ export function emitBus(name: BusEvent): void {
 let toastSeq = 1;
 const TOAST_MS = 3200;
 
-export function toast(message: string): void {
+export function toast(message: string, actions?: ToastAction[]): void {
   const id = toastSeq++;
-  set({ toasts: [...state.toasts.slice(-2), { id, message }] });
-  setTimeout(() => dismissToast(id), TOAST_MS);
+  set({ toasts: [...state.toasts.slice(-2), { id, message, actions }] });
+  // A notice with a choice stays a little longer.
+  setTimeout(() => dismissToast(id), actions?.length ? TOAST_MS * 2 : TOAST_MS);
 }
 
 export function dismissToast(id: number): void {
@@ -115,6 +122,22 @@ export function dismissToast(id: number): void {
 }
 
 /** Runs an action and reports a failure as a toast. */
+/** Link Cleaner removed tracking codes: offer Undo (load the original once) and "never on this site". */
+function linkCleanedNotice(tabId: number, original: string, host: string): void {
+  const undo = () => void attempt(() => api.linkCleanUndo(tabId, original));
+  const actions: ToastAction[] = [{ label: "Undo", run: undo }];
+  if (host) {
+    actions.push({
+      label: `Never on ${host}`,
+      run: () => {
+        const list = [...new Set([...state.settings.cleanLinksExceptions, host])];
+        void attempt(() => api.settingsSet({ ...state.settings, cleanLinksExceptions: list })).then(undo);
+      },
+    });
+  }
+  toast("Tracking codes removed from the address", actions);
+}
+
 export async function attempt<T>(action: () => Promise<T>, failure?: string): Promise<T | undefined> {
   try {
     return await action();
@@ -156,6 +179,7 @@ export async function init(): Promise<void> {
       on("pb:shield", (e) => set({ shieldBlocked: e.tabs })),
       on("pb:ui", (e) => {
         if (e.kind === "toast") toast(e.message);
+        else if (e.kind === "linkCleaned") linkCleanedNotice(e.tabId, e.original, e.host);
         else emitBus(e.kind);
       }),
     ]);

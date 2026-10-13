@@ -171,6 +171,8 @@ export const COMMANDS = [
   "backup_export",
   "backup_restore",
   "shell_trace",
+  "link_clean_undo",
+  "save_text_file",
   "menu_surface_ready",
   "menu_present",
   "menu_dismiss",
@@ -304,7 +306,12 @@ export const api = {
   /** The readable text of one open tab. The core refuses private tabs, browser pages and tabs that are not running. */
   aiPageSnapshot: (tabId: TabId, maxChars?: number) => call<PageSnapshotView>("ai_page_snapshot", { tabId, maxChars }),
   /** Adds (a string) or removes (`null`) the assistant's style in the active page. Local to that view. */
-  pageStyle: (tabId: TabId, css: string | null) => call<boolean>("page_style", { tabId, css }),
+  /** `onlyIfLight`: leave pages that are already dark alone (Dark pages). */
+  pageStyle: (tabId: TabId, css: string | null, onlyIfLight = false) => call<boolean>("page_style", { tabId, css, onlyIfLight }),
+  /** Link Cleaner's Undo: loads the original address in that tab once, uncleaned. */
+  /** Saves text to a file the user picks (Save dialog). Null when cancelled. */
+  saveTextFile: (suggested: string, text: string) => call<string | null>("save_text_file", { suggested, text }),
+  linkCleanUndo: (tabId: TabId, url: string) => call("link_clean_undo", { tabId, url }),
 
   memoryList: (query?: string, limit?: number) => call<MemoryItem[]>("memory_list", { query, limit }),
   /** Creates a record, or replaces record `id`. */

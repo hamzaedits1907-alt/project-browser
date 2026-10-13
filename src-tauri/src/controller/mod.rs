@@ -301,7 +301,7 @@ fn plan_restore_with_geometry(session: Session, startup: crate::settings::Startu
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase", tag = "kind")]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "kind")]
 pub enum UiEvent {
     FocusOmnibox,
     OpenFind,
@@ -309,7 +309,15 @@ pub enum UiEvent {
     Screenshot,
     Reader,
     Shortcuts,
-    Toast { message: String },
+    Toast {
+        message: String,
+    },
+    /// Link Cleaner changed the address of this tab; the shell offers Undo.
+    LinkCleaned {
+        tab_id: TabId,
+        original: String,
+        host: String,
+    },
 }
 
 #[derive(Default)]
@@ -436,6 +444,7 @@ impl Controller {
         crate::native::set_download_dir(init.settings.download_dir.as_ref().map(Into::into));
         crate::native::set_download_ask(init.settings.download_ask);
         crate::native::set_clean_links(init.settings.clean_links);
+        crate::native::set_clean_exceptions(init.settings.clean_links_exceptions.clone());
         crate::native::set_popup_policy(
             init.settings.popup_allowed_hosts.clone(),
             init.settings.new_window_requests == crate::settings::NewWindowRequests::Window,
@@ -844,6 +853,9 @@ impl Controller {
             for id in self.views.keys().copied().collect::<Vec<_>>() {
                 let _ = self.app.run_on_main_thread(move || crate::native::rehost(id));
             }
+            if self.settings.dark_pages != crate::settings::DarkPages::Off {
+                let _ = self.app.run_on_main_thread(|| crate::native::set_preferred_dark(true));
+            }
             // The right-click menu's own window, created once the first browser window is up (see menu_surface.rs).
             let (app, profile) = (self.app.clone(), self.profile.clone());
             std::thread::spawn(move || crate::menu_surface::ensure(&app, &profile));
@@ -936,6 +948,11 @@ impl Controller {
         crate::native::set_download_ask(next.download_ask);
         if prev.clean_links != next.clean_links {
             crate::native::set_clean_links(next.clean_links);
+        }
+        crate::native::set_clean_exceptions(next.clean_links_exceptions.clone());
+        if prev.dark_pages != next.dark_pages {
+            let dark = next.dark_pages != crate::settings::DarkPages::Off;
+            let _ = self.app.run_on_main_thread(move || crate::native::set_preferred_dark(dark));
         }
         if prev.popup_allowed_hosts != next.popup_allowed_hosts || prev.new_window_requests != next.new_window_requests {
             crate::native::set_popup_policy(next.popup_allowed_hosts.clone(), next.new_window_requests == crate::settings::NewWindowRequests::Window);

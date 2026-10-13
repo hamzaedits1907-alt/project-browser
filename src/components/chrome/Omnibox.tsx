@@ -5,7 +5,7 @@ import { instantAnswer, resolveBang } from "../../features/omnibox/instant";
 import { api } from "../../lib/ipc";
 import { useOverlay } from "../../lib/overlay";
 import { SEARCH_ENGINES, engineLabel } from "../../lib/settings";
-import { activeTab, attempt, onBus, toast, useStore } from "../../lib/store";
+import { activeTab, attempt, getState, onBus, toast, useStore } from "../../lib/store";
 import type { FillOptions, SearchEngine, Suggestion, Tab } from "../../lib/types";
 import { idleAddress, splitUrl } from "../../lib/urls";
 import { useLoad } from "../../lib/useLoad";
@@ -91,7 +91,7 @@ export function Omnibox() {
 
   // Calculator / unit answers and bang shortcuts are computed locally as the user types.
   const instant = useMemo(() => (focused ? instantAnswer(text) : null), [focused, text]);
-  const bang = useMemo(() => (focused ? resolveBang(text) : null), [focused, text]);
+  const bang = useMemo(() => (focused ? resolveBang(text, getState().settings.customBangs) : null), [focused, text]);
   const extras = (instant ? 1 : 0) + (bang ? 1 : 0);
 
   // The page is replaced by a snapshot while the address is being edited, so the suggestion list can be drawn over it.
@@ -145,7 +145,7 @@ export function Omnibox() {
   const commit = (value: string, suggestion?: Suggestion, newTab = false) => {
     const input = inputRef.current;
     setSuggestions([]);
-    const viaBang = !suggestion ? resolveBang(value) : null;
+    const viaBang = !suggestion ? resolveBang(value, getState().settings.customBangs) : null;
     if (suggestion?.tabId != null) {
       const id = suggestion.tabId;
       void attempt(() => api.tabActivate(id));

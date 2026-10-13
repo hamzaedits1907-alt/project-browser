@@ -8,7 +8,7 @@ import { hostOf } from "../../lib/format";
 import { api } from "../../lib/ipc";
 import { useOverlay } from "../../lib/overlay";
 import { engineLabel } from "../../lib/settings";
-import { activeTab, attempt, toast, useStore } from "../../lib/store";
+import { activeTab, attempt, getState, toast, useStore } from "../../lib/store";
 import type { Bookmark, HistoryEntry } from "../../lib/types";
 import { closeDialog, ui } from "../../lib/ui";
 import { instantAnswer, resolveBang } from "../omnibox/instant";
@@ -87,7 +87,7 @@ function PaletteBody() {
           run: run(() => void navigator.clipboard.writeText(answer.value).then(() => toast(`Copied ${answer.value}`))),
         });
       }
-      const bang = resolveBang(query);
+      const bang = resolveBang(query, getState().settings.customBangs);
       out.push(
         bang
           ? { key: "go", section: "Go", title: `Search ${bang.bang.name} for “${bang.query}”`, icon: "zap", run: run(() => void attempt(() => api.tabNew(bang.url))) }

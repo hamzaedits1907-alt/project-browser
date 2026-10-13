@@ -23,6 +23,27 @@ pub enum BackgroundTabAction {
     Unload,
 }
 
+/// Dark pages for sites that are bright: off, ask sites for their own dark theme, or darken bright pages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum DarkPages {
+    #[default]
+    Off,
+    /// Sites are told the user prefers dark (`prefers-color-scheme: dark`); those with a dark theme use it.
+    Auto,
+    /// Auto, and pages that are still bright are darkened by the browser (pictures and video keep their colours).
+    Force,
+}
+
+/// A user-defined address-bar shortcut: `!key words` searches `url` with `%s` replaced by the words.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CustomBang {
+    pub key: String,
+    pub name: String,
+    pub url: String,
+}
+
 /// Where a page's request for a new window (a `target="_blank"` link, `window.open`) opens.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -131,6 +152,7 @@ pub const TOOLBAR_ITEMS: &[&str] = &[
     "reader",
     "screenshot",
     "commands",
+    "dark",
 ];
 pub const DEFAULT_TOOLBAR_ITEMS: &[&str] = &["gaming", "shield", "ai", "downloads"];
 pub const NTP_WIDGETS: &[&str] = &["shortcuts", "continue", "closed", "bookmarks", "downloads", "system", "gaming", "ai"];
@@ -247,6 +269,12 @@ pub struct Settings {
 
     /// Link Cleaner: remove click-tracking parameters (`fbclid`, `utm_*`, …) from addresses before pages load.
     pub clean_links: bool,
+    /// Sites (and their subdomains) where Link Cleaner leaves addresses alone.
+    pub clean_links_exceptions: Vec<String>,
+    /// Dark pages (Off / Auto / Force); per-site choices are kept by the shell.
+    pub dark_pages: DarkPages,
+    /// The user's own `!` shortcuts, checked before the built-in ones.
+    pub custom_bangs: Vec<CustomBang>,
     /// SponsorSkip: skip sponsor segments in YouTube videos (only a hash prefix of the video id is sent; see sponsor.rs).
     pub sponsor_skip: bool,
 }
@@ -300,6 +328,9 @@ impl Default for Settings {
             ntp_shortcuts: Vec::new(),
             ntp_hidden_sites: Vec::new(),
             clean_links: true,
+            clean_links_exceptions: Vec::new(),
+            dark_pages: DarkPages::Off,
+            custom_bangs: Vec::new(),
             sponsor_skip: true,
         }
     }
@@ -348,6 +379,11 @@ impl Settings {
         }
         self.custom_hue %= 360;
         self.ui_sound_volume = self.ui_sound_volume.min(100);
+        self.clean_links_exceptions = self.clean_links_exceptions.iter().filter_map(|h| crate::shield::normalize_site(h)).collect();
+        self.clean_links_exceptions.sort();
+        self.clean_links_exceptions.dedup();
+        self.clean_links_exceptions.truncate(200);
+        self.custom_bangs = clean_bangs(self.custom_bangs);
         if !NTP_BACKGROUNDS.contains(&self.new_tab_background.as_str()) {
             self.new_tab_background = "grid".into();
         }
@@ -382,9 +418,44 @@ impl Settings {
     }
 }
 
+/// Keeps shortcuts with a short lowercase key (letters and digits) and an http(s) address containing `%s`.
+fn clean_bangs(bangs: Vec<CustomBang>) -> Vec<CustomBang> {
+    let mut out: Vec<CustomBang> = Vec::new();
+    for b in bangs {
+        let key = b.key.trim().trim_start_matches('!').to_ascii_lowercase();
+        let url = b.url.trim().to_string();
+        let ok_key = !key.is_empty() && key.len() <= 12 && key.chars().all(|c| c.is_ascii_alphanumeric());
+        let ok_url = url.contains("%s") && url::Url::parse(&url.replace("%s", "x")).map(|u| matches!(u.scheme(), "http" | "https")).unwrap_or(false);
+        if ok_key && ok_url && !out.iter().any(|o| o.key == key) {
+            out.push(CustomBang { key, name: b.name.trim().chars().take(40).collect(), url });
+        }
+    }
+    out.truncate(50);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn custom_bangs_and_link_cleaner_exceptions_are_cleaned() {
+        let s = Settings {
+            custom_bangs: vec![
+                CustomBang { key: "!Gh".into(), name: "GitHub".into(), url: "https://github.com/search?q=%s".into() },
+                CustomBang { key: "bad key".into(), name: String::new(), url: "https://x/?q=%s".into() },
+                CustomBang { key: "js".into(), name: String::new(), url: "javascript:%s".into() },
+                CustomBang { key: "nos".into(), name: String::new(), url: "https://x/".into() },
+                CustomBang { key: "gh".into(), name: "dup".into(), url: "https://x/?q=%s".into() },
+            ],
+            clean_links_exceptions: vec!["https://Shop.Example.com/".into(), "shop.example.com".into()],
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(s.custom_bangs.len(), 1);
+        assert_eq!(s.custom_bangs[0].key, "gh");
+        assert_eq!(s.clean_links_exceptions, vec!["shop.example.com".to_string()]);
+    }
 
     #[test]
     fn test_overrides_replace_only_the_given_fields() {

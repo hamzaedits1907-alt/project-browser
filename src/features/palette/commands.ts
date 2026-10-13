@@ -13,7 +13,7 @@ import { openClearData, openDialog, openImportWizard, openSettingsSection, toggl
 import { isInternalUrl } from "../../lib/urls";
 import { startScreenshot } from "../dialogs/screenshotState";
 import { endSession, loadConfig, startSession } from "../focus/focus";
-import { DARK_CSS, prefsFor, updatePrefs } from "../sitetools/siteprefs";
+import { darkFor, toggleDark } from "../sitetools/siteprefs";
 import { closeDuplicates, closeToTheRight, groupBySite, linksAsMarkdown, sortBySite } from "../tabtools/tabtools";
 
 export interface PaletteCommand {
@@ -103,13 +103,11 @@ export function buildCommands(tab: Tab | null, tabs: Tab[], settings: Settings):
     web &&
       !tab.private && {
         id: "dark",
-        title: prefsFor(tab.url).dark ? "Dark pages: turn off for this site" : "Dark pages: turn on for this site",
+        title: darkFor(tab.url, getState().settings.darkPages) ? "Dark pages: turn off for this site" : "Dark pages: turn on for this site",
         icon: "moon",
         keywords: "night theme invert",
         run: () => {
-          const on = !prefsFor(tab.url).dark;
-          updatePrefs(tab.url, { dark: on });
-          void attempt(() => api.pageStyle(tab.id, on ? DARK_CSS : null));
+          void toggleDark(tab);
         },
       },
     web && { id: "zoom-in", title: "Zoom in", icon: "zoomIn", hint: "Ctrl++", run: () => void attempt(() => api.zoom("in")) },

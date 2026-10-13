@@ -1851,3 +1851,69 @@
 :root[data-motion="off"] .tab.tab-ghost {
   display: none;
 }
+
+/* Toasts with a choice (Link Cleaner's Undo). */
+.toast.has-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+}
+.toast-action {
+  border: 0;
+  background: var(--accent-a16);
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.toast-action:hover {
+  background: var(--accent-a28);
+}
+.toast-close {
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+/* Notes: the "All notes" list. */
+.notes-list {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  overflow: auto;
+}
+.note-item {
+  padding: 8px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-md);
+}
+.note-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.note-text {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* Settings: the user's own ! shortcuts. */
+.bang-list {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.bang-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}

@@ -10,6 +10,7 @@ import { startScreenshot } from "../../features/dialogs/screenshotState";
 import { openImportWizard } from "../../lib/ui";
 import type { Download } from "../../lib/types";
 import { MainMenu } from "../menus/MainMenu";
+import { darkFor, toggleDark } from "../../features/sitetools/siteprefs";
 import { trace } from "../../lib/trace";
 import { ShieldPopover } from "../menus/ShieldPopover";
 import { Icon } from "../ui/Icon";
@@ -89,6 +90,24 @@ function ShieldButton() {
   );
 }
 
+/** Dark pages for this site: one click darkens a bright page, another click puts it back (Settings > Appearance). */
+function DarkButton() {
+  const tab = useStore(activeTab);
+  const mode = useStore((s) => s.settings.darkPages);
+  useStore((s) => s.browser.tabs);
+  const web = !!tab && !tab.url.startsWith("browser://") && !tab.private;
+  const on = web && darkFor(tab.url, mode);
+  return (
+    <IconButton
+      icon="moon"
+      label={on ? "Dark page: on for this site (click to restore the original look)" : "Make this page dark"}
+      active={on}
+      disabled={!web}
+      onClick={() => tab && void attempt(() => toggleDark(tab))}
+    />
+  );
+}
+
 function SplitButton() {
   const split = useStore((s) => s.browser.split);
   const activeId = useStore((s) => s.browser.activeId);
@@ -132,6 +151,8 @@ function ToolbarItem({ id }: { id: string }) {
       return <IconButton icon="book" label="Reader view and Listen (F9)" onClick={() => openDialog("reader")} />;
     case "screenshot":
       return <IconButton icon="crop" label="Screenshot (Ctrl+Shift+S)" onClick={() => void startScreenshot(false)} />;
+    case "dark":
+      return <DarkButton />;
     case "commands":
       return <IconButton icon="command" label="Command Center (Ctrl+K)" onClick={() => openDialog("palette")} />;
     case "privateWindow":

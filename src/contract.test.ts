@@ -317,6 +317,7 @@ describe("settings defaults", () => {
       Shaped: "shaped",
       Rail: "rail",
       Full: "full",
+      Off: "off",
     };
     // `strings(CONST)` names a `pub const CONST: &[&str] = &[...]` list in settings.rs.
     const constList = (name: string): string[] => {

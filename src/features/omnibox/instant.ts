@@ -251,17 +251,19 @@ export const BANGS: Bang[] = [
   { key: "def", name: "Dictionary", url: "https://www.merriam-webster.com/dictionary/%s" },
   { key: "spotify", name: "Spotify", url: "https://open.spotify.com/search/%s" },
   { key: "maps", name: "OpenStreetMap", url: "https://www.openstreetmap.org/search?query=%s" },
+  { key: "wiki", name: "Wikipedia", url: "https://en.wikipedia.org/w/index.php?search=%s" },
 ];
 
 /** `!yt lofi` or `lofi !yt`: the bang and the address it opens. Null when there is no known bang or no query. */
-export function resolveBang(text: string): { bang: Bang; query: string; url: string } | null {
+export function resolveBang(text: string, custom: Bang[] = []): { bang: Bang; query: string; url: string } | null {
   const t = text.trim();
   const lead = /^!(\w+)\s+(.+)$/.exec(t);
   const trail = /^(.+?)\s+!(\w+)$/.exec(t);
   const key = (lead?.[1] ?? trail?.[2])?.toLowerCase();
   const query = (lead?.[2] ?? trail?.[1])?.trim();
   if (!key || !query) return null;
-  const bang = BANGS.find((b) => b.key === key);
+  // The user's own shortcuts come first, so they can also redefine a built-in one.
+  const bang = custom.find((b) => b.key === key) ?? BANGS.find((b) => b.key === key);
   if (!bang) return null;
   return { bang, query, url: bang.url.replace("%s", encodeURIComponent(query)) };
 }

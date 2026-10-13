@@ -131,6 +131,7 @@ export function General() {
             <Button onClick={() => void saveTemplate()}>Save</Button>
           </div>
         </SettingRow>
+        <BangsEditor />
       </Card>
 
       <Card title="Toolbar">
@@ -182,7 +183,7 @@ function BackupCard() {
     setResult(null);
     try {
       if (what === "export") {
-        const path = await api.backupExport(collectShell((k) => localStorage.getItem(k)));
+        const path = await api.backupExport(collectShell((k) => localStorage.getItem(k), Object.keys(localStorage)));
         if (path) setResult(`Saved to ${path}`);
       } else {
         const r = await api.backupRestore();
@@ -216,5 +217,46 @@ function BackupCard() {
       </SettingRow>
       {result && <p className="dim small" role="status">{result}</p>}
     </Card>
+  );
+}
+
+/** The user's own address-bar shortcuts: `!key words` searches a site. Checked before the built-in ones. */
+function BangsEditor() {
+  const { settings, update } = useSettings();
+  const [key, setKey] = useState("");
+  const [url, setUrl] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const add = async () => {
+    const k = key.trim().replace(/^!/, "").toLowerCase();
+    if (!/^[a-z0-9]{1,12}$/.test(k)) return setError("Use 1 to 12 letters or digits, like gh or wiki.");
+    if (!/^https?:\/\/.+%s/.test(url.trim())) return setError("The address must start with https:// and contain %s where the words go.");
+    setError(null);
+    const next = [...settings.customBangs.filter((b) => b.key !== k), { key: k, name: k, url: url.trim() }];
+    const ok = await update({ customBangs: next });
+    if (ok) {
+      setKey("");
+      setUrl("");
+    }
+  };
+  return (
+    <SettingRow title="Your own shortcuts" description="Type !key and words in the address bar, for example !gh tauri. Built-in: !yt !wiki !maps !gh !r !a and more." stacked>
+      {settings.customBangs.length > 0 && (
+        <ul className="bang-list">
+          {settings.customBangs.map((b) => (
+            <li key={b.key}>
+              <code>!{b.key}</code> <span className="dim truncate">{b.url}</span>
+              <Button size="sm" variant="ghost" onClick={() => void update({ customBangs: settings.customBangs.filter((x) => x.key !== b.key) })}>
+                Remove
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="inline-form">
+        <TextField label="Shortcut" placeholder="gh" value={key} onChange={(e) => setKey(e.target.value)} />
+        <TextField label="Search address" placeholder="https://github.com/search?q=%s" value={url} error={error ?? undefined} onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void add()} />
+        <Button onClick={() => void add()}>Add</Button>
+      </div>
+    </SettingRow>
   );
 }

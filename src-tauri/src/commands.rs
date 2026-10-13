@@ -1067,7 +1067,7 @@ pub async fn ai_page_snapshot(app: AppHandle, s: State<'_, AppState>, tab_id: Ta
 /// Adds (`Some`) or removes (`None`) the assistant's style in the active page. Local to this view: nothing is sent to
 /// the site, and reloading the page also removes it. The style is checked first (see `ai::check_page_css`).
 #[tauri::command]
-pub async fn page_style(app: AppHandle, s: State<'_, AppState>, tab_id: TabId, css: Option<String>) -> Result<bool> {
+pub async fn page_style(app: AppHandle, s: State<'_, AppState>, tab_id: TabId, css: Option<String>, only_if_light: Option<bool>) -> Result<bool> {
     if let Some(css) = css.as_deref() {
         ai::check_page_css(css)?;
     }
@@ -1083,7 +1083,7 @@ pub async fn page_style(app: AppHandle, s: State<'_, AppState>, tab_id: TabId, c
             }
         })
         .await??;
-    let script = ai::page_style_script(css.as_deref());
+    let script = ai::page_style_script(css.as_deref(), only_if_light.unwrap_or(false));
     let (tx, rx) = tokio::sync::oneshot::channel();
     app.run_on_main_thread(move || native::run_script(tab_id, script, tx))?;
     let reply = tokio::time::timeout(FILL_TIMEOUT, rx)
@@ -1455,6 +1455,39 @@ pub async fn backup_restore(window: tauri::Window, s: State<'_, AppState>) -> Re
         .await??;
     log::info!("backup restored ({} bookmarks, {} notes, {} notes already there)", report.bookmarks, report.notes, report.notes_skipped);
     Ok(Some(report))
+}
+
+/// "Undo" on Link Cleaner's notice: loads the original address in that tab once, as it was.
+#[tauri::command]
+pub async fn link_clean_undo(app: AppHandle, s: State<'_, AppState>, tab_id: TabId, url: String) -> Result<()> {
+    let ok = url::Url::parse(&url).map(|u| matches!(u.scheme(), "http" | "https")).unwrap_or(false);
+    if !ok {
+        return Err(Error::msg("That is not a web address"));
+    }
+    s.ctl.call_tab(tab_id, move |c| c.tabs.get(tab_id).is_some()).await?.then_some(()).ok_or_else(|| Error::msg("That tab is no longer open."))?;
+    app.run_on_main_thread(move || native::load_uncleaned(tab_id, url))?;
+    Ok(())
+}
+
+/// Saves text the shell made (notes export) to a file the user picks with the Save dialog. Only the file name of
+/// `suggested` is used; the folder starts at Downloads. `None` when the dialog was cancelled.
+#[tauri::command]
+pub async fn save_text_file(window: tauri::Window, suggested: String, text: String) -> Result<Option<String>> {
+    if text.len() > 20 * 1024 * 1024 {
+        return Err(Error::msg("That is too much text to save at once."));
+    }
+    let name: String = std::path::Path::new(&suggested)
+        .file_name()
+        .map(|n| n.to_string_lossy().chars().filter(|c| !c.is_control() && !"<>:\"/\\|?*".contains(*c)).take(120).collect())
+        .filter(|n: &String| !n.trim().is_empty())
+        .unwrap_or_else(|| "Notes.txt".into());
+    let owner = window.hwnd().ok().map(|h| h.0 as isize).unwrap_or(0);
+    let start = native::downloads_folder().unwrap_or_default().join(name).to_string_lossy().to_string();
+    let picked =
+        tauri::async_runtime::spawn_blocking(move || native::dialog::save_file(owner, &start)).await.map_err(|e| Error::msg(e.to_string()))?;
+    let Some(path) = picked else { return Ok(None) };
+    std::fs::write(&path, text).map_err(|e| Error::msg(format!("The file could not be written: {e}")))?;
+    Ok(Some(path.to_string_lossy().to_string()))
 }
 
 /// A short diagnostic line from the shell (lib/trace.ts): bounded, one line, never page content.
@@ -1879,6 +1912,8 @@ macro_rules! all_commands {
             $crate::commands::backup_export,
             $crate::commands::backup_restore,
             $crate::commands::shell_trace,
+            $crate::commands::save_text_file,
+            $crate::commands::link_clean_undo,
             $crate::commands::menu_surface_ready,
             $crate::commands::menu_present,
             $crate::commands::menu_dismiss,

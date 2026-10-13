@@ -2,10 +2,15 @@
 // shell's storage (the AI conversation, caches, window layout).
 
 export const SHELL_KEYS = ["site.prefs", "focus.config", "reader.prefs"] as const;
+/** Notes: one key per site ("notes.site.<host>") and the scratchpad ("notes.all"). */
+export const NOTE_PREFIX = "notes.";
 
-export function collectShell(read: (key: string) => string | null): Record<string, unknown> {
+const known = (k: string) => (SHELL_KEYS as readonly string[]).includes(k) || (k.startsWith(NOTE_PREFIX) && k.length < 300);
+
+export function collectShell(read: (key: string) => string | null, keys: string[] = []): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const k of SHELL_KEYS) {
+  const all = [...SHELL_KEYS, ...keys.filter((k) => k.startsWith(`pb:${NOTE_PREFIX}`)).map((k) => k.slice(3))];
+  for (const k of all) {
     const raw = read(`pb:${k}`);
     if (raw === null) continue;
     try {
@@ -21,8 +26,8 @@ export function collectShell(read: (key: string) => string | null): Record<strin
 export function applyShell(data: Record<string, unknown> | null, write: (key: string, value: string) => void): number {
   if (!data || typeof data !== "object") return 0;
   let n = 0;
-  for (const k of SHELL_KEYS) {
-    if (k in data && data[k] !== undefined) {
+  for (const k of Object.keys(data)) {
+    if (known(k) && data[k] !== undefined) {
       write(`pb:${k}`, JSON.stringify(data[k]));
       n++;
     }

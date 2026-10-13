@@ -10,7 +10,7 @@ import { openDialog } from "../lib/ui";
 import { isInternalUrl } from "../lib/urls";
 import { startScreenshot } from "./dialogs/screenshotState";
 import { addUsage, blockReason, loadConfig, loadUsage, saveUsage, siteOf } from "./focus/focus";
-import { DARK_CSS, prefsFor, siteKey, updatePrefs } from "./sitetools/siteprefs";
+import { DARK_CSS, darkFor, prefsFor, siteKey, updatePrefs } from "./sitetools/siteprefs";
 
 const TICK_S = 5;
 
@@ -80,7 +80,7 @@ export function useSitePrefs(): void {
       const prefs = prefsFor(tab.url);
       if (arrived || finished) {
         if (prefs.zoom && Math.abs(prefs.zoom - tab.zoom) > 0.001 && !tab.private) void api.zoom("set", prefs.zoom, tab.id).catch(() => {});
-        if (prefs.dark && finished) void api.pageStyle(tab.id, DARK_CSS).catch(() => {});
+        if (finished && !tab.private && darkFor(tab.url, getState().settings.darkPages)) void api.pageStyle(tab.id, DARK_CSS, true).catch(() => {});
         return;
       }
       // Same page, zoom changed by the user: remember it for the site (never from private tabs).

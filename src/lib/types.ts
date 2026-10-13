@@ -171,6 +171,12 @@ export interface Settings {
   uiSounds: boolean;
   /** Interface sound volume, 0-100. */
   uiSoundVolume: number;
+  /** Sites where Link Cleaner leaves addresses alone. */
+  cleanLinksExceptions: string[];
+  /** Dark pages: off, ask sites for their dark theme, or also darken bright pages. */
+  darkPages: DarkPages;
+  /** The user's own `!` shortcuts. */
+  customBangs: CustomBang[];
   tabStyle: TabStyle;
   verticalTabs: boolean;
   compactTitleBar: boolean;
@@ -229,6 +235,14 @@ export interface RestoreReport {
   shell: Record<string, unknown> | null;
 }
 
+export type DarkPages = "off" | "auto" | "force";
+
+export interface CustomBang {
+  key: string;
+  name: string;
+  url: string;
+}
+
 export type DownloadCommand = "pause" | "resume" | "cancel" | "open" | "openConfirmed" | "showInFolder" | "remove" | "retry" | "review";
 
 export interface PermissionPrompt {
@@ -263,7 +277,8 @@ export type UiEvent =
   | { kind: "screenshot" }
   | { kind: "reader" }
   | { kind: "shortcuts" }
-  | { kind: "toast"; message: string };
+  | { kind: "toast"; message: string }
+  | { kind: "linkCleaned"; tabId: TabId; original: string; host: string };
 
 export interface Suggestion {
   kind: "search" | "url" | "tab" | "bookmark" | "history";

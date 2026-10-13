@@ -22,6 +22,20 @@ export function Privacy() {
         <SettingRow title="Remove tracking codes from links" description="Before a page loads, its address is checked; known tracking parameters are removed and the clean address is loaded. Nothing else in the address changes. Works in private tabs too.">
           <Toggle label="Remove tracking codes from links" checked={settings.cleanLinks} onChange={(cleanLinks) => void update({ cleanLinks })} />
         </SettingRow>
+        <SettingRow
+          title="Never clean on these sites"
+          description="For shops or sign-in pages that need their parameters. Each cleaned address also shows Undo and “Never on this site”. One site per line."
+          stacked
+        >
+          <textarea
+            className="input"
+            rows={3}
+            aria-label="Sites where Link Cleaner is off"
+            placeholder="shop.example.com"
+            defaultValue={settings.cleanLinksExceptions.join("\n")}
+            onBlur={(e) => void update({ cleanLinksExceptions: e.target.value.split(/[\s,]+/).filter(Boolean) })}
+          />
+        </SettingRow>
       </Card>
 
       <Card title="Passwords and autofill" subtitle="These use the web engine's built-in features. Data stays on this computer in your profile folder, encrypted by Windows.">

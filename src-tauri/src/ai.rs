@@ -987,15 +987,23 @@ pub fn check_page_css(css: &str) -> Result<()> {
 
 /// The script that adds (`Some`) or removes (`None`) the assistant's one style element in the page. Replies `true`
 /// when a style is in place.
-pub fn page_style_script(css: Option<&str>) -> String {
+/// `only_if_light`: leave a page alone whose own background is already dark (Dark pages must not lighten dark sites).
+pub fn page_style_script(css: Option<&str>, only_if_light: bool) -> String {
     let literal = match css {
         // JSON is a valid JavaScript string literal except, in old engines, for the two line separators.
         Some(c) => serde_json::to_string(c).unwrap_or_else(|_| "null".into()).replace('\u{2028}', "\\u2028").replace('\u{2029}', "\\u2029"),
         None => "null".into(),
     };
+    let guard = if only_if_light {
+        "const lum = (e) => { if (!e) return null; const m = getComputedStyle(e).backgroundColor.match(/[\\d.]+/g); \
+         if (!m || (m.length > 3 && Number(m[3]) === 0)) return null; return (0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]) / 255; }; \
+         const l = lum(document.body) ?? lum(document.documentElement) ?? 1; if (l < 0.45 && !el) return false; "
+    } else {
+        ""
+    };
     format!(
         "(() => {{ const id = '__pb_ai_style'; const css = {literal}; let el = document.getElementById(id); \
-         if (css === null) {{ if (el) el.remove(); return false; }} \
+         if (css === null) {{ if (el) el.remove(); return false; }} {guard}\
          if (!el) {{ el = document.createElement('style'); el.id = id; (document.head || document.documentElement).appendChild(el); }} \
          el.textContent = css; return true; }})()"
     )
@@ -1388,11 +1396,13 @@ mod tests {
 
     #[test]
     fn the_style_script_embeds_css_as_a_string_and_can_undo() {
-        let on = page_style_script(Some("body { content: \"</style>\"; }\u{2028}"));
+        let on = page_style_script(Some("body { content: \"</style>\"; }\u{2028}"), false);
         assert!(on.contains("const css = \"body"), "{on}");
         assert!(!on.contains('\u{2028}') && on.contains("\\u2028"), "line separators are escaped");
         assert!(on.contains("\\\"</style>\\\""), "quotes are escaped so the css cannot leave its string: {on}");
-        let off = page_style_script(None);
+        let off = page_style_script(None, false);
+        assert!(page_style_script(Some("a{}"), true).contains("lum(document.body)"));
+        assert!(!on.contains("lum("));
         assert!(off.contains("const css = null"));
         assert!(off.contains("el.remove()"));
         assert!(!off.contains("textContent = null"));

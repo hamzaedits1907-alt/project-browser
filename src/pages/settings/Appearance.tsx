@@ -5,7 +5,7 @@ import { Card, SettingRow } from "../../components/ui/Section";
 import { ACCENTS, NEW_TAB_BACKGROUNDS, THEME_DEFS, accentCss, accentOrDefault, backgroundOrDefault } from "../../lib/settings";
 import { cue } from "../../lib/sounds";
 import { openCustomize } from "../../lib/ui";
-import type { CornerStyle, Density, MotionLevel, SidebarMode, TabStyle } from "../../lib/types";
+import type { CornerStyle, DarkPages, Density, MotionLevel, SidebarMode, TabStyle } from "../../lib/types";
 import { useSettings } from "../../lib/useSettings";
 
 /** A miniature browser window painted in a theme's own colours. */
@@ -154,6 +154,21 @@ export function Appearance() {
               { value: "expressive", label: "Expressive" },
             ]}
             onChange={(motion) => void update({ motion })}
+          />
+        </SettingRow>
+        <SettingRow
+          title="Dark pages"
+          description="Auto asks websites for their own dark theme. Force also darkens pages that are still bright (pictures and video keep their colours; pages that are already dark are left alone). The moon button in the toolbar (add it with Customize) switches a single site on or off."
+        >
+          <Segmented<DarkPages>
+            label="Dark pages"
+            value={settings.darkPages}
+            options={[
+              { value: "off", label: "Off" },
+              { value: "auto", label: "Auto" },
+              { value: "force", label: "Force" },
+            ]}
+            onChange={(darkPages) => void update({ darkPages })}
           />
         </SettingRow>
         <SettingRow title="Reduce motion" description="Turns interface animation off. The Performance theme and Gaming Mode (if set) do this too; Windows' own setting is always respected.">

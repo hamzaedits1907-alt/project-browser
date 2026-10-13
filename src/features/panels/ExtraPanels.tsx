@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Favicon } from "../../components/ui/Favicon";
 import { Icon } from "../../components/ui/Icon";
@@ -12,10 +12,11 @@ import type { MediaStatus, Tab } from "../../lib/types";
 import { isInternalUrl } from "../../lib/urls";
 import { dayKey, endSession, formatDuration, loadConfig, loadUsage, saveConfig, sessionActive, startSession, topSites, totalFor } from "../focus/focus";
 import type { FocusConfig } from "../focus/focus";
+import { exportText, noteEntries, searchNotes } from "./notes";
 
 // ---- Notes ---------------------------------------------------------------------------------------
 
-type NoteScope = "site" | "all";
+type NoteScope = "site" | "all" | "list";
 
 /** Quick notes: one for the current site, and one scratchpad for everything. Saved on this computer as you type. */
 export function NotesPanel() {
@@ -43,7 +44,12 @@ export function NotesPanel() {
         <button type="button" role="tab" aria-selected={scope === "all"} className={cx(scope === "all" && "is-on")} onClick={() => setScope("all")}>
           Scratchpad
         </button>
+        <button type="button" role="tab" aria-selected={scope === "list"} className={cx(scope === "list" && "is-on")} onClick={() => setScope("list")}>
+          All notes
+        </button>
       </div>
+      {scope === "list" ? <AllNotes /> : (
+      <>
       <div className="panel-body notes-body">
         <textarea
           className="notes-area"
@@ -58,6 +64,71 @@ export function NotesPanel() {
         <span className="dim small">{text.trim() ? `${text.trim().split(/\s+/).length} words · saved on this computer` : "Saved on this computer"}</span>
         <Button size="sm" variant="ghost" icon="copy" disabled={!text} onClick={() => void navigator.clipboard.writeText(text).then(() => toast("Notes copied"))}>
           Copy
+        </Button>
+      </div>
+      </>
+      )}
+    </>
+  );
+}
+
+function storeSnapshot(): Record<string, string> {
+  const out: Record<string, string> = {};
+  try {
+    for (const k of Object.keys(localStorage)) out[k] = localStorage.getItem(k) ?? "";
+  } catch {
+    /* storage unavailable */
+  }
+  return out;
+}
+
+/** Every saved note: search, delete one, export all as a text file. */
+function AllNotes() {
+  const [query, setQuery] = useState("");
+  const [rev, setRev] = useState(0);
+  // `rev` changes after a delete, so the list is read again.
+  const entries = useMemo(() => (rev >= 0 ? noteEntries(storeSnapshot()) : []), [rev]);
+  const shown = searchNotes(entries, query);
+  return (
+    <>
+      <div className="panel-body notes-list">
+        <input className="input" placeholder="Search notes" aria-label="Search notes" value={query} onChange={(e) => setQuery(e.target.value)} />
+        {shown.length === 0 && <p className="dim small">{entries.length === 0 ? "No notes yet. Notes for a site come back whenever you visit it." : "No note matches."}</p>}
+        {shown.map((e) => (
+          <div key={e.key} className="note-item">
+            <div className="note-head">
+              <strong className="truncate">{e.site ?? "Scratchpad"}</strong>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon="trash"
+                onClick={() => {
+                  try {
+                    localStorage.removeItem(`pb:${e.key}`);
+                  } catch {
+                    /* ignore */
+                  }
+                  setRev((r) => r + 1);
+                  toast(`Note for ${e.site ?? "the scratchpad"} deleted`);
+                }}
+              >
+                Delete
+              </Button>
+            </div>
+            <p className="dim small note-text">{e.text.slice(0, 280)}</p>
+          </div>
+        ))}
+      </div>
+      <div className="panel-foot">
+        <span className="dim small">{entries.length} {entries.length === 1 ? "note" : "notes"} · on this computer</span>
+        <Button
+          size="sm"
+          variant="ghost"
+          icon="download"
+          disabled={entries.length === 0}
+          onClick={() => void attempt(() => api.saveTextFile("Project Browser notes.txt", exportText(entries))).then((p) => p && toast(`Notes saved to ${p}`))}
+        >
+          Export
         </Button>
       </div>
     </>

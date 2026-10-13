@@ -175,7 +175,7 @@ function ToolbarMenu([string]$label) {
   Click $mb.X $mb.Y $false
   $shownAt = -1
   while ($sw.ElapsedMilliseconds -lt 3000) {
-    $c = Snap $main; $dd = PixelDiff $base $c $main 940 90 330 300; $c.Dispose()
+    $c = Snap $main; $dd = PixelDiff $base $c $main 660 90 330 300; $c.Dispose()
     if ($dd -gt 8) { $shownAt = $sw.ElapsedMilliseconds; break }
     Start-Sleep -Milliseconds 30
   }
@@ -184,7 +184,7 @@ function ToolbarMenu([string]$label) {
   Start-Sleep -Milliseconds 1500
   $still = Snap $main
   $still.Save((Join-Path $ReportDir ("toolbar-" + ($label -replace '[^a-z]', '-') + ".png")), [System.Drawing.Imaging.ImageFormat]::Png)
-  $dd2 = PixelDiff $base $still $main 940 90 330 300
+  $dd2 = PixelDiff $base $still $main 660 90 330 300
   $script:steps["toolbar menu stays open ($label)"] = ($dd2 -gt 8)
   Key @(0x1B)
   Start-Sleep -Milliseconds 700
@@ -213,7 +213,7 @@ try {
   }
   DumpWindows "after start"
   if ($main -eq [IntPtr]::Zero) { Write-Host "no browser window or page appeared"; exit 2 }
-  [void][Probe]::MoveWindow($main, 40, 40, 1280, 800, $true)
+  [void][Probe]::MoveWindow($main, 0, 0, 1000, 740, $true)  # the runner screen is 1024x768: everything must be on it
   [void][Probe]::SetForegroundWindow($main)
   $b = WaitPainted $main 20
   $notes["page brightness at start"] = $b

@@ -176,7 +176,6 @@ export const COMMANDS = [
   "menu_surface_ready",
   "menu_present",
   "menu_dismiss",
-  "menu_focus_lost",
   "window_active",
   "shield_state",
   "shield_tab",
@@ -368,9 +367,7 @@ export const api = {
   /** The menu window (only): place the rendered menu of this CSS size at the click and show it. */
   menuPresent: (width: number, height: number) => call("menu_present", { width, height }),
   /** The menu window (only): hide. */
-  menuDismiss: (refocus: boolean) => call("menu_dismiss", { refocus }),
-  /** The menu window (only) lost focus: true when it should close (a click elsewhere, another program). */
-  menuFocusLost: () => call<boolean>("menu_focus_lost"),
+  menuDismiss: () => call("menu_dismiss"),
   /** This browser window is the one Windows has in front. */
   windowActive: () => call<boolean>("window_active"),
   shieldTest: (url: string, page: string) => call<string>("shield_test", { url, page }),

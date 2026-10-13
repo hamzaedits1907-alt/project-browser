@@ -11,8 +11,8 @@
 //! a dismissal) goes back to that shell, which carries it out exactly as before. If the window is not ready yet, the
 //! shell falls back to the old overlay menu.
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, Ordering};
+use std::sync::{Mutex, OnceLock};
 
 use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder};
 
@@ -31,8 +31,11 @@ pub struct Anchor {
 static ANCHOR: Mutex<Option<Anchor>> = Mutex::new(None);
 static READY: AtomicBool = AtomicBool::new(false);
 static CREATING: AtomicBool = AtomicBool::new(false);
-/// How often the open menu took focus back from its page (bounded, so a page that keeps grabbing focus cannot loop).
-static REFOCUSED: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+static OPEN: AtomicBool = AtomicBool::new(false);
+static MENU_HWND: AtomicIsize = AtomicIsize::new(0);
+/// Counts menus shown, for the log (one session per shown menu).
+static SESSION: AtomicU64 = AtomicU64::new(0);
+static APP: OnceLock<AppHandle> = OnceLock::new();
 
 /// The menu window has loaded and can show menus.
 pub fn is_ready() -> bool {
@@ -75,7 +78,13 @@ pub fn ensure(app: &AppHandle, profile: &Profile) {
         .disable_drag_drop_handler()
         .build();
     match built {
-        Ok(_) => log::info!("menu window created (hidden)"),
+        Ok(w) => {
+            let _ = APP.set(app.clone());
+            if let Ok(h) = w.hwnd() {
+                crate::native::make_no_activate(h.0 as isize);
+            }
+            log::info!("menu window created (hidden, never takes focus)");
+        }
         Err(e) => {
             log::warn!("menu window could not be created, menus use the overlay: {e}");
             CREATING.store(false, Ordering::SeqCst);
@@ -101,6 +110,12 @@ pub fn place(point: (i32, i32), size: (i32, i32), work: (i32, i32, i32, i32)) ->
 }
 
 /// Shows the menu window at the current anchor with the given content size (CSS pixels).
+///
+/// The menu window never takes keyboard focus (it is a non-activating window, like a system menu): the page keeps
+/// focus, nothing has to be "given back" afterwards, and WebView2 moving focus around after a right-click cannot close
+/// it. While it is open, a click anywhere outside it closes it (a low-level mouse hook, installed only for that time),
+/// Escape and the arrow keys typed into the page or the shell are routed to it (`route_key`), and the browser window
+/// going to the background closes it (`owner_deactivated`).
 pub fn present(app: &AppHandle, width: f64, height: f64) -> Result<(), String> {
     let window = app.get_webview_window(LABEL).ok_or("no menu window")?;
     let a = anchor().ok_or("no menu to show")?;
@@ -112,57 +127,92 @@ pub fn present(app: &AppHandle, width: f64, height: f64) -> Result<(), String> {
         }
         None => (1.0, (i32::MIN / 2, i32::MIN / 2, i32::MAX / 2, i32::MAX / 2)),
     };
-    REFOCUSED.store(0, Ordering::SeqCst);
     let size = ((width.max(40.0) * scale).ceil() as i32, (height.max(20.0) * scale).ceil() as i32);
     let (x, y) = place((a.x, a.y), size, work);
+    let menu_hwnd = window.hwnd().map_err(|e| e.to_string())?.0 as isize;
     if let Some(owner) = app.get_window(&a.owner) {
-        if let (Ok(menu), Ok(owner)) = (window.hwnd(), owner.hwnd()) {
-            crate::native::set_owner(menu.0 as isize, owner.0 as isize);
+        if let Ok(owner) = owner.hwnd() {
+            crate::native::set_owner(menu_hwnd, owner.0 as isize);
         }
     }
     window.set_size(PhysicalSize::new(size.0 as u32, size.1 as u32)).map_err(|e| e.to_string())?;
     window.set_position(PhysicalPosition::new(x, y)).map_err(|e| e.to_string())?;
     let _ = window.with_webview(|pw| crate::native::set_view_memory_target(&pw, false));
-    window.show().map_err(|e| e.to_string())?;
-    // Focus both the window and its webview: keys (Escape, arrows) must reach the menu, and clicking elsewhere must
-    // take focus away from it (that is how it closes).
-    window.set_focus().map_err(|e| e.to_string())?;
-    let webview: &tauri::Webview = window.as_ref();
-    let _ = webview.set_focus();
+    crate::native::show_without_focus(menu_hwnd);
+    OPEN.store(true, Ordering::SeqCst);
+    MENU_HWND.store(menu_hwnd, Ordering::SeqCst);
+    crate::native::outside_click_watch(true);
+    let n = SESSION.fetch_add(1, Ordering::SeqCst) + 1;
+    log::info!("menu window: menu session {n} shown");
     Ok(())
 }
 
-/// The menu window lost keyboard focus. A real dismissal (a click somewhere, or another program came to the front) closes
-/// it; the page of its own browser window taking focus back on its own (WebView2 does that after the right-click) does
-/// not: the menu takes focus again and stays. Returns true when the menu should close.
-pub fn focus_lost(app: &AppHandle) -> bool {
-    let Some(a) = anchor() else { return true };
-    let Some(owner) = app.get_window(&a.owner) else { return true };
-    let Ok(hwnd) = owner.hwnd() else { return true };
-    if crate::native::mouse_button_down() || !crate::native::is_foreground(hwnd.0 as isize) || REFOCUSED.fetch_add(1, Ordering::SeqCst) >= 3 {
-        return true;
-    }
-    log::info!("menu window: focus taken back from the page (no click), the menu stays open");
-    if let Some(w) = app.get_webview_window(LABEL) {
-        let _ = w.set_focus();
-        let webview: &tauri::Webview = w.as_ref();
-        let _ = webview.set_focus();
-    }
-    false
+/// A menu is open in the menu window.
+pub fn is_open() -> bool {
+    OPEN.load(Ordering::SeqCst)
 }
 
-/// Hides the menu window. `refocus`: the menu still had focus (a pick or Escape), so the browser window it belongs
-/// to gets it back; a menu that closed because the user clicked elsewhere leaves focus where it went.
-pub fn dismiss(app: &AppHandle, refocus: bool) {
+/// The menu window's handle while a menu is open (0 otherwise), for the outside-click check.
+pub fn open_hwnd() -> isize {
+    if is_open() {
+        MENU_HWND.load(Ordering::SeqCst)
+    } else {
+        0
+    }
+}
+
+/// Asks the menu window to close its menu as dismissed (`reason` goes to the log). Safe to call at any time.
+pub fn request_dismiss(reason: &'static str) {
+    if !is_open() {
+        return;
+    }
+    let Some(app) = APP.get() else { return };
+    log::info!("menu window: dismissed ({reason})");
+    use tauri::Emitter;
+    let _ = app.emit_to(LABEL, "pb:menu-dismiss", reason);
+}
+
+/// A key typed into a page or a shell while a menu is open: Escape, arrows, Home/End and Enter belong to the menu.
+/// Returns true when the key was taken.
+pub fn route_key(vk: u32) -> bool {
+    if !is_open() {
+        return false;
+    }
+    let key = match vk {
+        0x1B => "Escape",
+        0x26 => "ArrowUp",
+        0x28 => "ArrowDown",
+        0x24 => "Home",
+        0x23 => "End",
+        0x0D => "Enter",
+        _ => return false,
+    };
+    let Some(app) = APP.get() else { return false };
+    use tauri::Emitter;
+    let _ = app.emit_to(LABEL, "pb:menu-key", key);
+    true
+}
+
+/// A browser window stopped being the window in front. If that took the user to another program, an open menu closes.
+pub fn owner_deactivated(app: &AppHandle) {
+    if !is_open() {
+        return;
+    }
+    let Some(owner) = anchor().and_then(|a| app.get_window(&a.owner)) else { return };
+    let Ok(hwnd) = owner.hwnd() else { return };
+    if !crate::native::is_foreground(hwnd.0 as isize) {
+        request_dismiss("another window came to the front");
+    }
+}
+
+/// Hides the menu window (a pick or a dismissal; the shell that owns the menu is told separately by the menu window).
+pub fn dismiss(app: &AppHandle) {
+    OPEN.store(false, Ordering::SeqCst);
+    crate::native::outside_click_watch(false);
     if let Some(w) = app.get_webview_window(LABEL) {
         let _ = w.hide();
         // Hidden most of the time: WebView2 may trim its memory meanwhile.
         let _ = w.with_webview(|pw| crate::native::set_view_memory_target(&pw, true));
-    }
-    if refocus {
-        if let Some(owner) = anchor().and_then(|a| app.get_window(&a.owner)) {
-            let _ = owner.set_focus();
-        }
     }
 }
 

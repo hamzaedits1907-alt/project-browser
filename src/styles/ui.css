@@ -1019,3 +1019,9 @@ html.is-menu-surface #root {
   overflow: hidden;
   outline: none;
 }
+/* Keyboard highlight in the right-click menu (it never has focus, so :focus-visible cannot show it). */
+.menu-surface .menu-item.is-hot,
+.menu-surface .ctx-nav-btn.is-hot {
+  background: var(--bg-3);
+  color: var(--text-1);
+}

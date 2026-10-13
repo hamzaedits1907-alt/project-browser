@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { emitTo, listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { Icon } from "../../components/ui/Icon";
 import { MenuHeading, MenuItem, MenuSeparator, PopoverContext } from "../../components/ui/Popover";
@@ -16,24 +14,47 @@ function items(root: HTMLElement): HTMLElement[] {
   return [...root.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled), [role="menuitemcheckbox"]:not(:disabled)')];
 }
 
+/** Where the keyboard highlight goes for `key` from `at` (-1 = none yet) in a list of `n` entries. Pure. */
+export function nextHot(key: string, at: number, n: number): number {
+  if (n === 0) return -1;
+  if (key === "Home") return 0;
+  if (key === "End") return n - 1;
+  if (key === "ArrowDown") return (at + 1) % n;
+  if (key === "ArrowUp") return at <= 0 ? n - 1 : at - 1;
+  return at;
+}
+
 /**
  * The right-click menu's own window. It renders the model a shell sent, sizes and shows itself at the click (the core
  * places it), and reports the pick back to that shell. It never runs an action itself and holds no browser state.
+ *
+ * It never has keyboard focus (menu_surface.rs: a non-activating window), so nothing here depends on focus events:
+ * the core closes it on a click outside, on Escape (keys typed into the page are routed here as `pb:menu-key`) and when
+ * the browser window goes to the background (`pb:menu-dismiss`). Every menu ends exactly once, through `finish`.
  */
 export function MenuSurface() {
   const [menu, setMenu] = useState<MenuShow | null>(null);
   const current = useRef<MenuShow | null>(null);
   const root = useRef<HTMLDivElement>(null);
+  const hot = useRef(-1);
 
-  // `refocus`: give focus back to the browser window (not when the menu closed because focus went elsewhere).
-  const finish = useCallback((key: string | null, refocus = true) => {
+  const finish = useCallback((key: string | null) => {
     const m = current.current;
     if (!m) return;
     current.current = null;
-    void api.menuDismiss(refocus).catch(() => {});
+    hot.current = -1;
+    void api.menuDismiss().catch(() => {});
     const pick: MenuPick = { requestId: m.requestId, key };
     void emitTo(m.owner, MENU_PICK, pick).catch(() => {});
     setMenu(null);
+  }, []);
+
+  const highlight = useCallback((index: number) => {
+    const el = root.current;
+    if (!el) return;
+    const list = items(el);
+    list.forEach((item, i) => item.classList.toggle("is-hot", i === index));
+    hot.current = index;
   }, []);
 
   useEffect(() => {
@@ -43,25 +64,24 @@ export function MenuSurface() {
     const keep = (u: () => void) => (disposed ? u() : unlisten.push(u));
     void listen<MenuShow>(MENU_SHOW, (e) => {
       // A newer menu replaces one still open: the old one is answered as dismissed.
-      if (current.current && current.current.requestId !== e.payload.requestId) finish(null, false);
+      if (current.current && current.current.requestId !== e.payload.requestId) finish(null);
       applyCachedLook();
       current.current = e.payload;
+      hot.current = -1;
       setMenu(e.payload);
     }).then(keep);
-    // Clicking anywhere else (the page, another window) takes focus away: the menu closes, like any menu.
-    void getCurrentWindow()
-      .onFocusChanged(({ payload: focused }) => {
-        // WebView2 hands focus back to the page right after a right-click; only a real dismissal closes the menu.
-        if (!focused && current.current) {
-          void api
-            .menuFocusLost()
-            .catch(() => true)
-            .then((close) => {
-              if (close) finish(null, false);
-            });
-        }
-      })
-      .then(keep);
+    void listen<string>("pb:menu-dismiss", () => finish(null)).then(keep);
+    void listen<string>("pb:menu-key", (e) => {
+      const el = root.current;
+      if (!el || !current.current) return;
+      if (e.payload === "Escape") return finish(null);
+      const list = items(el);
+      if (e.payload === "Enter") {
+        if (hot.current >= 0) list[hot.current]?.click();
+        return;
+      }
+      highlight(nextHot(e.payload, hot.current, list.length));
+    }).then(keep);
     const block = (e: MouseEvent) => e.preventDefault();
     document.addEventListener("contextmenu", block);
     void api.menuSurfaceReady().catch(() => {});
@@ -70,40 +90,20 @@ export function MenuSurface() {
       unlisten.forEach((u) => u());
       document.removeEventListener("contextmenu", block);
     };
-  }, [finish]);
+  }, [finish, highlight]);
 
   // Rendered: measure and show at the click. The window has the exact size of the menu.
   useLayoutEffect(() => {
     const el = root.current;
     if (!menu || !el) return;
     const r = el.getBoundingClientRect();
-    void api
-      .menuPresent(Math.ceil(r.width), Math.ceil(r.height))
-      .then(() => el.focus({ preventScroll: true }))
-      .catch(() => finish(null));
+    void api.menuPresent(Math.ceil(r.width), Math.ceil(r.height)).catch(() => finish(null));
   }, [menu, finish]);
-
-  const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
-    const el = root.current;
-    if (!el) return;
-    if (e.key === "Escape") {
-      e.preventDefault();
-      finish(null);
-      return;
-    }
-    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
-    const list = items(el);
-    if (list.length === 0) return;
-    e.preventDefault();
-    const at = list.indexOf(document.activeElement as HTMLElement);
-    const next = e.key === "Home" ? 0 : e.key === "End" ? list.length - 1 : e.key === "ArrowDown" ? (at + 1) % list.length : at <= 0 ? list.length - 1 : at - 1;
-    list[next]?.focus();
-  };
 
   const model = menu?.model;
   return (
     <PopoverContext.Provider value={{ close: () => {} }}>
-      <div ref={root} role="menu" aria-label="Page menu" tabIndex={-1} className="popover menu ctx-menu menu-surface" style={{ width: WIDTH }} onKeyDown={onKeyDown}>
+      <div ref={root} role="menu" aria-label="Page menu" className="popover menu ctx-menu menu-surface" style={{ width: WIDTH }} onPointerMove={() => hot.current >= 0 && highlight(-1)}>
         {model && (
           <>
             {model.title && (

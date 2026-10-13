@@ -191,6 +191,25 @@ function ToolbarMenu([string]$label) {
   $base.Dispose(); $still.Dispose()
 }
 
+# The right-click menu window: visible, owned by the browser window $owner.
+function MenuWindow([IntPtr]$owner) {
+  foreach ($h in [Probe]::All([uint32]$p.Id)) { if ([Probe]::IsWindowVisible($h) -and [Probe]::GetWindow($h, 4) -eq $owner) { return $h } }
+  return [IntPtr]::Zero
+}
+function WaitMenu([IntPtr]$owner, [bool]$visible, [int]$ms) {
+  $sw = [Diagnostics.Stopwatch]::StartNew()
+  while ($sw.ElapsedMilliseconds -lt $ms) {
+    $m = MenuWindow $owner
+    if (($m -ne [IntPtr]::Zero) -eq $visible) { return $sw.ElapsedMilliseconds }
+    Start-Sleep -Milliseconds 5
+  }
+  return -1
+}
+function DoubleClick([int]$x, [int]$y) {
+  [void][Probe]::SetCursorPos($x, $y); Start-Sleep -Milliseconds 80
+  for ($k = 0; $k -lt 2; $k++) { [Probe]::mouse_event(0x0002, 0, 0, 0, [IntPtr]::Zero); [Probe]::mouse_event(0x0004, 0, 0, 0, [IntPtr]::Zero); Start-Sleep -Milliseconds 40 }
+}
+
 # Waits until the page area (below the toolbar) of window $h is painted, i.e. no longer the dark shell background.
 function WaitPainted([IntPtr]$h, [int]$seconds) {
   $deadline = (Get-Date).AddSeconds($seconds)
@@ -257,6 +276,54 @@ try {
   $after = Capture $main "03-escape"
   $steps["Escape removes the menu"] = $gone
   $steps["log: menu closed"] = ((& $log) -match "context menu \d+: closed")
+
+  # 2b. Thirty right-click cycles in a row (0.8.1 regression: menus after the first closed again within ~60 ms).
+  #     Contexts rotate (page background, link, selected text, text field); dismissals rotate (Escape, a click outside,
+  #     picking an entry with the keyboard). Every menu must appear, still be open 700 ms later, close, and the next one
+  #     must open fresh. Halfway: a toolbar popup is opened and closed, a second tab is used, and the window is resized.
+  $contexts = @(
+    @{ name = "page"; x = 800; y = 300; prep = $null },
+    @{ name = "link"; x = 95; y = 522; prep = $null },
+    @{ name = "selection"; x = 92; y = 482; prep = "select" },
+    @{ name = "text field"; x = 150; y = 560; prep = "click" }
+  )
+  $ok = 0; $stayed = 0; $closed = 0; $lat = @(); $fails = @()
+  for ($i = 1; $i -le 30; $i++) {
+    if ($i -eq 11) { ToolbarMenu "between right-clicks" }
+    if ($i -eq 16) {
+      # A second tab with the same page, then switch back and forth with Ctrl+Tab.
+      $q = Start-Process -FilePath $Exe -ArgumentList "http://127.0.0.1:8766/anim.html" -PassThru; [void]$q.WaitForExit(15000)
+      [void](WaitPainted $main 15); Key @(0x11, 0x09); Start-Sleep -Milliseconds 400
+    }
+    if ($i -eq 21) { [void][Probe]::MoveWindow($main, 0, 0, 960, 720, $true); Start-Sleep -Milliseconds 600 }
+    if ($i -eq 26) { Key @(0x11, 0x09); Start-Sleep -Milliseconds 500 }
+    $c = $contexts[($i - 1) % $contexts.Count]
+    $pt = ClientPoint $main $c.x $c.y
+    if ($c.prep -eq "select") { DoubleClick $pt.X $pt.Y; Start-Sleep -Milliseconds 150 }
+    if ($c.prep -eq "click") { Click $pt.X $pt.Y $false; Start-Sleep -Milliseconds 150 }
+    Click $pt.X $pt.Y $true
+    $shownMs = WaitMenu $main $true 1500
+    if ($shownMs -lt 0) { $fails += "cycle ${i} ($($c.name)): no menu"; continue }
+    $ok++; $lat += $shownMs
+    Start-Sleep -Milliseconds 700
+    if ((MenuWindow $main) -ne [IntPtr]::Zero) { $stayed++ } else { $fails += "cycle ${i} ($($c.name)): menu closed by itself" }
+    switch ($i % 3) {
+      0 { Key @(0x1B) }
+      1 { $o = ClientPoint $main 880 660; Click $o.X $o.Y $false }
+      2 { Key @(0x28); Start-Sleep -Milliseconds 80; Key @(0x1B) }
+    }
+    if ((WaitMenu $main $false 1500) -ge 0) { $closed++ } else { $fails += "cycle ${i} ($($c.name)): menu did not close"; Key @(0x1B) }
+    if ($i -eq 30) { [void](Capture $main "02c-after-30-cycles") }
+  }
+  $sortedLat = @($lat | Sort-Object)
+  $notes["30 right-click cycles: opened / stayed open / closed"] = "$ok / $stayed / $closed"
+  $notes["30 right-click cycles: menu latency median / max (ms, from the simulated click)"] = if ($sortedLat.Count) { "$($sortedLat[[int]($sortedLat.Count / 2)]) / $($sortedLat[-1])" } else { "-" }
+  if ($fails.Count) { $notes["30 right-click cycles: failures"] = ($fails -join "; ") }
+  $steps["30 right-click cycles: every menu opened"] = ($ok -eq 30)
+  $steps["30 right-click cycles: every menu stayed open until dismissed"] = ($stayed -eq 30)
+  $steps["30 right-click cycles: every menu closed (Escape, click outside, keyboard)"] = ($closed -eq 30)
+  $steps["log: no menu closed by a focus change"] = ((& $log) -notmatch "focus taken back")
+  [void][Probe]::MoveWindow($main, 0, 0, 1000, 740, $true); Start-Sleep -Milliseconds 400
 
   ToolbarMenu "web page, after a right-click menu"
 

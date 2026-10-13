@@ -183,6 +183,7 @@ pub fn run() {
                     }
                 }
                 WindowEvent::Focused(true) => state.ctl.post(move |c| c.last_focused = label),
+                WindowEvent::Focused(false) => menu_surface::owner_deactivated(window.app_handle()),
                 _ => {}
             }
         })

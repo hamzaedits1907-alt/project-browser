@@ -1520,21 +1520,13 @@ pub async fn menu_present(window: tauri::Window, app: AppHandle, width: f64, hei
     if window.label() != crate::menu_surface::LABEL {
         return Err(Error::msg("not the menu window"));
     }
-    crate::menu_surface::present(&app, width, height).map_err(Error::msg)
-}
-
-/// The menu window lost focus: should it close (see menu_surface::focus_lost)?
-#[tauri::command]
-pub async fn menu_focus_lost(window: tauri::Window, app: AppHandle) -> Result<bool> {
-    if window.label() != crate::menu_surface::LABEL {
-        return Ok(true);
-    }
+    // On the UI thread: the outside-click hook is installed there.
     let (tx, rx) = tokio::sync::oneshot::channel();
     let a = app.clone();
     app.run_on_main_thread(move || {
-        let _ = tx.send(crate::menu_surface::focus_lost(&a));
+        let _ = tx.send(crate::menu_surface::present(&a, width, height));
     })?;
-    Ok(rx.await.unwrap_or(true))
+    rx.await.map_err(|e| Error::msg(e.to_string()))?.map_err(Error::msg)
 }
 
 /// Whether this browser window is the one Windows has in front (popups close when it is not; focus moving between the
@@ -1547,9 +1539,10 @@ pub async fn window_active(window: tauri::Window) -> Result<bool> {
 
 /// Hides the menu window (a pick or a dismissal; the shell that owns the menu is told separately).
 #[tauri::command]
-pub async fn menu_dismiss(window: tauri::Window, app: AppHandle, refocus: bool) -> Result<()> {
+pub async fn menu_dismiss(window: tauri::Window, app: AppHandle) -> Result<()> {
     if window.label() == crate::menu_surface::LABEL {
-        crate::menu_surface::dismiss(&app, refocus);
+        let a = app.clone();
+        app.run_on_main_thread(move || crate::menu_surface::dismiss(&a))?;
     }
     Ok(())
 }
@@ -1939,7 +1932,6 @@ macro_rules! all_commands {
             $crate::commands::menu_surface_ready,
             $crate::commands::menu_present,
             $crate::commands::menu_dismiss,
-            $crate::commands::menu_focus_lost,
             $crate::commands::window_active,
             $crate::commands::shield_state,
             $crate::commands::shield_tab,

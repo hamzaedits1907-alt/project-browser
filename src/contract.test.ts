@@ -15,7 +15,7 @@ const root = process.cwd();
 const read = (rel: string) => readFileSync(join(root, rel), "utf8");
 const camel = (s: string) => s.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
 /** Commands only the right-click menu's own window may call (capabilities/menu.json). */
-const MENU_COMMANDS = ["menu_surface_ready", "menu_present", "menu_dismiss", "menu_focus_lost"];
+const MENU_COMMANDS = ["menu_surface_ready", "menu_present", "menu_dismiss"];
 const sorted = <T,>(xs: T[]) => [...xs].sort();
 
 const commandsRs = read("src-tauri/src/commands.rs");

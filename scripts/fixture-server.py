@@ -59,6 +59,7 @@ PAGES = {
 <canvas id="box" width="420" height="320"></canvas>
 <p>This page repaints every frame, so a capture taken while a menu is open shows whether it is still running.</p>
 <p><a href="/links.html">Next page</a></p>
+<p><input id="q" placeholder="Type here" style="width:240px"></p>
 <script>
 const c = document.getElementById("box").getContext("2d"); let n = 0;
 function frame() { n++; c.fillStyle = "hsl(" + ((n * 7) % 360) + " 85% 62%)"; c.fillRect(0, 0, 420, 320);

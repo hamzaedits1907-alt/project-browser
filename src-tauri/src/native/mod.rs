@@ -313,6 +313,11 @@ unsafe fn hook_accelerators(controller: &ICoreWebView2Controller, ctl: &Controll
             }
             let mut vk = 0u32;
             args.VirtualKey(&mut vk)?;
+            // An open right-click menu has no focus of its own: its keys arrive here, in the page or the shell.
+            if crate::menu_surface::route_key(vk) {
+                args.SetHandled(true)?;
+                return Ok(());
+            }
             if let Some(cmd) = map_key(vk, current_mods()) {
                 args.SetHandled(true)?;
                 match &origin {
@@ -819,6 +824,81 @@ pub fn top_level_window_at(x: i32, y: i32) -> Option<isize> {
         }
         let root = GetAncestor(hwnd, GA_ROOT);
         (!root.0.is_null()).then_some(root.0 as isize)
+    }
+}
+
+/// Makes the top-level window `hwnd` one that never becomes the active window (clicks still reach it).
+pub fn make_no_activate(hwnd: isize) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_NOACTIVATE};
+    unsafe {
+        let h = HWND(hwnd as *mut _);
+        let ex = GetWindowLongPtrW(h, GWL_EXSTYLE);
+        SetWindowLongPtrW(h, GWL_EXSTYLE, ex | WS_EX_NOACTIVATE.0 as isize);
+    }
+}
+
+/// Shows `hwnd` on top without activating it or taking keyboard focus.
+pub fn show_without_focus(hwnd: isize) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        SetWindowPos, ShowWindow, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_SHOWNOACTIVATE,
+    };
+    unsafe {
+        let h = HWND(hwnd as *mut _);
+        let _ = ShowWindow(h, SW_SHOWNOACTIVATE);
+        let _ = SetWindowPos(h, Some(HWND_TOPMOST), 0, 0, 0, 0, SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+    }
+}
+
+static MOUSE_HOOK: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
+/// Low-level mouse hook, installed only while a menu is open: a press anywhere outside the menu window closes it.
+unsafe extern "system" fn outside_click_hook(
+    code: i32,
+    wparam: windows::Win32::Foundation::WPARAM,
+    lparam: windows::Win32::Foundation::LPARAM,
+) -> windows::Win32::Foundation::LRESULT {
+    use windows::Win32::Foundation::{HWND, RECT};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        CallNextHookEx, GetWindowRect, MSLLHOOKSTRUCT, WM_LBUTTONDOWN, WM_MBUTTONDOWN, WM_MOUSEWHEEL, WM_NCLBUTTONDOWN, WM_NCRBUTTONDOWN,
+        WM_RBUTTONDOWN,
+    };
+    if code >= 0 {
+        let msg = wparam.0 as u32;
+        if matches!(msg, WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN | WM_MOUSEWHEEL | WM_NCLBUTTONDOWN | WM_NCRBUTTONDOWN) {
+            let menu = crate::menu_surface::open_hwnd();
+            if menu != 0 {
+                let info = unsafe { &*(lparam.0 as *const MSLLHOOKSTRUCT) };
+                let mut r = RECT::default();
+                let inside = unsafe { GetWindowRect(HWND(menu as *mut _), &mut r) }.is_ok()
+                    && info.pt.x >= r.left
+                    && info.pt.x < r.right
+                    && info.pt.y >= r.top
+                    && info.pt.y < r.bottom;
+                if !inside {
+                    crate::menu_surface::request_dismiss("click outside the menu");
+                }
+            }
+        }
+    }
+    unsafe { CallNextHookEx(None, code, wparam, lparam) }
+}
+
+/// Starts (`on`) or stops watching for clicks outside the menu. Call on the UI thread (the hook runs on it).
+pub fn outside_click_watch(on: bool) {
+    use windows::Win32::UI::WindowsAndMessaging::{SetWindowsHookExW, UnhookWindowsHookEx, HHOOK, WH_MOUSE_LL};
+    let current = MOUSE_HOOK.load(Ordering::SeqCst);
+    unsafe {
+        if on && current == 0 {
+            match SetWindowsHookExW(WH_MOUSE_LL, Some(outside_click_hook), None, 0) {
+                Ok(h) => MOUSE_HOOK.store(h.0 as isize, Ordering::SeqCst),
+                Err(e) => log::warn!("menu window: outside clicks cannot be watched ({e}); Escape and picking an entry still close it"),
+            }
+        } else if !on && current != 0 {
+            let _ = UnhookWindowsHookEx(HHOOK(current as *mut _));
+            MOUSE_HOOK.store(0, Ordering::SeqCst);
+        }
     }
 }
 

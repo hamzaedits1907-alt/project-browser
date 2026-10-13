@@ -74,6 +74,23 @@ export function ShieldSummary({ active, onReload }: { active: boolean; onReload?
             </span>
             <Toggle label={`Block ads and trackers on ${site.host}`} checked={site.enabled} onChange={(on) => void toggleSite(on)} />
           </div>
+          {site.enabled && !changed && (
+            <Button
+              size="sm"
+              variant="ghost"
+              icon="refresh"
+              title="Turns blocking off for this site only and reloads the page. You can switch it back on here."
+              onClick={async () => {
+                const next = await attempt(() => api.shieldSite(site.host, false));
+                if (next === undefined) return;
+                toast(`Project Shield is off on ${site.host}`);
+                onReload?.();
+                void attempt(() => api.nav("reload"));
+              }}
+            >
+              Page broken? Allow this site and reload
+            </Button>
+          )}
           {changed && (
             <Button
               size="sm"

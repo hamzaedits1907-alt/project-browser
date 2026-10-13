@@ -214,6 +214,17 @@ export interface Download {
   missing?: boolean;
 }
 
+/** What restoring a backup did (backup.rs). */
+export interface RestoreReport {
+  bookmarks: number;
+  notes: number;
+  notesSkipped: number;
+  settings: boolean;
+  shield: boolean;
+  createdAt: number;
+  shell: Record<string, unknown> | null;
+}
+
 export type DownloadCommand = "pause" | "resume" | "cancel" | "open" | "openConfirmed" | "showInFolder" | "remove" | "retry";
 
 export interface PermissionPrompt {

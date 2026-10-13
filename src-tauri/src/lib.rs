@@ -2,6 +2,7 @@
 compile_error!("Project Browser currently targets Windows (WebView2) only.");
 
 pub mod ai;
+pub mod backup;
 pub mod commands;
 pub mod controller;
 pub mod db;

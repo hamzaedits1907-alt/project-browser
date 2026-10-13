@@ -16,6 +16,7 @@ import type {
   BrowserState,
   Bootstrap,
   ContextMenuEvent,
+  RestoreReport,
   DragOutcome,
   MediaAction,
   MediaStatus,
@@ -167,6 +168,8 @@ export const COMMANDS = [
   "window_new",
   "tab_group",
   "context_menu_choose",
+  "backup_export",
+  "backup_restore",
   "menu_surface_ready",
   "menu_present",
   "menu_dismiss",
@@ -345,6 +348,10 @@ export const api = {
   /** Closes right-click menu `request`, running WebView2's command `command` if one was chosen. */
   contextMenuChoose: (request: number, command: number | null) => call("context_menu_choose", { request, command }),
   /** The menu window (only) has loaded. */
+  /** Writes a backup file (the user picks where); `shell` is the shell's own preferences. Null when cancelled. */
+  backupExport: (shell: Record<string, unknown>) => call<string | null>("backup_export", { shell }),
+  /** Restores a backup file the user picks. Null when cancelled. */
+  backupRestore: () => call<RestoreReport | null>("backup_restore"),
   menuSurfaceReady: () => call("menu_surface_ready"),
   /** The menu window (only): place the rendered menu of this CSS size at the click and show it. */
   menuPresent: (width: number, height: number) => call("menu_present", { width, height }),

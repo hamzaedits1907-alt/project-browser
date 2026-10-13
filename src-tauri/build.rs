@@ -103,6 +103,8 @@ const COMMANDS: &[&str] = &[
     "window_new",
     "tab_group",
     "context_menu_choose",
+    "backup_export",
+    "backup_restore",
     "menu_surface_ready",
     "menu_present",
     "menu_dismiss",

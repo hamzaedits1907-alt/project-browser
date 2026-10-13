@@ -251,15 +251,31 @@ jobs:
         with:
           name: project-browser-portable-exe
           path: pb
+      # Baseline: the released v0.7.0, installed on this runner and measured the same way (same pages, same timings).
+      - name: Install the v0.7.0 baseline
+        shell: pwsh
+        run: |
+          Invoke-WebRequest "https://github.com/hamzaedits1907-alt/project-browser/releases/download/v0.7.0/Project.Browser_0.7.0_x64-setup.exe" -OutFile baseline-setup.exe
+          Start-Process -FilePath ./baseline-setup.exe -ArgumentList "/S" -Wait
+          $exe = Join-Path $env:LOCALAPPDATA "Project Browser\project-browser.exe"
+          if (-not (Test-Path $exe)) { Get-ChildItem $env:LOCALAPPDATA -Recurse -Filter project-browser.exe -ErrorAction SilentlyContinue | Select-Object -First 3 FullName; throw "baseline not installed" }
+          New-Item -ItemType Directory -Force base | Out-Null
+          Copy-Item $exe base/project-browser.exe
+      - name: Startup (cold and warm), v0.7.0 baseline
+        shell: pwsh
+        run: ./scripts/startup-bench.ps1 -Exe base/project-browser.exe -Runs 3 -Out bench-results/v0.7.0
+      - name: Memory and CPU with 1, 5, 10 and 20 tabs, v0.7.0 baseline
+        shell: pwsh
+        run: ./scripts/benchmark.ps1 -Browser project-browser -Exe base/project-browser.exe -Tabs 1,5,10,20 -LoadWait 25 -Settle 10 -Idle 30 -Out bench-results/v0.7.0
       - name: Startup (cold and warm)
         shell: pwsh
-        run: ./scripts/startup-bench.ps1 -Exe pb/project-browser.exe -Runs 3 -Out bench-results
+        run: ./scripts/startup-bench.ps1 -Exe pb/project-browser.exe -Runs 3 -Out bench-results/current
       - name: Memory and CPU with 1, 5, 10 and 20 tabs (Project Browser)
         shell: pwsh
-        run: ./scripts/benchmark.ps1 -Browser project-browser -Exe pb/project-browser.exe -Tabs 1,5,10,20 -LoadWait 25 -Settle 10 -Idle 30 -Out bench-results
+        run: ./scripts/benchmark.ps1 -Browser project-browser -Exe pb/project-browser.exe -Tabs 1,5,10,20 -LoadWait 25 -Settle 10 -Idle 30 -Out bench-results/current
       - name: Same pages in Google Chrome (the runner's copy)
         shell: pwsh
-        run: ./scripts/benchmark.ps1 -Browser chrome -Exe "C:\Program Files\Google\Chrome\Application\chrome.exe" -Tabs 1,5,10,20 -LoadWait 25 -Settle 10 -Idle 30 -Out bench-results
+        run: ./scripts/benchmark.ps1 -Browser chrome -Exe "C:\Program Files\Google\Chrome\Application\chrome.exe" -Tabs 1,5,10,20 -LoadWait 25 -Settle 10 -Idle 30 -Out bench-results/chrome
       - name: Upload benchmark results
         if: always()
         uses: actions/upload-artifact@v4

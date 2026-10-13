@@ -1361,6 +1361,98 @@ pub async fn context_menu_choose(window: tauri::Window, s: State<'_, AppState>, 
     s.ctl.call_in(window.label().to_string(), move |c| c.context_menu_done(request, command)).await
 }
 
+// ---- backup and restore (backup.rs) -------------------------------------------------------
+
+/// Writes a backup (settings, bookmarks, Shield rules, notes and the shell's `shell` preferences; never passwords,
+/// cookies or keys) to a file the user picks. Returns its path, or `None` when the Save dialog was cancelled.
+#[tauri::command]
+pub async fn backup_export(window: tauri::Window, s: State<'_, AppState>, shell: serde_json::Value) -> Result<Option<String>> {
+    let owner = window.hwnd().ok().map(|h| h.0 as isize).unwrap_or(0);
+    let shield = crate::shield::global().map(|sh| sh.config()).unwrap_or_default();
+    let backup = s
+        .ctl
+        .call(move |c| -> Result<crate::backup::Backup> {
+            let notes = c.db.memory_search("", 100_000)?;
+            let version = c.app.package_info().version.to_string();
+            Ok(crate::backup::build(
+                &c.settings,
+                &c.db.bookmarks_all()?,
+                crate::backup::BackupShield {
+                    disabled_sites: shield.disabled_sites,
+                    disabled_lists: shield.disabled_lists,
+                    user_rules: shield.user_rules,
+                },
+                &notes,
+                shell,
+                now_ms(),
+                &version,
+            ))
+        })
+        .await??;
+    let text = serde_json::to_string_pretty(&backup).map_err(|e| Error::msg(e.to_string()))?;
+    let suggested = native::downloads_folder().unwrap_or_default().join(crate::backup::file_name(backup.created_at)).to_string_lossy().to_string();
+    let picked =
+        tauri::async_runtime::spawn_blocking(move || native::dialog::save_file(owner, &suggested)).await.map_err(|e| Error::msg(e.to_string()))?;
+    let Some(path) = picked else { return Ok(None) };
+    std::fs::write(&path, text).map_err(|e| Error::msg(format!("The backup could not be written: {e}")))?;
+    log::info!("backup written ({} bookmarks, {} notes)", backup.bookmarks.len(), backup.notes.len());
+    Ok(Some(path.to_string_lossy().to_string()))
+}
+
+/// Restores a backup file the user picks. `None` when the Open dialog was cancelled.
+#[tauri::command]
+pub async fn backup_restore(window: tauri::Window, s: State<'_, AppState>) -> Result<Option<crate::backup::RestoreReport>> {
+    let owner = window.hwnd().ok().map(|h| h.0 as isize).unwrap_or(0);
+    let picked =
+        tauri::async_runtime::spawn_blocking(move || native::dialog::pick_file(owner, "Choose a Project Browser backup", "Backups", "*.json"))
+            .await
+            .map_err(|e| Error::msg(e.to_string()))?;
+    let Some(path) = picked else { return Ok(None) };
+    let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+    if size > crate::backup::MAX_BYTES {
+        return Err(Error::msg("That file is too large to be a Project Browser backup."));
+    }
+    let text = std::fs::read_to_string(&path).map_err(|e| Error::msg(format!("The file could not be read: {e}")))?;
+    let backup = crate::backup::parse(&text).map_err(Error::msg)?;
+    let mut report = crate::backup::RestoreReport { created_at: backup.created_at, shell: backup.shell.clone(), ..Default::default() };
+    if let Some(shield) = crate::shield::global() {
+        let mut cfg = shield.config();
+        cfg.disabled_sites = backup.shield.disabled_sites.clone();
+        cfg.disabled_lists = backup.shield.disabled_lists.clone();
+        cfg.user_rules = backup.shield.user_rules.clone();
+        let cfg = shield.set_config(cfg);
+        save_shield_config(&s, cfg).await?;
+        report.shield = true;
+    }
+    let report = s
+        .ctl
+        .call(move |c| -> Result<crate::backup::RestoreReport> {
+            let now = now_ms();
+            if let Some(next) = crate::backup::restored_settings(&backup) {
+                c.update_settings(next)?;
+                report.settings = true;
+            }
+            let tree = crate::backup::bookmark_tree(&backup, now);
+            if !tree.is_empty() {
+                c.db.bookmarks_import(crate::db::bookmarks::OTHER_ID, "Restored from backup", &tree, now)?;
+                report.bookmarks = crate::backup::count_urls(&tree);
+                c.mark_bookmarks();
+            }
+            let existing = c.db.memory_search("", 100_000)?;
+            let (drafts, skipped) = crate::backup::new_notes(&backup, &existing);
+            report.notes_skipped = skipped;
+            for d in drafts {
+                if c.db.memory_create(d, now).is_ok() {
+                    report.notes += 1;
+                }
+            }
+            Ok(report)
+        })
+        .await??;
+    log::info!("backup restored ({} bookmarks, {} notes, {} notes already there)", report.bookmarks, report.notes, report.notes_skipped);
+    Ok(Some(report))
+}
+
 // ---- the right-click menu's own window (menu_surface.rs) ----------------------------------
 
 /// The menu window has loaded and can show menus.
@@ -1768,6 +1860,8 @@ macro_rules! all_commands {
             $crate::commands::window_new,
             $crate::commands::tab_group,
             $crate::commands::context_menu_choose,
+            $crate::commands::backup_export,
+            $crate::commands::backup_restore,
             $crate::commands::menu_surface_ready,
             $crate::commands::menu_present,
             $crate::commands::menu_dismiss,

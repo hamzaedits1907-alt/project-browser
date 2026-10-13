@@ -5,6 +5,8 @@ import { Card, SettingRow } from "../../components/ui/Section";
 import { api, errorMessage } from "../../lib/ipc";
 import { SEARCH_ENGINES } from "../../lib/settings";
 import { useSettings } from "../../lib/useSettings";
+import { applyShell, collectShell } from "../../features/backup/backup";
+import { toast } from "../../lib/store";
 import type { DefaultBrowserStatus, SearchEngine, StartupBehavior } from "../../lib/types";
 
 /** What the default-browser card says, from the real Windows registration. */
@@ -166,6 +168,53 @@ export function General() {
           <Toggle label="Ask where to save each file" checked={settings.downloadAsk} onChange={(downloadAsk) => void update({ downloadAsk })} />
         </SettingRow>
       </Card>
+      <BackupCard />
     </>
+  );
+}
+
+/** Browser backup and restore (backup.rs): a local file, never passwords, cookies or keys. */
+function BackupCard() {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const run = async (what: "export" | "restore") => {
+    setBusy(true);
+    setResult(null);
+    try {
+      if (what === "export") {
+        const path = await api.backupExport(collectShell((k) => localStorage.getItem(k)));
+        if (path) setResult(`Saved to ${path}`);
+      } else {
+        const r = await api.backupRestore();
+        if (r) {
+          const prefs = applyShell(r.shell, (k, v) => localStorage.setItem(k, v));
+          setResult(
+            `Restored the backup from ${new Date(r.createdAt).toLocaleString()}: ${r.bookmarks} bookmarks (in "Other bookmarks › Restored from backup"), ` +
+              `${r.notes} notes${r.notesSkipped ? ` (${r.notesSkipped} already here)` : ""}, ${r.settings ? "settings" : "no settings"}, ` +
+              `${r.shield ? "Shield rules" : "no Shield rules"}, ${prefs} site preference sets.`,
+          );
+          toast("Backup restored");
+        }
+      }
+    } catch (e) {
+      setResult(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Card title="Backup and restore" subtitle="A file on this computer with your settings, bookmarks (and workspaces), notes, Shield rules and site preferences. Passwords, cookies, site data, history and the AI key are never included.">
+      <SettingRow title="Back up" description="Choose where to save the backup file. Nothing is uploaded.">
+        <Button disabled={busy} onClick={() => void run("export")}>
+          Back up…
+        </Button>
+      </SettingRow>
+      <SettingRow title="Restore" description="Settings and Shield rules are replaced by the backup's; bookmarks and notes are added, nothing is deleted.">
+        <Button disabled={busy} onClick={() => void run("restore")}>
+          Restore from file…
+        </Button>
+      </SettingRow>
+      {result && <p className="dim small" role="status">{result}</p>}
+    </Card>
   );
 }

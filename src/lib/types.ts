@@ -136,6 +136,8 @@ export interface Settings {
   startup: StartupBehavior;
   showBookmarksBar: boolean;
   downloadDir: string | null;
+  /** Show the Save dialog for every download. */
+  downloadAsk: boolean;
   accent: string;
   newTabBackground: string;
   reduceMotion: boolean;
@@ -208,9 +210,11 @@ export interface Download {
   endedAt: number | null;
   private: boolean;
   pausedByGaming: boolean;
+  /** Completed, but the file is no longer where it was saved. */
+  missing?: boolean;
 }
 
-export type DownloadCommand = "pause" | "resume" | "cancel" | "open" | "openConfirmed" | "showInFolder" | "remove";
+export type DownloadCommand = "pause" | "resume" | "cancel" | "open" | "openConfirmed" | "showInFolder" | "remove" | "retry";
 
 export interface PermissionPrompt {
   id: number;

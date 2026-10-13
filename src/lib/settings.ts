@@ -22,6 +22,7 @@ export const DEFAULT_SETTINGS: Settings = {
   startup: "restoreSession",
   showBookmarksBar: true,
   downloadDir: null,
+  downloadAsk: false,
   accent: "auto",
   newTabBackground: "grid",
   reduceMotion: false,

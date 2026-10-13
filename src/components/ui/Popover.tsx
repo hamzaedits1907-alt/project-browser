@@ -105,13 +105,24 @@ export function Popover({ open, onClose, anchor, point, align = "start", width, 
         onClose();
       }
     };
+    // Opening over a web page hides the page and moves keyboard focus to the shell (lib/overlay.ts), which can fire a
+    // blur that is immediately followed by focus again. Closing on that blur made toolbar popups on web pages vanish
+    // before they appeared. Only a blur after which the window really has no focus closes the popover.
+    let frame = 0;
+    const onBlur = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        if (!document.hasFocus()) onClose();
+      });
+    };
     document.addEventListener("pointerdown", onDown, true);
     document.addEventListener("keydown", onKey, true);
-    window.addEventListener("blur", onClose);
+    window.addEventListener("blur", onBlur);
     return () => {
+      cancelAnimationFrame(frame);
       document.removeEventListener("pointerdown", onDown, true);
       document.removeEventListener("keydown", onKey, true);
-      window.removeEventListener("blur", onClose);
+      window.removeEventListener("blur", onBlur);
     };
   }, [open, onClose, anchor]);
 

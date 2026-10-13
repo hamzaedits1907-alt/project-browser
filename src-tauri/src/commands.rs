@@ -28,7 +28,7 @@ use crate::shortcuts::Command;
 use crate::tabs::TabId;
 use crate::vault::{ExportPreview, FillResult, PasswordImportReport, ProfileSummary, VaultState};
 
-const SNAPSHOT_TIMEOUT: Duration = Duration::from_millis(900);
+const SNAPSHOT_TIMEOUT: Duration = Duration::from_millis(350);
 const PAGE_TEXT_TIMEOUT: Duration = Duration::from_secs(6);
 
 pub struct AppState {
@@ -397,7 +397,12 @@ pub async fn bookmark_toggle(s: State<'_, AppState>, tab_id: TabId) -> Result<()
 
 #[tauri::command]
 pub async fn downloads_list(s: State<'_, AppState>) -> Result<Vec<Download>> {
-    s.ctl.call(|c| c.downloads.clone()).await
+    s.ctl
+        .call(|c| {
+            c.verify_download_files();
+            c.downloads.clone()
+        })
+        .await
 }
 
 #[tauri::command]

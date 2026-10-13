@@ -62,6 +62,9 @@ pub struct Download {
     /// True while Gaming Mode holds this download paused.
     #[serde(default)]
     pub paused_by_gaming: bool,
+    /// A completed download whose file is no longer where it was saved (moved or deleted since). Checked, not stored.
+    #[serde(default)]
+    pub missing: bool,
 }
 
 const DANGEROUS_EXTENSIONS: &[&str] = &[
@@ -211,6 +214,7 @@ mod tests {
             ended_at: None,
             private: false,
             paused_by_gaming: false,
+            missing: false,
         }
     }
 

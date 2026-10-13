@@ -428,8 +428,13 @@ impl Controller {
         if let Err(e) = init.db.downloads_mark_stale_interrupted(now) {
             log::warn!("could not update stale downloads: {e}");
         }
-        let downloads = init.db.downloads_list(DOWNLOAD_HISTORY_LIMIT).unwrap_or_default();
+        let mut downloads = init.db.downloads_list(DOWNLOAD_HISTORY_LIMIT).unwrap_or_default();
+        // History says "completed"; the file may have been moved or deleted since.
+        for d in downloads.iter_mut().filter(|d| d.state == crate::db::downloads::DownloadState::Completed) {
+            d.missing = !std::path::Path::new(&d.path).is_file();
+        }
         crate::native::set_download_dir(init.settings.download_dir.as_ref().map(Into::into));
+        crate::native::set_download_ask(init.settings.download_ask);
         crate::native::set_clean_links(init.settings.clean_links);
         crate::native::set_popup_policy(
             init.settings.popup_allowed_hosts.clone(),
@@ -928,6 +933,7 @@ impl Controller {
         if prev.download_dir != next.download_dir {
             crate::native::set_download_dir(next.download_dir.as_ref().map(Into::into));
         }
+        crate::native::set_download_ask(next.download_ask);
         if prev.clean_links != next.clean_links {
             crate::native::set_clean_links(next.clean_links);
         }

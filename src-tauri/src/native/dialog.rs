@@ -1,4 +1,4 @@
-//! The standard Windows "Open" dialog, used to choose the password export file.
+//! The standard Windows "Open" and "Save as" dialogs (the password export file; where to save a download).
 //!
 //! The browser reads the file itself: the path never travels through the shell UI, so the shell cannot
 //! ask this code to read an arbitrary file.
@@ -9,7 +9,8 @@ use windows::core::{PCWSTR, PWSTR};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
 use windows::Win32::UI::Controls::Dialogs::{
-    GetOpenFileNameW, OFN_EXPLORER, OFN_FILEMUSTEXIST, OFN_HIDEREADONLY, OFN_NOCHANGEDIR, OFN_PATHMUSTEXIST, OPENFILENAMEW,
+    GetOpenFileNameW, GetSaveFileNameW, OFN_EXPLORER, OFN_FILEMUSTEXIST, OFN_HIDEREADONLY, OFN_NOCHANGEDIR, OFN_OVERWRITEPROMPT, OFN_PATHMUSTEXIST,
+    OPENFILENAMEW,
 };
 
 fn wide(s: &str) -> Vec<u16> {
@@ -45,6 +46,39 @@ pub fn pick_file(owner: isize, title: &str, filter_name: &str, filter_pattern: &
     let chosen = unsafe {
         let com_ready = CoInitializeEx(None, COINIT_APARTMENTTHREADED).is_ok();
         let ok = GetOpenFileNameW(&mut dialog).as_bool();
+        if com_ready {
+            CoUninitialize();
+        }
+        ok
+    };
+    if !chosen {
+        return None;
+    }
+    let len = buffer.iter().position(|c| *c == 0).unwrap_or(buffer.len());
+    Some(PathBuf::from(String::from_utf16_lossy(&buffer[..len])))
+}
+
+/// The standard "Save as" dialog, starting at `suggested` (a full path: its folder and file name). Returns the chosen
+/// path, or `None` when the user cancels. Replacing an existing file needs the dialog's own confirmation. Blocks until
+/// the dialog closes: call it from a worker thread.
+pub fn save_file(owner: isize, suggested: &str) -> Option<PathBuf> {
+    let title = wide("Save download as");
+    let mut buffer = vec![0u16; 4096];
+    let initial: Vec<u16> = suggested.encode_utf16().take(buffer.len() - 1).collect();
+    buffer[..initial.len()].copy_from_slice(&initial);
+    let mut dialog = OPENFILENAMEW {
+        lStructSize: std::mem::size_of::<OPENFILENAMEW>() as u32,
+        hwndOwner: HWND(owner as *mut core::ffi::c_void),
+        lpstrFile: PWSTR(buffer.as_mut_ptr()),
+        nMaxFile: buffer.len() as u32,
+        lpstrTitle: PCWSTR(title.as_ptr()),
+        Flags: OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY | OFN_NOCHANGEDIR | OFN_OVERWRITEPROMPT,
+        ..Default::default()
+    };
+    // SAFETY: as in `pick_file`: every pointer refers to a buffer that outlives the call, on a thread of its own.
+    let chosen = unsafe {
+        let com_ready = CoInitializeEx(None, COINIT_APARTMENTTHREADED).is_ok();
+        let ok = GetSaveFileNameW(&mut dialog).as_bool();
         if com_ready {
             CoUninitialize();
         }

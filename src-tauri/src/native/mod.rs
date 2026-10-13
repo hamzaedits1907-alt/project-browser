@@ -46,6 +46,8 @@ thread_local! {
     static FIND_HOOKED: RefCell<std::collections::HashSet<TabId>> = RefCell::new(Default::default());
     static DOWNLOADS: RefCell<HashMap<i64, ICoreWebView2DownloadOperation>> = RefCell::new(HashMap::new());
     static PERMISSIONS: RefCell<HashMap<u64, PendingPermission>> = RefCell::new(HashMap::new());
+    /// Downloads held (deferred) while the user picks where to save them ("Ask where to save each file").
+    static ASKING: RefCell<HashMap<i64, AskingDownload>> = RefCell::new(HashMap::new());
     /// The shell webview of every browser window, by window label.
     static SHELLS: RefCell<HashMap<String, TabCom>> = RefCell::new(HashMap::new());
     /// Host of the page each tab is loading, for the Shield's first-party checks and the pop-up policy.
@@ -65,6 +67,14 @@ static NEW_WINDOWS: AtomicBool = AtomicBool::new(false);
 static CLEAN_LINKS: AtomicBool = AtomicBool::new(true);
 static NEXT_DOWNLOAD: AtomicI64 = AtomicI64::new(0);
 static DOWNLOAD_DIR: Mutex<Option<PathBuf>> = Mutex::new(None);
+/// "Ask where to save each file" (settings.download_ask).
+static DOWNLOAD_ASK: AtomicBool = AtomicBool::new(false);
+
+struct AskingDownload {
+    args: ICoreWebView2DownloadStartingEventArgs,
+    deferral: ICoreWebView2Deferral,
+    tab: Option<TabId>,
+}
 
 // ---- frame-info guard -------------------------------------------------------------------
 //
@@ -213,6 +223,10 @@ pub fn set_download_dir(dir: Option<PathBuf>) {
     if let Ok(mut d) = DOWNLOAD_DIR.lock() {
         *d = dir;
     }
+}
+
+pub fn set_download_ask(ask: bool) {
+    DOWNLOAD_ASK.store(ask, Ordering::SeqCst);
 }
 
 fn next_download_id() -> i64 {
@@ -459,7 +473,12 @@ unsafe fn install_tab_inner(id: TabId, pw: &PlatformWebview, ctl: &ControllerHan
         wv4.add_DownloadStarting(
             &DownloadStartingEventHandler::create(Box::new(move |_, args| {
                 let Some(args) = args else { return Ok(()) };
-                start_download(&args, Some(id), &c)
+                let owner = tab_com(id).and_then(|t| {
+                    let mut hwnd = windows::Win32::Foundation::HWND::default();
+                    t.controller.ParentWindow(&mut hwnd).ok()?;
+                    Some(windows::Win32::UI::WindowsAndMessaging::GetAncestor(hwnd, windows::Win32::UI::WindowsAndMessaging::GA_ROOT).0 as isize)
+                });
+                start_download(&args, Some(id), &c, owner.unwrap_or(0))
             })),
             &mut token,
         )?;
@@ -909,8 +928,12 @@ fn host_of(url: &str) -> String {
     url::Url::parse(url).ok().and_then(|u| u.host_str().map(str::to_string)).unwrap_or_else(|| "unknown host".into())
 }
 
-unsafe fn start_download(args: &ICoreWebView2DownloadStartingEventArgs, tab: Option<TabId>, ctl: &ControllerHandle) -> windows::core::Result<()> {
-    let op = args.DownloadOperation()?;
+unsafe fn start_download(
+    args: &ICoreWebView2DownloadStartingEventArgs,
+    tab: Option<TabId>,
+    ctl: &ControllerHandle,
+    owner: isize,
+) -> windows::core::Result<()> {
     // We show our own downloads UI instead of the Edge flyout.
     if let Err(e) = args.SetHandled(true) {
         log::warn!("download: could not take over the download UI: {e}");
@@ -923,6 +946,55 @@ unsafe fn start_download(args: &ICoreWebView2DownloadStartingEventArgs, tab: Opt
         }
     }
     let id = next_download_id();
+    if DOWNLOAD_ASK.load(Ordering::SeqCst) {
+        // Hold the download (nothing is written yet) while the Save dialog is open on a worker thread; WebView2 waits
+        // for the deferral. Cancelling the dialog cancels the download before it starts.
+        let deferral = args.GetDeferral()?;
+        ASKING.with(|a| a.borrow_mut().insert(id, AskingDownload { args: args.clone(), deferral, tab }));
+        let c = ctl.clone();
+        std::thread::spawn(move || {
+            let chosen = dialog::save_file(owner, &path);
+            c.post(move |ctl| {
+                let h = ctl.handle.clone();
+                let _ = ctl.app.run_on_main_thread(move || finish_ask(id, chosen, &h));
+            });
+        });
+        return Ok(());
+    }
+    track_download(args, id, tab, ctl)
+}
+
+/// The Save dialog for download `id` closed: start it at the chosen path, or cancel it.
+fn finish_ask(id: i64, chosen: Option<PathBuf>, ctl: &ControllerHandle) {
+    let Some(a) = ASKING.with(|m| m.borrow_mut().remove(&id)) else { return };
+    unsafe {
+        match chosen {
+            Some(p) => {
+                if let Err(e) = a.args.SetResultFilePath(&HSTRING::from(p.to_string_lossy().as_ref())) {
+                    log::warn!("download {id}: the chosen path was not accepted ({e}); using the default folder");
+                }
+                if let Err(e) = track_download(&a.args, id, a.tab, ctl) {
+                    log::warn!("download {id}: could not be tracked: {e}");
+                }
+            }
+            None => {
+                log::info!("download {id}: cancelled in the Save dialog");
+                let _ = a.args.SetCancel(true);
+            }
+        }
+        let _ = a.deferral.Complete();
+    }
+}
+
+/// Follows a starting download: progress and state updates go to the controller, which lists and persists it.
+unsafe fn track_download(
+    args: &ICoreWebView2DownloadStartingEventArgs,
+    id: i64,
+    tab: Option<TabId>,
+    ctl: &ControllerHandle,
+) -> windows::core::Result<()> {
+    let op = args.DownloadOperation()?;
+    let path = pwstr(|p| args.ResultFilePath(p));
     let url = pwstr(|p| op.Uri(p));
     let mime = pwstr(|p| op.MimeType(p));
     let mut total = 0i64;
@@ -1049,7 +1121,21 @@ pub fn download_action(id: i64, action: DownloadAction, ctl: ControllerHandle) {
                 if read_bool(|b| op.CanResume(b)) {
                     op.Resume()
                 } else {
-                    Ok(())
+                    // Never pretend: a download WebView2 cannot resume is reported as failed, and Retry starts it
+                    // again from the beginning.
+                    DOWNLOADS.with(|d| d.borrow_mut().remove(&id));
+                    let _ = op.Cancel();
+                    let mut received = 0i64;
+                    let _ = op.BytesReceived(&mut received);
+                    ctl.post(move |c| {
+                        c.on_download_state(
+                            id,
+                            NativeDownloadState::Interrupted("This download can't be resumed. Retry starts it again from the beginning.".into()),
+                            String::new(),
+                            received,
+                        )
+                    });
+                    return;
                 }
             }
             DownloadAction::Cancel => op.Cancel(),

@@ -176,6 +176,8 @@ pub struct Settings {
     pub show_bookmarks_bar: bool,
     /// Absolute folder for downloads; `None` means the Windows Downloads folder.
     pub download_dir: Option<String>,
+    /// Show the Save dialog for every download instead of saving into `download_dir` straight away.
+    pub download_ask: bool,
 
     pub accent: String,
     pub new_tab_background: String,
@@ -255,6 +257,7 @@ impl Default for Settings {
             startup: StartupBehavior::RestoreSession,
             show_bookmarks_bar: true,
             download_dir: None,
+            download_ask: false,
             accent: "auto".into(),
             new_tab_background: "grid".into(),
             reduce_motion: false,

@@ -162,6 +162,9 @@ export function General() {
             )}
           </div>
         </SettingRow>
+        <SettingRow title="Ask where to save each file" description="Shows the Windows Save dialog before a download starts. Cancelling it cancels the download.">
+          <Toggle label="Ask where to save each file" checked={settings.downloadAsk} onChange={(downloadAsk) => void update({ downloadAsk })} />
+        </SettingRow>
       </Card>
     </>
   );

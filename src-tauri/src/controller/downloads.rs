@@ -28,6 +28,8 @@ pub enum DownloadCommand {
 
 /// When to look again whether a running download is held by a security check (seconds after it started).
 const HELD_CHECKS: [u64; 6] = [4, 8, 15, 30, 60, 120];
+/// An earlier attempt that received nothing for this long, while a later one for the same address ended, was replaced.
+const STALLED_MS: i64 = 5_000;
 
 fn file_name(path: &str) -> String {
     Path::new(path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| path.to_string())
@@ -64,6 +66,7 @@ impl Controller {
             paused_by_gaming: false,
             missing: false,
             checking: false,
+            last_progress_at: 0,
         };
         if self.settings.gaming_mode && self.settings.gaming_pause_downloads {
             d.paused_by_gaming = true;
@@ -138,14 +141,22 @@ impl Controller {
     }
 
     /// WebView2 restarts a transfer that was cut off as a new download (same address) and never reports on the earlier
-    /// attempts again. Once one attempt has ended, earlier attempts that never received a byte are dropped from the list
-    /// (they wrote nothing), so one failed link does not leave several "running" entries.
+    /// attempts again. Once a later attempt has ended, earlier attempts that have not received anything for a while are
+    /// dropped from the list, so one failed link does not leave several "running" entries. A second download of the
+    /// same file that is still moving is left alone.
     fn drop_restarts(&mut self, url: &str, ended: i64) {
         let Some(end) = self.downloads.iter().find(|d| d.id == ended).map(|d| d.started_at) else { return };
         let ghosts: Vec<i64> = self
             .downloads
             .iter()
-            .filter(|d| d.id != ended && d.url == url && d.state.is_active() && d.received_bytes == 0 && !d.checking && d.started_at <= end)
+            .filter(|d| {
+                d.id != ended
+                    && d.url == url
+                    && d.state.is_active()
+                    && !d.checking
+                    && d.started_at <= end
+                    && now_ms() - d.last_progress_at.max(d.started_at) > STALLED_MS
+            })
             .map(|d| d.id)
             .collect();
         if ghosts.is_empty() {
@@ -215,6 +226,9 @@ impl Controller {
     pub fn on_download_progress(&mut self, id: i64, received: i64, total: Option<i64>) {
         let mut all_here = false;
         if let Some(d) = self.downloads.iter_mut().find(|d| d.id == id) {
+            if received > d.received_bytes {
+                d.last_progress_at = now_ms();
+            }
             d.received_bytes = received;
             if total.is_some() {
                 d.total_bytes = total;
@@ -267,6 +281,12 @@ impl Controller {
         if !snapshot.state.is_active() {
             self.refresh_same_url(&snapshot.url, id);
             self.drop_restarts(&snapshot.url, id);
+            // Attempts that were still trickling in are looked at again once they had time to stall.
+            let (h, url) = (self.handle.clone(), snapshot.url.clone());
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(STALLED_MS as u64 + 1_000)).await;
+                h.post(move |c| c.drop_restarts(&url, id));
+            });
         }
     }
 

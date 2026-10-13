@@ -69,6 +69,9 @@ pub struct Download {
     /// user to keep or delete it (Review opens that prompt). Not stored.
     #[serde(default)]
     pub checking: bool,
+    /// When bytes last arrived (ms; 0 = never). Not stored, not sent.
+    #[serde(skip)]
+    pub last_progress_at: i64,
 }
 
 const DANGEROUS_EXTENSIONS: &[&str] = &[
@@ -174,6 +177,7 @@ impl Db {
                 paused_by_gaming: false,
                 missing: false,
                 checking: false,
+                last_progress_at: 0,
             })
         })?;
         Ok(rows.collect::<std::result::Result<_, _>>()?)
@@ -222,6 +226,7 @@ mod tests {
             paused_by_gaming: false,
             missing: false,
             checking: false,
+            last_progress_at: 0,
         }
     }
 

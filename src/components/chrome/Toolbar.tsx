@@ -12,6 +12,7 @@ import type { Download } from "../../lib/types";
 import { MainMenu } from "../menus/MainMenu";
 import { darkFor, toggleDark } from "../../features/sitetools/siteprefs";
 import { trace } from "../../lib/trace";
+import { ExtensionsButton } from "../../features/extensions/ExtensionsButton";
 import { ShieldPopover } from "../menus/ShieldPopover";
 import { Icon } from "../ui/Icon";
 import { IconButton, cx } from "../ui/controls";
@@ -200,6 +201,7 @@ export function Toolbar({ onShellMenu }: { onShellMenu: (x: number, y: number) =
         {items.map((id) => (
           <ToolbarItem key={id} id={id} />
         ))}
+        <ExtensionsButton />
         <div ref={menuRef} className="tool-anchor">
           <IconButton icon="dotsV" label="Menu" active={menuOpen} onPointerDown={() => trace("toolbar: menu button pressed")} onClick={() => { trace(`toolbar: menu button clicked (open: ${!menuOpen})`); setMenuOpen((o) => !o); }} />
         </div>

@@ -521,6 +521,22 @@ export interface ExtensionInfo {
   enabled: boolean;
 }
 
+/** An installed extension as the toolbar shows it (extension_store.rs). */
+export interface ExtensionDetails {
+  id: string;
+  name: string;
+  enabled: boolean;
+  version: string | null;
+  description: string | null;
+  /** `data:` address of its icon. */
+  icon: string | null;
+  popup: string | null;
+  options: string | null;
+  storeId: string | null;
+  /** Its folder is known (installed by 0.9 or later), so its icon and pages can be shown. */
+  known: boolean;
+}
+
 /** Windows registration and default-browser state (default_browser.rs). */
 export interface DefaultBrowserStatus {
   registered: boolean;

@@ -242,3 +242,76 @@
 .shield-summary { display: grid; gap: 4px; }
 .shield-total { margin: 6px 10px 2px; }
 .firstrun-card::before { content: ""; position: absolute; inset: 0 0 auto; height: 2px; background: var(--energy); }
+
+/* ---- extensions (features/extensions) ---- */
+.ext-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border-radius: 4px;
+  object-fit: contain;
+}
+.ext-letter {
+  background: var(--accent-a28);
+  color: var(--text-1);
+  font-size: 11px;
+  font-weight: 700;
+}
+.ext-pinned.is-off {
+  opacity: 0.45;
+}
+.ext-pop .ext-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 360px;
+  overflow: auto;
+  padding: 4px;
+}
+.ext-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 8px;
+}
+.ext-row:hover {
+  background: var(--line-2);
+}
+.ext-row.is-off .ext-open {
+  opacity: 0.55;
+}
+.ext-open {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 0;
+  background: none;
+  color: var(--text-1);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.ext-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ext-off {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.ext-empty {
+  padding: 6px 14px 10px;
+}
+.ext-foot {
+  border-top: 1px solid var(--line-2);
+  padding: 4px;
+}
+.ext-store-add {
+  color: var(--accent);
+}
+.ext-desc { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }

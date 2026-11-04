@@ -18,6 +18,7 @@ use crate::db::memory::{MemoryDraft, MemoryItem};
 use crate::db::permissions::SitePermission;
 use crate::db::vault::LoginSummary;
 use crate::error::{now_ms, Error, Result};
+use crate::extension_store;
 use crate::import::{DetectedProfile, ImportReport, SourceBrowser};
 use crate::native::{self, NavAction};
 use crate::navigation::{is_internal, resolve_input, search_url, Resolved, SearchEngine};
@@ -1183,7 +1184,7 @@ pub async fn extensions_list(app: AppHandle) -> Result<Vec<native::extensions::E
 
 /// Lets the user pick an unpacked extension's manifest.json and installs that folder. `None` when the dialog was closed.
 #[tauri::command]
-pub async fn extension_add(window: tauri::Window, app: AppHandle) -> Result<Option<native::extensions::ExtensionInfo>> {
+pub async fn extension_add(window: tauri::Window, app: AppHandle, s: State<'_, AppState>) -> Result<Option<native::extensions::ExtensionInfo>> {
     let owner = window.hwnd().ok().map(|h| h.0 as isize).unwrap_or(0);
     let picked = tauri::async_runtime::spawn_blocking(move || {
         native::dialog::pick_file(owner, "Choose the extension's manifest.json", "Extension manifest", "manifest.json")
@@ -1196,12 +1197,183 @@ pub async fn extension_add(window: tauri::Window, app: AppHandle) -> Result<Opti
     let folder = dir.display().to_string();
     let added = on_ui(&app, move |reply| native::extensions::add(folder, reply)).await?;
     log::info!("extension added ({} characters of id)", added.id.len());
+    let profile_dir = s.ctl.call(|c| c.profile.dir.clone()).await?;
+    extension_store::remember(&profile_dir, extension_store::Installed { id: added.id.clone(), folder: dir.display().to_string(), store_id: None });
     Ok(Some(added))
 }
 
+/// Every installed extension with what the toolbar shows: icon, pop-up, options page.
 #[tauri::command]
-pub async fn extension_remove(app: AppHandle, id: String) -> Result<()> {
-    on_ui(&app, move |reply| native::extensions::remove(id, reply)).await
+pub async fn extensions_details(app: AppHandle, s: State<'_, AppState>) -> Result<Vec<extension_store::ExtensionDetails>> {
+    let list = on_ui(&app, native::extensions::list).await?;
+    let profile_dir = s.ctl.call(|c| c.profile.dir.clone()).await?;
+    let registry = extension_store::load_registry(&profile_dir);
+    Ok(list
+        .into_iter()
+        .map(|e| {
+            let entry = registry.iter().find(|r| r.id == e.id);
+            let mut d = entry.and_then(|r| extension_store::read_details(std::path::Path::new(&r.folder))).unwrap_or_default();
+            if d.name.trim().is_empty() || d.name.starts_with("__MSG_") {
+                d.name = e.name.clone();
+            }
+            d.id = e.id;
+            d.enabled = e.enabled;
+            d.store_id = entry.and_then(|r| r.store_id.clone());
+            d
+        })
+        .collect())
+}
+
+/// Unpacks `package` into the profile's `extensions` folder (subfolder `name`) and hands it to WebView2.
+async fn install_package(
+    app: &AppHandle,
+    s: &State<'_, AppState>,
+    package: Vec<u8>,
+    name: String,
+    store_id: Option<String>,
+) -> Result<native::extensions::ExtensionInfo> {
+    let profile_dir = s.ctl.call(|c| c.profile.dir.clone()).await?;
+    let dest = profile_dir.join("extensions").join(&name);
+    let scratch = s.scratch.clone();
+    let target = dest.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        std::fs::create_dir_all(target.parent().unwrap_or(&target))?;
+        extension_store::unpack(&package, &target, &scratch)
+    })
+    .await
+    .map_err(|e| Error::msg(e.to_string()))??;
+    check_unpacked_extension(&dest)?;
+    let folder = dest.display().to_string();
+    let added = on_ui(app, move |reply| native::extensions::add(folder, reply)).await?;
+    extension_store::remember(&profile_dir, extension_store::Installed { id: added.id.clone(), folder: dest.display().to_string(), store_id });
+    log::info!("extension installed: {}", added.name);
+    Ok(added)
+}
+
+/// Installs extension `id` from the Chrome Web Store (the user pressed "Add to Project Browser" on its store page).
+#[tauri::command]
+pub async fn extension_install_store(app: AppHandle, s: State<'_, AppState>, id: String) -> Result<native::extensions::ExtensionInfo> {
+    if !extension_store::is_store_id(&id) {
+        return Err(Error::msg("That is not a Chrome Web Store extension id."));
+    }
+    crate::ai::ensure_crypto_provider();
+    let version = crate::updates::webview2_version().unwrap_or_default();
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(180))
+        .build()
+        .map_err(|e| Error::msg(e.to_string()))?;
+    let resp = client
+        .get(extension_store::download_url(&id, &version))
+        .send()
+        .await
+        .map_err(|e| Error::msg(format!("Could not reach the Chrome Web Store: {e}")))?;
+    if !resp.status().is_success() {
+        return Err(Error::msg(format!("The Chrome Web Store did not provide this extension (HTTP {}).", resp.status().as_u16())));
+    }
+    if resp.content_length().is_some_and(|n| n as usize > extension_store::MAX_PACKAGE) {
+        return Err(Error::msg("This extension package is too large."));
+    }
+    let bytes = resp.bytes().await.map_err(|e| Error::msg(format!("The download was interrupted: {e}")))?.to_vec();
+    install_package(&app, &s, bytes, id.clone(), Some(id)).await
+}
+
+/// Lets the user pick a `.crx` (or `.zip`) extension package and installs it. `None` when the dialog was closed.
+#[tauri::command]
+pub async fn extension_install_crx(
+    window: tauri::Window,
+    app: AppHandle,
+    s: State<'_, AppState>,
+) -> Result<Option<native::extensions::ExtensionInfo>> {
+    let owner = window.hwnd().ok().map(|h| h.0 as isize).unwrap_or(0);
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        native::dialog::pick_file(owner, "Choose an extension package", "Chrome extension", "*.crx;*.zip")
+    })
+    .await
+    .map_err(|e| Error::msg(e.to_string()))?;
+    let Some(file) = picked else { return Ok(None) };
+    let bytes = std::fs::read(&file).map_err(|e| Error::msg(format!("Could not read that file: {e}")))?;
+    let stem: String = file
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("extension")
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .take(48)
+        .collect();
+    let name = format!("file-{}", if stem.is_empty() { "extension".to_string() } else { stem });
+    install_package(&app, &s, bytes, name, None).await.map(Some)
+}
+
+const EXTENSION_POPUP: &str = "extpopup";
+
+/// Opens extension `id`'s pop-up with its top-right corner at point (`x`, `y`) of the calling window (CSS pixels), like
+/// Chrome's toolbar. The pop-up is a small borderless window that shares the profile; it closes when it loses focus.
+#[tauri::command]
+pub async fn extension_popup(window: tauri::Window, app: AppHandle, s: State<'_, AppState>, id: String, x: f64, y: f64) -> Result<()> {
+    let profile = s.ctl.call(|c| c.profile.clone()).await?;
+    let entry = extension_store::load_registry(&profile.dir).into_iter().find(|r| r.id == id).ok_or_else(|| Error::msg("Unknown extension."))?;
+    let details =
+        extension_store::read_details(std::path::Path::new(&entry.folder)).ok_or_else(|| Error::msg("The extension's files are missing."))?;
+    let rel = details.popup.ok_or_else(|| Error::msg("This extension has no pop-up."))?;
+    let url = extension_store::page_url(&id, &rel).ok_or_else(|| Error::msg("Invalid extension page."))?;
+    let url: url::Url = url.parse().map_err(|_| Error::msg("Invalid extension page."))?;
+    if let Some(old) = app.get_webview_window(EXTENSION_POPUP) {
+        let _ = old.close();
+    }
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let origin = window.inner_position().map(|p| (p.x as f64 / scale, p.y as f64 / scale)).unwrap_or((0.0, 0.0));
+    let (w, h) = (380.0, 560.0);
+    let mut builder = tauri::WebviewWindowBuilder::new(&app, EXTENSION_POPUP, tauri::WebviewUrl::External(url))
+        .title(details.name.clone())
+        .data_directory(profile.webview_dir())
+        .additional_browser_args(&crate::window::browser_args())
+        .browser_extensions_enabled(true)
+        .decorations(false)
+        .shadow(true)
+        .resizable(true)
+        .skip_taskbar(true)
+        .inner_size(w, h)
+        .position((origin.0 + x - w).max(origin.0), origin.1 + y)
+        .focused(true);
+    if let Some(owner) = app.get_webview_window(window.label()) {
+        builder = builder.parent(&owner).map_err(|e| Error::msg(e.to_string()))?;
+    }
+    let popup = builder.build().map_err(|e| Error::msg(format!("Could not open the pop-up: {e}")))?;
+    let handle = popup.clone();
+    popup.on_window_event(move |event| {
+        if matches!(event, tauri::WindowEvent::Focused(false)) {
+            let _ = handle.close();
+        }
+    });
+    Ok(())
+}
+
+/// The `chrome-extension://` address of extension `id`'s options page (the shell opens it in a tab).
+#[tauri::command]
+pub async fn extension_options_url(s: State<'_, AppState>, id: String) -> Result<String> {
+    let profile_dir = s.ctl.call(|c| c.profile.dir.clone()).await?;
+    let entry = extension_store::load_registry(&profile_dir).into_iter().find(|r| r.id == id).ok_or_else(|| Error::msg("Unknown extension."))?;
+    let details =
+        extension_store::read_details(std::path::Path::new(&entry.folder)).ok_or_else(|| Error::msg("The extension's files are missing."))?;
+    let rel = details.options.ok_or_else(|| Error::msg("This extension has no options page."))?;
+    extension_store::page_url(&id, &rel).ok_or_else(|| Error::msg("Invalid extension page."))
+}
+
+#[tauri::command]
+pub async fn extension_remove(app: AppHandle, s: State<'_, AppState>, id: String) -> Result<()> {
+    let gone = id.clone();
+    on_ui(&app, move |reply| native::extensions::remove(id, reply)).await?;
+    let profile_dir = s.ctl.call(|c| c.profile.dir.clone()).await?;
+    // Folders this browser unpacked itself are deleted with the extension; a folder the user pointed at is left alone.
+    if let Some(entry) = extension_store::forget(&profile_dir, &gone) {
+        let ours = profile_dir.join("extensions");
+        let folder = std::path::PathBuf::from(&entry.folder);
+        if folder.starts_with(&ours) {
+            let _ = std::fs::remove_dir_all(folder);
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -1928,6 +2100,11 @@ macro_rules! all_commands {
             $crate::commands::tab_drag_hover,
             $crate::commands::tab_drag_end,
             $crate::commands::devtools_action,
+            $crate::commands::extensions_details,
+            $crate::commands::extension_install_store,
+            $crate::commands::extension_install_crx,
+            $crate::commands::extension_popup,
+            $crate::commands::extension_options_url,
             $crate::commands::window_new,
             $crate::commands::tab_group,
             $crate::commands::context_menu_choose,

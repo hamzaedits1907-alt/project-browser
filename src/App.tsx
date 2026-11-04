@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { BookmarksBar } from "./components/chrome/BookmarksBar";
 import { DevtoolsBar } from "./features/devtools/DevtoolsBar";
+import { StoreBar } from "./features/extensions/ExtensionsButton";
 import { ContentHost } from "./components/chrome/ContentHost";
 import { FindBar } from "./components/chrome/FindBar";
 import { PermissionBar } from "./components/chrome/PermissionBar";
@@ -124,6 +125,7 @@ export function App() {
           <FindBar key={activeId ?? 0} />
           <PermissionBar />
           <PopupBar />
+          {chrome && <StoreBar />}
           <div className="workspace">
             {chrome && <SidePanel />}
             <ContentHost />

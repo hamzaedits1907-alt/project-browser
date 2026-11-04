@@ -9,6 +9,7 @@ pub mod db;
 pub mod default_browser;
 pub mod error;
 pub mod error_page;
+pub mod extension_store;
 pub mod import;
 pub mod launch;
 pub mod linkclean;

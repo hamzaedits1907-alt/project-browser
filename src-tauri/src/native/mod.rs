@@ -75,6 +75,16 @@ static NEXT_DOWNLOAD: AtomicI64 = AtomicI64::new(0);
 static DOWNLOAD_DIR: Mutex<Option<PathBuf>> = Mutex::new(None);
 /// "Ask where to save each file" (settings.download_ask).
 static DOWNLOAD_ASK: AtomicBool = AtomicBool::new(false);
+/// Global Privacy Control (settings.global_privacy_control): every request carries `Sec-GPC: 1` and pages see
+/// `navigator.globalPrivacyControl === true`, the signal that the user does not want their data sold or shared.
+static GPC: AtomicBool = AtomicBool::new(true);
+
+pub fn set_global_privacy_control(on: bool) {
+    GPC.store(on, Ordering::Relaxed);
+}
+
+/// Tells pages about Global Privacy Control (added to every document of a tab while GPC is on when the tab starts).
+const GPC_SCRIPT: &str = "try{Object.defineProperty(Navigator.prototype,'globalPrivacyControl',{get:function(){return true},configurable:true,enumerable:true})}catch(e){}";
 
 struct AskingDownload {
     args: ICoreWebView2DownloadStartingEventArgs,
@@ -610,6 +620,12 @@ unsafe fn install_tab_inner(id: TabId, pw: &PlatformWebview, ctl: &ControllerHan
         )?;
     }
 
+    if GPC.load(Ordering::Relaxed) {
+        let _ = webview.AddScriptToExecuteOnDocumentCreated(
+            &HSTRING::from(GPC_SCRIPT),
+            &AddScriptToExecuteOnDocumentCreatedCompletedHandler::create(Box::new(|_, _| Ok(()))),
+        );
+    }
     if let Err(e) = hook_shield(&webview, &env, id, init.private, ctl) {
         log::warn!("tab {id}: request blocking is unavailable for this tab: {e}");
     }
@@ -724,6 +740,11 @@ unsafe fn hook_shield(
     webview.add_WebResourceRequested(
         &WebResourceRequestedEventHandler::create(Box::new(move |_, args| {
             let Some(args) = args else { return Ok(()) };
+            if GPC.load(Ordering::Relaxed) {
+                if let Ok(headers) = args.Request().and_then(|r| r.Headers()) {
+                    let _ = headers.SetHeader(windows::core::w!("Sec-GPC"), windows::core::w!("1"));
+                }
+            }
             let Some(shield) = crate::shield::global() else { return Ok(()) };
             if !shield.is_active() {
                 return Ok(());

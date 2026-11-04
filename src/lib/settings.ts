@@ -67,6 +67,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ntpHiddenSites: [],
   cleanLinks: true,
   sponsorSkip: true,
+  globalPrivacyControl: true,
   devtoolsDock: "bottom",
   devtoolsSize: 40,
 };

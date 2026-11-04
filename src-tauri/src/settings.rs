@@ -287,6 +287,8 @@ pub struct Settings {
     pub custom_bangs: Vec<CustomBang>,
     /// SponsorSkip: skip sponsor segments in YouTube videos (only a hash prefix of the video id is sent; see sponsor.rs).
     pub sponsor_skip: bool,
+    /// Global Privacy Control: tell every site not to sell or share the user's data (`Sec-GPC: 1`).
+    pub global_privacy_control: bool,
     /// Where DevTools opens.
     pub devtools_dock: DevtoolsDock,
     /// Share of the page area docked DevTools takes, in percent.
@@ -346,6 +348,7 @@ impl Default for Settings {
             dark_pages: DarkPages::Off,
             custom_bangs: Vec::new(),
             sponsor_skip: true,
+            global_privacy_control: true,
             devtools_dock: DevtoolsDock::Bottom,
             devtools_size: 40,
         }

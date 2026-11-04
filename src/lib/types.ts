@@ -213,6 +213,7 @@ export interface Settings {
   cleanLinks: boolean;
   /** SponsorSkip: skip sponsor segments in YouTube videos. */
   sponsorSkip: boolean;
+  globalPrivacyControl: boolean;
   devtoolsDock: DevtoolsDock;
   devtoolsSize: number;
 }

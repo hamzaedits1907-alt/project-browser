@@ -453,6 +453,7 @@ impl Controller {
         crate::native::set_download_ask(init.settings.download_ask);
         crate::native::set_clean_links(init.settings.clean_links);
         crate::native::devtools::set_docking(init.settings.devtools_dock != crate::settings::DevtoolsDock::Window);
+        crate::native::set_global_privacy_control(init.settings.global_privacy_control);
         crate::native::set_clean_exceptions(init.settings.clean_links_exceptions.clone());
         crate::native::set_popup_policy(
             init.settings.popup_allowed_hosts.clone(),
@@ -960,6 +961,7 @@ impl Controller {
             crate::native::set_download_dir(next.download_dir.as_ref().map(Into::into));
         }
         crate::native::set_download_ask(next.download_ask);
+        crate::native::set_global_privacy_control(next.global_privacy_control);
         if prev.clean_links != next.clean_links {
             crate::native::set_clean_links(next.clean_links);
         }

@@ -24,6 +24,7 @@ export type CustomAction =
   | { kind: "saveToMemory"; text: string }
   | { kind: "siteInfo" }
   | { kind: "fillLogin" }
+  | { kind: "strongPassword" }
   | { kind: "muteTab"; muted: boolean }
   | { kind: "nav"; action: "back" | "forward" | "reload" };
 
@@ -195,7 +196,13 @@ export function buildMenu(e: ContextMenuEvent, ctx: MenuContext): MenuModel {
   if (t.editable) {
     add(list(native("undo"), native("redo")));
     add(list(native("cut"), native("copy"), native("paste"), native("pasteAndMatchStyle"), native("selectAll"), native("emoji")));
-    if (ctx.canFill && e.tabId !== null) add(list({ key: "fill", label: "Fill a saved login or address…", icon: "key", custom: { kind: "fillLogin" } }));
+    if (e.tabId !== null)
+      add(
+        list(
+          ctx.canFill && { key: "fill", label: "Fill a saved login or address…", icon: "key", custom: { kind: "fillLogin" } },
+          { key: "strong-password", label: "Insert a strong password", icon: "key", custom: { kind: "strongPassword" } },
+        ),
+      );
   } else if (selection) {
     if (!title) title = `“${snippet(selection, 48)}”`;
     add(

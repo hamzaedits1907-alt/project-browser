@@ -87,6 +87,17 @@ function runCustom(a: CustomAction, e: ContextMenuEvent): void {
     case "fillLogin":
       emitBus("openFill");
       return;
+    case "strongPassword":
+      if (e.tabId !== null) {
+        const id = e.tabId;
+        void attempt(() => api.passwordInsert(id), "Could not insert a password").then((pw) => {
+          if (pw) {
+            void navigator.clipboard.writeText(pw).catch(() => {});
+            toast("Strong password inserted and copied. Save it when the site asks, or in your password manager.");
+          }
+        });
+      }
+      return;
     case "muteTab":
       if (e.tabId !== null) {
         const id = e.tabId;

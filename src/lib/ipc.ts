@@ -168,6 +168,7 @@ export const COMMANDS = [
   "tab_drag_hover",
   "tab_drag_end",
   "devtools_action",
+  "password_insert",
   "extensions_details",
   "extension_install_store",
   "extension_install_crx",
@@ -366,6 +367,7 @@ export const api = {
   /** The drag ended; a tab pulled out of its strip joins the window under the pointer or becomes a new window. */
   tabDragEnd: (id: TabId, detached: boolean, cancel = false) => call<DragOutcome>("tab_drag_end", { id, detached, cancel }),
   devtoolsAction: (action: DevtoolsAction) => call("devtools_action", { action }),
+  passwordInsert: (tabId: TabId) => call<string>("password_insert", { tabId }),
   windowNew: (url?: string, isPrivate?: boolean) => call("window_new", { url, private: isPrivate }),
   tabGroup: (op: GroupOp) => call<GroupId | null>("tab_group", { op }),
   /** Closes right-click menu `request`, running WebView2's command `command` if one was chosen. */

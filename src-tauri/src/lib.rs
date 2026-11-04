@@ -17,6 +17,7 @@ pub mod logging;
 pub mod menu_surface;
 pub mod native;
 pub mod navigation;
+pub mod password_gen;
 pub mod profile;
 pub mod secrets;
 pub mod settings;

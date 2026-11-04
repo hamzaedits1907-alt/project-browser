@@ -116,6 +116,7 @@
     "allow-tab-drag-hover",
     "allow-tab-drag-end",
     "allow-devtools-action",
+    "allow-password-insert",
     "allow-extensions-details",
     "allow-extension-install-store",
     "allow-extension-install-crx",

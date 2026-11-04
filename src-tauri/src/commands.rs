@@ -742,6 +742,25 @@ pub async fn fill_options(s: State<'_, AppState>, tab_id: TabId) -> Result<FillO
 
 const FILL_TIMEOUT: Duration = Duration::from_secs(6);
 
+/// "Insert a strong password" in the right-click menu of a text field: puts a new strong password into the focused
+/// field of the active tab and returns it (the shell copies it to the clipboard so it is not lost before it is saved).
+#[tauri::command]
+pub async fn password_insert(app: AppHandle, s: State<'_, AppState>, tab_id: TabId) -> Result<String> {
+    let ok = s.ctl.call(move |c| c.active_tab_with_view() == Some(tab_id)).await?;
+    if !ok {
+        return Err(Error::msg("That page is no longer in front."));
+    }
+    let password = crate::password_gen::generate().ok_or_else(|| Error::msg("Windows could not provide random numbers."))?;
+    let script = crate::password_gen::insert_script(&password);
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.run_on_main_thread(move || native::run_script(tab_id, script, tx))?;
+    let reply = tokio::time::timeout(FILL_TIMEOUT, rx).await.ok().and_then(|r| r.ok()).flatten().unwrap_or_default();
+    if !reply.contains("ok") {
+        return Err(Error::msg("Click into the password field first, then choose this again."));
+    }
+    Ok(password)
+}
+
 /// Runs a fill script in the tab and reads back what it did.
 async fn run_fill(app: &AppHandle, tab: TabId, script: String) -> Result<FillResult> {
     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -2100,6 +2119,7 @@ macro_rules! all_commands {
             $crate::commands::tab_drag_hover,
             $crate::commands::tab_drag_end,
             $crate::commands::devtools_action,
+            $crate::commands::password_insert,
             $crate::commands::extensions_details,
             $crate::commands::extension_install_store,
             $crate::commands::extension_install_crx,

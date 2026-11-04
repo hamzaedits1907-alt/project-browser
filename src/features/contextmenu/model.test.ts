@@ -97,11 +97,11 @@ describe("links, images, media and fields", () => {
     expect(e.find((x) => x.label === "Loop")?.checked).toBe(true);
   });
 
-  it("editable field: WebView2's editing commands only, and the saved-login entry only when there is one", () => {
+  it("editable field: WebView2's editing commands, the strong-password entry, and the saved-login entry only when there is one", () => {
     const items = [item("undo"), item("redo", { enabled: false }), item("cut"), item("copy"), item("paste"), item("selectAll")];
     const m = buildMenu(event(target({ editable: true }), items), ctx);
-    expect(all(m).map((e) => e.label)).toEqual(["Undo", "Cut", "Copy", "Paste", "Select all"]);
-    expect(all(m).every((e) => e.native !== undefined)).toBe(true);
+    expect(all(m).map((e) => e.label)).toEqual(["Undo", "Cut", "Copy", "Paste", "Select all", "Insert a strong password"]);
+    expect(all(m).filter((e) => e.custom === undefined).every((e) => e.native !== undefined)).toBe(true);
     const withFill = buildMenu(event(target({ editable: true }), items), { ...ctx, canFill: true });
     expect(all(withFill).map((e) => e.label)).toContain("Fill a saved login or address…");
   });

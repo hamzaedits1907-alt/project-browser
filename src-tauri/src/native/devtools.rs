@@ -9,6 +9,9 @@
 //! 2. The first new `Chrome_WidgetWin_1` window whose title starts with "DevTools" is adopted: its frame styles are
 //!    removed, it becomes a child window of the browser window (`SetParent`), and it is hidden until the controller
 //!    gives it its place below or beside the page (`place`).
+//!    The window goes into a plain holder window of ours, placed a caption's height higher than the holder's top:
+//!    Chromium keeps drawing its own title bar ("DevTools - …" with minimise/maximise/close) inside the window even
+//!    without a frame, and the holder cuts that strip off.
 //! 3. Chromium sometimes moves the window again on its own (restoring the size it last had); the same hook sees the
 //!    location change and puts it back. When it is destroyed (closed, or its tab went away) the controller is told.
 //!
@@ -24,16 +27,18 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use windows::core::BOOL;
+use windows::core::{w, BOOL, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::ScreenToClient;
 use windows::Win32::UI::Accessibility::{SetWinEventHook, UnhookWinEvent, HWINEVENTHOOK};
+use windows::Win32::UI::HiDpi::{GetDpiForWindow, GetSystemMetricsForDpi};
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetAncestor, GetClassNameW, GetWindowLongPtrW, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, IsWindow, PostMessageW,
-    SetParent, SetWindowLongPtrW, SetWindowPos, ShowWindow, EVENT_OBJECT_DESTROY, EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_NAMECHANGE,
-    EVENT_OBJECT_SHOW, GA_ROOT, GWL_EXSTYLE, GWL_STYLE, HWND_TOP, SWP_ASYNCWINDOWPOS, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_SHOWWINDOW, SW_HIDE,
-    WINEVENT_OUTOFCONTEXT, WM_CLOSE, WS_CAPTION, WS_CHILD, WS_EX_APPWINDOW, WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME, WS_EX_WINDOWEDGE, WS_MAXIMIZEBOX,
-    WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+    CreateWindowExW, DestroyWindow, EnumWindows, GetAncestor, GetClassNameW, GetWindowLongPtrW, GetWindowRect, GetWindowTextW,
+    GetWindowThreadProcessId, IsWindow, PostMessageW, SetParent, SetWindowLongPtrW, SetWindowPos, ShowWindow, EVENT_OBJECT_DESTROY,
+    EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_SHOW, GA_ROOT, GWL_EXSTYLE, GWL_STYLE, HWND_TOP, SM_CXPADDEDBORDER,
+    SM_CYCAPTION, SM_CYSIZEFRAME, SWP_ASYNCWINDOWPOS, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOZORDER, SWP_SHOWWINDOW, SW_HIDE, WINDOW_EX_STYLE,
+    WINEVENT_OUTOFCONTEXT, WM_CLOSE, WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN, WS_CLIPSIBLINGS, WS_EX_APPWINDOW, WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME,
+    WS_EX_WINDOWEDGE, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
 };
 
 use super::tab_com;
@@ -67,6 +72,10 @@ struct Expectation {
 
 struct Docked {
     tab: TabId,
+    /// Our holder window (child of the browser window) that the DevTools window sits in.
+    container: isize,
+    /// Where the DevTools window must be inside the holder (its title bar above the top edge).
+    inner: Option<(i32, i32, i32, i32)>,
     /// Styles before docking, put back when the window is undocked.
     style: isize,
     ex_style: isize,
@@ -142,17 +151,53 @@ fn adopt(hwnd: isize, parent: isize, tab: TabId) {
         let frame = (WS_POPUP.0 | WS_CAPTION.0 | WS_THICKFRAME.0 | WS_SYSMENU.0 | WS_MINIMIZEBOX.0 | WS_MAXIMIZEBOX.0) as isize;
         let ex_frame = (WS_EX_APPWINDOW.0 | WS_EX_WINDOWEDGE.0 | WS_EX_CLIENTEDGE.0 | WS_EX_DLGMODALFRAME.0) as isize;
         let _ = ShowWindow(w, SW_HIDE);
+        let container = match CreateWindowExW(
+            WINDOW_EX_STYLE(0),
+            w!("STATIC"),
+            PCWSTR::null(),
+            WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
+            0,
+            0,
+            0,
+            0,
+            Some(h(parent)),
+            None,
+            None,
+            None,
+        ) {
+            Ok(c) => c,
+            Err(e) => {
+                log::warn!("devtools: no holder window ({e}); it stays separate");
+                let _ = ShowWindow(w, windows::Win32::UI::WindowsAndMessaging::SW_SHOW);
+                return;
+            }
+        };
         SetWindowLongPtrW(w, GWL_STYLE, (style & !frame) | WS_CHILD.0 as isize);
         SetWindowLongPtrW(w, GWL_EXSTYLE, ex_style & !ex_frame);
-        if let Err(e) = SetParent(w, Some(h(parent))) {
+        if let Err(e) = SetParent(w, Some(container)) {
             log::warn!("devtools: could not dock the window ({e}); it stays separate");
+            let _ = DestroyWindow(container);
             SetWindowLongPtrW(w, GWL_STYLE, style);
             SetWindowLongPtrW(w, GWL_EXSTYLE, ex_style);
             let _ = ShowWindow(w, windows::Win32::UI::WindowsAndMessaging::SW_SHOW);
             return;
         }
         let _ = SetWindowPos(w, Some(HWND_TOP), 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOACTIVATE);
-        DOCKED.with(|d| d.borrow_mut().insert(hwnd, Docked { tab, style, ex_style, target: None, corrections: 0, window_since: Instant::now() }));
+        DOCKED.with(|d| {
+            d.borrow_mut().insert(
+                hwnd,
+                Docked {
+                    tab,
+                    container: container.0 as isize,
+                    inner: None,
+                    style,
+                    ex_style,
+                    target: None,
+                    corrections: 0,
+                    window_since: Instant::now(),
+                },
+            )
+        });
     }
     log::info!("devtools: docked the DevTools window of tab {tab}");
     if let Some(ctl) = CTL.with(|c| c.borrow().clone()) {
@@ -179,6 +224,7 @@ unsafe extern "system" fn on_event(_hook: HWINEVENTHOOK, event: u32, hwnd: HWND,
     match event {
         EVENT_OBJECT_DESTROY => {
             if let Some(d) = DOCKED.with(|d| d.borrow_mut().remove(&key)) {
+                let _ = DestroyWindow(h(d.container));
                 let tab = d.tab;
                 log::info!("devtools: the docked DevTools of tab {tab} closed");
                 if let Some(ctl) = CTL.with(|c| c.borrow().clone()) {
@@ -197,11 +243,11 @@ unsafe extern "system" fn on_event(_hook: HWINEVENTHOOK, event: u32, hwnd: HWND,
                 }
                 entry.corrections += 1;
                 // Give up after many corrections in one second rather than fight Chromium in a loop.
-                (entry.corrections <= 20).then_some(entry.target).flatten()
+                (entry.corrections <= 20).then_some(entry.inner.zip(entry.target)).flatten()
             });
-            if let Some(t) = target {
-                if client_rect(hwnd) != Some(t) {
-                    apply(key, Some(t));
+            if let Some((inner, outer)) = target {
+                if client_rect(hwnd) != Some(inner) {
+                    apply(key, Some(outer));
                 }
             }
         }
@@ -290,15 +336,44 @@ pub fn expect(id: TabId, ctl: ControllerHandle) {
     }
 }
 
-fn apply(hwnd: isize, target: Option<(i32, i32, i32, i32)>) {
+/// Height of the title bar Chromium draws at the top of a DevTools window, at the DPI of `hwnd`.
+fn caption_height(hwnd: HWND) -> i32 {
     unsafe {
-        let w = h(hwnd);
+        let dpi = match GetDpiForWindow(hwnd) {
+            0 => 96,
+            d => d,
+        };
+        GetSystemMetricsForDpi(SM_CYCAPTION, dpi) + GetSystemMetricsForDpi(SM_CYSIZEFRAME, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi)
+    }
+}
+
+fn apply(hwnd: isize, target: Option<(i32, i32, i32, i32)>) {
+    let Some(container) = DOCKED.with(|d| d.borrow().get(&hwnd).map(|e| e.container)) else { return };
+    unsafe {
+        let holder = h(container);
         match target {
             Some((x, y, width, height)) => {
-                let _ = SetWindowPos(w, Some(HWND_TOP), x, y, width.max(1), height.max(1), SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_ASYNCWINDOWPOS);
+                let (width, height) = (width.max(1), height.max(1));
+                let cap = caption_height(holder);
+                let inner = (0, -cap, width, height + cap);
+                DOCKED.with(|d| {
+                    if let Some(e) = d.borrow_mut().get_mut(&hwnd) {
+                        e.inner = Some(inner);
+                    }
+                });
+                let _ = SetWindowPos(holder, Some(HWND_TOP), x, y, width, height, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+                let _ = SetWindowPos(
+                    h(hwnd),
+                    None,
+                    inner.0,
+                    inner.1,
+                    inner.2,
+                    inner.3,
+                    SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW | SWP_ASYNCWINDOWPOS,
+                );
             }
             None => {
-                let _ = ShowWindow(w, SW_HIDE);
+                let _ = ShowWindow(holder, SW_HIDE);
             }
         }
     }
@@ -333,6 +408,7 @@ pub fn undock(hwnd: isize, screen: (i32, i32, i32, i32)) {
         let w = h(hwnd);
         let _ = ShowWindow(w, SW_HIDE);
         let _ = SetParent(w, None);
+        let _ = DestroyWindow(h(d.container));
         SetWindowLongPtrW(w, GWL_STYLE, d.style);
         SetWindowLongPtrW(w, GWL_EXSTYLE, d.ex_style);
         let (x, y, width, height) = screen;

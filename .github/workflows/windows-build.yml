@@ -166,6 +166,21 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+      # F12 must open DevTools inside the browser window (a child window below the page), and F12 again must close it.
+      - name: DevTools probe (informational)
+        shell: pwsh
+        continue-on-error: true
+        run: ./scripts/devtools-probe.ps1 -Exe src-tauri/target/release/project-browser.exe -ReportDir devtools-probe
+
+      - name: Upload DevTools probe evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: devtools-probe
+          path: devtools-probe
+          if-no-files-found: ignore
+          retention-days: 14
+
       # Real mouse drags on the tab strip; the tab order and active tab are read from the browser's saved session.
       - name: Tab drag probe (informational)
         shell: pwsh

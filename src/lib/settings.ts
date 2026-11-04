@@ -28,7 +28,7 @@ export const DEFAULT_SETTINGS: Settings = {
   reduceMotion: false,
   showRamOnNewTab: true,
   sleepingTabsEnabled: true,
-  sleepAfterMinutes: 30,
+  sleepAfterMinutes: 15,
   neverSleepHosts: [],
   gamingMode: false,
   gamingBackgroundAction: "sleep",
@@ -304,4 +304,23 @@ export function normalizeSiteUrl(input: string): string | null {
 
 export function sameSite(a: PinnedSite, url: string): boolean {
   return a.url === url;
+}
+
+/** Memory Saver presets (Settings > Performance): each is a set of the sleeping-tab and memory-limit settings. */
+export type MemorySaverLevel = "off" | "balanced" | "maximum";
+
+export const MEMORY_SAVER: Record<MemorySaverLevel, Pick<Settings, "sleepingTabsEnabled" | "sleepAfterMinutes" | "memoryLimitMb">> = {
+  off: { sleepingTabsEnabled: false, sleepAfterMinutes: 30, memoryLimitMb: 0 },
+  balanced: { sleepingTabsEnabled: true, sleepAfterMinutes: 15, memoryLimitMb: 0 },
+  maximum: { sleepingTabsEnabled: true, sleepAfterMinutes: 3, memoryLimitMb: 1536 },
+};
+
+/** Which preset the current settings match ("custom" when they were tuned by hand). */
+export function memorySaverLevel(s: Pick<Settings, "sleepingTabsEnabled" | "sleepAfterMinutes" | "memoryLimitMb">): MemorySaverLevel | "custom" {
+  if (!s.sleepingTabsEnabled) return s.memoryLimitMb === 0 ? "off" : "custom";
+  for (const level of ["balanced", "maximum"] as const) {
+    const p = MEMORY_SAVER[level];
+    if (s.sleepAfterMinutes === p.sleepAfterMinutes && s.memoryLimitMb === p.memoryLimitMb) return level;
+  }
+  return "custom";
 }

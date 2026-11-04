@@ -28,3 +28,12 @@ describe("settings helpers", () => {
     expect(parseHostList("   ")).toEqual([]);
   });
 });
+
+describe("Memory Saver presets", () => {
+  it("each preset is recognised and hand-tuned values are custom", async () => {
+    const { MEMORY_SAVER, memorySaverLevel } = await import("./settings");
+    for (const level of ["off", "balanced", "maximum"] as const) expect(memorySaverLevel(MEMORY_SAVER[level])).toBe(level);
+    expect(memorySaverLevel({ sleepingTabsEnabled: true, sleepAfterMinutes: 42, memoryLimitMb: 0 })).toBe("custom");
+    expect(memorySaverLevel({ sleepingTabsEnabled: false, sleepAfterMinutes: 3, memoryLimitMb: 2048 })).toBe("custom");
+  });
+});

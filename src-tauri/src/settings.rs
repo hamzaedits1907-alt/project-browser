@@ -307,7 +307,7 @@ impl Default for Settings {
             reduce_motion: false,
             show_ram_on_new_tab: true,
             sleeping_tabs_enabled: true,
-            sleep_after_minutes: 30,
+            sleep_after_minutes: 15,
             never_sleep_hosts: Vec::new(),
             gaming_mode: false,
             gaming_background_action: BackgroundTabAction::Sleep,
@@ -479,7 +479,7 @@ mod tests {
         let s = Settings::default().with_overrides(r#"{"gamingMode":true,"downloadDir":"C:\\dl"}"#).unwrap();
         assert!(s.gaming_mode);
         assert_eq!(s.download_dir.as_deref(), Some("C:\\dl"));
-        assert_eq!(s.sleep_after_minutes, 30);
+        assert_eq!(s.sleep_after_minutes, 15);
         assert!(Settings::default().with_overrides("[1]").is_err());
         assert!(Settings::default().with_overrides("{").is_err());
     }
@@ -488,7 +488,7 @@ mod tests {
     fn unknown_and_missing_fields_fall_back_to_defaults() {
         let s: Settings = serde_json::from_str(r#"{"showBookmarksBar":false,"futureField":1}"#).unwrap();
         assert!(!s.show_bookmarks_bar);
-        assert_eq!(s.sleep_after_minutes, 30);
+        assert_eq!(s.sleep_after_minutes, 15);
     }
 
     #[test]

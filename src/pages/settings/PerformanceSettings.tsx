@@ -1,8 +1,9 @@
 import { useState } from "react";
 
-import { Button, Slider, Toggle } from "../../components/ui/controls";
+import { Button, Segmented, Slider, Toggle } from "../../components/ui/controls";
 import { Card, SettingRow } from "../../components/ui/Section";
-import { parseHostList } from "../../lib/settings";
+import { MEMORY_SAVER, memorySaverLevel, parseHostList } from "../../lib/settings";
+import type { MemorySaverLevel } from "../../lib/settings";
 import { api } from "../../lib/ipc";
 import { attempt } from "../../lib/store";
 import { useSettings } from "../../lib/useSettings";
@@ -15,6 +16,24 @@ export function PerformanceSettings() {
 
   return (
     <>
+      <Card title="Memory Saver" subtitle="One choice for how hard the browser frees memory from tabs you are not using, like Chrome's Memory Saver. Fine-tune it below.">
+        <SettingRow title="Memory Saver" description="Maximum frees the most memory: background tabs sleep after 3 minutes, sleeping tabs are unloaded when the browser goes over 1.5 GB, and background pages always run with WebView2's low-memory setting.">
+          <Segmented<MemorySaverLevel | "custom">
+            label="Memory Saver"
+            value={memorySaverLevel(settings)}
+            options={[
+              { value: "off", label: "Off" },
+              { value: "balanced", label: "Balanced" },
+              { value: "maximum", label: "Maximum" },
+              ...(memorySaverLevel(settings) === "custom" ? [{ value: "custom" as const, label: "Custom" }] : []),
+            ]}
+            onChange={(level) => {
+              if (level !== "custom") void update(MEMORY_SAVER[level]);
+            }}
+          />
+        </SettingRow>
+      </Card>
+
       <Card title="Sleeping tabs" subtitle="Idle background tabs are suspended so they stop using CPU and give memory back. They wake instantly when you click them.">
         <SettingRow title="Put inactive tabs to sleep">
           <Toggle label="Sleeping tabs" checked={settings.sleepingTabsEnabled} onChange={(sleepingTabsEnabled) => void update({ sleepingTabsEnabled })} />

@@ -535,6 +535,7 @@ impl Controller {
     pub(crate) fn relayout(&mut self) {
         let Some(mut area) = self.layout.content else { return };
         self.validate_split();
+        area = self.layout_devtools(area);
         let mut placed = super::split::placements(self.tabs.active_id(), self.layout.split, area);
         // A page in element fullscreen (a video's fullscreen button) covers the whole window, measured from the window
         // itself: it no longer depends on the shell having hidden its chrome and re-measured the page area first.
@@ -772,6 +773,7 @@ impl Controller {
                 self.focus_shell();
                 self.ui(UiEvent::OpenPalette);
             }
+            Command::DevTools => self.toggle_devtools(),
             Command::ShowShortcuts => {
                 self.focus_shell();
                 self.ui(UiEvent::Shortcuts);

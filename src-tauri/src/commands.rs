@@ -1323,6 +1323,12 @@ pub async fn tab_drag_end(
     s.ctl.call(move |c| c.tab_drag_end(&label, id, detached, cancel.unwrap_or(false))).await?
 }
 
+/// The bar of docked DevTools: close, dock elsewhere, or resize by dragging.
+#[tauri::command]
+pub async fn devtools_action(window: tauri::Window, s: State<'_, AppState>, action: crate::controller::DevtoolsAction) -> Result<()> {
+    s.ctl.call_in(window.label().to_string(), move |c| c.devtools_action(action)).await?
+}
+
 /// Opens a new browser window, optionally with a page (an address or search text) and as a private window.
 #[tauri::command]
 pub async fn window_new(s: State<'_, AppState>, url: Option<String>, private: Option<bool>) -> Result<()> {
@@ -1921,6 +1927,7 @@ macro_rules! all_commands {
             $crate::commands::tab_to_window,
             $crate::commands::tab_drag_hover,
             $crate::commands::tab_drag_end,
+            $crate::commands::devtools_action,
             $crate::commands::window_new,
             $crate::commands::tab_group,
             $crate::commands::context_menu_choose,

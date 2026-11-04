@@ -67,6 +67,8 @@ export const DEFAULT_SETTINGS: Settings = {
   ntpHiddenSites: [],
   cleanLinks: true,
   sponsorSkip: true,
+  devtoolsDock: "bottom",
+  devtoolsSize: 40,
 };
 
 export const SEARCH_ENGINES: { id: SearchEngine; label: string; host: string }[] = [

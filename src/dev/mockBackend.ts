@@ -129,6 +129,17 @@ export function installMockBackend(): void {
     privateWindow: params.get("privatewindow") === "1",
     windowCount: params.get("windows") === "2" ? 2 : 1,
     split: params.get("split") === "1" ? { left: 4, right: 2, ratio: 0.5 } : null,
+    devtools:
+      params.get("devtools") === "1"
+        ? {
+            tabId: 4,
+            side: "bottom",
+            size: 40,
+            bar: { x: 54, y: Math.round(window.innerHeight * 0.58), width: window.innerWidth - 54, height: 30 },
+            grip: { x: 54, y: Math.round(window.innerHeight * 0.58), width: window.innerWidth - 54, height: 30 },
+            tools: { x: 54, y: Math.round(window.innerHeight * 0.58) + 30, width: window.innerWidth - 54, height: 200 },
+          }
+        : null,
   };
   let bookmarks: Bookmark[] = [
     { id: 1, parentId: null, kind: "folder", title: "Bookmarks bar", url: null, position: 0, createdAt: now },

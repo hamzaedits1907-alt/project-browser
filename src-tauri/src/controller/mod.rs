@@ -14,6 +14,7 @@
 
 mod consistency;
 mod context_menu;
+mod devtools;
 mod downloads;
 mod drag;
 mod events;
@@ -43,6 +44,7 @@ use crate::settings::Settings;
 use crate::tabs::{GroupId, Tab, TabGroup, TabId, TabStrip};
 pub use split::{SplitOp, SplitView};
 
+pub use devtools::DevtoolsAction;
 pub use downloads::DownloadCommand;
 pub use drag::DragOutcome;
 pub use groups::GroupOp;
@@ -119,7 +121,7 @@ impl ControllerHandle {
 }
 
 /// Logical (CSS px) rectangle reported by the shell for the page area.
-#[derive(Debug, Clone, Copy, PartialEq, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 pub struct ContentRect {
     pub x: f64,
     pub y: f64,
@@ -159,6 +161,10 @@ pub(crate) struct Layout {
     pub context_menu: Option<u64>,
     /// Two tabs shown side by side (see `split.rs`).
     pub split: Option<SplitView>,
+    /// Docked DevTools windows of this window's tabs (see `devtools.rs`).
+    pub devtools: HashMap<TabId, isize>,
+    /// Where each DevTools window was last put (physical pixels; `None` = hidden), so unchanged layouts move nothing.
+    pub devtools_placed: HashMap<isize, Option<devtools::PhysicalRect>>,
 }
 
 /// Blocked-request counts per tab, sent to the shell a few times per second at most.
@@ -221,6 +227,8 @@ pub struct BrowserState {
     pub window_count: usize,
     /// The window's split-view pair, if it has one.
     pub split: Option<SplitView>,
+    /// Docked DevTools of the active tab: where the shell draws its bar.
+    pub devtools: Option<devtools::DevtoolsView>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -444,6 +452,7 @@ impl Controller {
         crate::native::set_download_dir(init.settings.download_dir.as_ref().map(Into::into));
         crate::native::set_download_ask(init.settings.download_ask);
         crate::native::set_clean_links(init.settings.clean_links);
+        crate::native::devtools::set_docking(init.settings.devtools_dock != crate::settings::DevtoolsDock::Window);
         crate::native::set_clean_exceptions(init.settings.clean_links_exceptions.clone());
         crate::native::set_popup_policy(
             init.settings.popup_allowed_hosts.clone(),
@@ -707,6 +716,7 @@ impl Controller {
             private_window: self.private_window,
             window_count: self.window_order.len(),
             split: self.layout.split,
+            devtools: self.devtools_view(),
         }
     }
 
@@ -879,6 +889,10 @@ impl Controller {
         self.layout.content = Some(content);
         self.layout.viewport = viewport;
         self.relayout();
+        if !self.layout.devtools.is_empty() {
+            // The DevTools bar follows the page area.
+            self.mark_state();
+        }
     }
 
     pub fn window_geometry(&self) -> WindowGeometry {
@@ -964,6 +978,10 @@ impl Controller {
         }
         if prev.gaming_mode != next.gaming_mode {
             self.apply_gaming(next.gaming_mode);
+        }
+        if prev.devtools_dock != next.devtools_dock || prev.devtools_size != next.devtools_size {
+            crate::native::devtools::set_docking(next.devtools_dock != crate::settings::DevtoolsDock::Window);
+            self.relayout();
         }
         if prev.memory_limit_mb != next.memory_limit_mb {
             // Turning the limit on starts the (slow) sampler; turning it off stops it.

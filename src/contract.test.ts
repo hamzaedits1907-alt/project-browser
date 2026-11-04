@@ -157,6 +157,7 @@ const STRUCTS: [file: string, rust: string, ts: string][] = [
   ["controller/drag.rs", "TabDragEvent", "TabDragEvent"],
   ["tabs.rs", "NavError", "NavError"],
   ["controller/mod.rs", "BrowserState", "BrowserState"],
+  ["controller/devtools.rs", "DevtoolsView", "DevtoolsView"],
   ["controller/mod.rs", "Bootstrap", "Bootstrap"],
   ["controller/mod.rs", "PermissionPrompt", "PermissionPrompt"],
   ["controller/mod.rs", "FindState", "FindState"],
@@ -318,6 +319,7 @@ describe("settings defaults", () => {
       Rail: "rail",
       Full: "full",
       Off: "off",
+      Bottom: "bottom",
     };
     // `strings(CONST)` names a `pub const CONST: &[&str] = &[...]` list in settings.rs.
     const constList = (name: string): string[] => {

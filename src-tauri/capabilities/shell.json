@@ -115,6 +115,7 @@
     "core:event:allow-emit-to",
     "allow-tab-drag-hover",
     "allow-tab-drag-end",
+    "allow-devtools-action",
     "allow-window-new",
     "allow-tab-group",
     "allow-shield-state",

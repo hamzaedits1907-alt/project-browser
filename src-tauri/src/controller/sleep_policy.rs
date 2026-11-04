@@ -27,6 +27,8 @@ pub struct TabFacts {
     pub has_download: bool,
     /// The tab's site is on the "never sleep" list.
     pub never_sleep: bool,
+    /// DevTools is open for the tab (a suspended page would freeze it).
+    pub devtools: bool,
     pub last_active: i64,
 }
 
@@ -84,6 +86,9 @@ fn auto_protection(t: &TabFacts, protect_pinned: bool) -> Option<&'static str> {
     }
     if t.never_sleep {
         return Some("its site is on the never-sleep list");
+    }
+    if t.devtools {
+        return Some("its developer tools are open");
     }
     if protect_pinned && t.pinned {
         return Some("it is pinned");
@@ -151,6 +156,7 @@ mod tests {
             has_prompt: false,
             has_download: false,
             never_sleep: false,
+            devtools: false,
             last_active: 0,
         }
     }

@@ -35,6 +35,16 @@ pub enum DarkPages {
     Force,
 }
 
+/// Where DevTools (F12) opens: docked inside the browser window, below or beside the page, or as a window of its own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum DevtoolsDock {
+    #[default]
+    Bottom,
+    Right,
+    Window,
+}
+
 /// A user-defined address-bar shortcut: `!key words` searches `url` with `%s` replaced by the words.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
@@ -277,6 +287,10 @@ pub struct Settings {
     pub custom_bangs: Vec<CustomBang>,
     /// SponsorSkip: skip sponsor segments in YouTube videos (only a hash prefix of the video id is sent; see sponsor.rs).
     pub sponsor_skip: bool,
+    /// Where DevTools opens.
+    pub devtools_dock: DevtoolsDock,
+    /// Share of the page area docked DevTools takes, in percent.
+    pub devtools_size: u32,
 }
 
 impl Default for Settings {
@@ -332,6 +346,8 @@ impl Default for Settings {
             dark_pages: DarkPages::Off,
             custom_bangs: Vec::new(),
             sponsor_skip: true,
+            devtools_dock: DevtoolsDock::Bottom,
+            devtools_size: 40,
         }
     }
 }
@@ -357,6 +373,7 @@ impl Settings {
             self.memory_limit_mb = self.memory_limit_mb.clamp(512, 65_536);
         }
         self.ai_max_context_chars = self.ai_max_context_chars.clamp(4_000, 120_000);
+        self.devtools_size = self.devtools_size.clamp(15, 85);
         self.never_sleep_hosts = self
             .never_sleep_hosts
             .into_iter()

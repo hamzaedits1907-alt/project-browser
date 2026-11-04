@@ -45,6 +45,7 @@ const EMPTY_BROWSER: BrowserState = {
   privateWindow: false,
   windowCount: 1,
   split: null,
+  devtools: null,
 };
 
 let state: AppState = {

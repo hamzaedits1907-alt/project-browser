@@ -60,7 +60,25 @@ export interface BrowserState {
   windowCount: number;
   /** The window's split-view pair, if it has one (`controller/split.rs`). */
   split: SplitView | null;
+  /** Docked DevTools of the active tab: where the shell draws its bar (`controller/devtools.rs`). */
+  devtools: DevtoolsView | null;
 }
+
+/** Docked DevTools: the bar the shell draws, the grip that resizes it, and where the DevTools window sits. */
+export interface DevtoolsView {
+  tabId: TabId;
+  side: DevtoolsDock;
+  size: number;
+  bar: ContentRect;
+  grip: ContentRect;
+  tools: ContentRect;
+}
+
+export type DevtoolsAction =
+  | { kind: "close" }
+  | { kind: "dock"; side: DevtoolsDock }
+  | { kind: "resize"; pointer: number }
+  | { kind: "resizeEnd" };
 
 /** Two tabs shown side by side; `ratio` is the left half's share of the page width. */
 export interface SplitView {
@@ -130,6 +148,9 @@ export interface PinnedSite {
   url: string;
 }
 
+/** Where DevTools opens (settings.rs `DevtoolsDock`). */
+export type DevtoolsDock = "bottom" | "right" | "window";
+
 export interface Settings {
   searchEngine: SearchEngine;
   customSearchTemplate: string | null;
@@ -192,6 +213,8 @@ export interface Settings {
   cleanLinks: boolean;
   /** SponsorSkip: skip sponsor segments in YouTube videos. */
   sponsorSkip: boolean;
+  devtoolsDock: DevtoolsDock;
+  devtoolsSize: number;
 }
 
 export interface ProfileMeta {
@@ -666,7 +689,8 @@ export type BrowserCommand =
   | { type: "screenshot" }
   | { type: "readerMode" }
   | { type: "toggleSplit" }
-  | { type: "showShortcuts" };
+  | { type: "showShortcuts" }
+  | { type: "devTools" };
 
 // ---- Project Memory and page reading -----------------------------------------------------
 

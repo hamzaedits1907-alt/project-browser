@@ -100,6 +100,7 @@ const COMMANDS: &[&str] = &[
     "tab_to_window",
     "tab_drag_hover",
     "tab_drag_end",
+    "devtools_action",
     "window_new",
     "tab_group",
     "context_menu_choose",

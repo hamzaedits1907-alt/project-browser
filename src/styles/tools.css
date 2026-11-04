@@ -758,3 +758,63 @@
     display: none;
   }
 }
+
+/* ---- docked DevTools (features/devtools/DevtoolsBar.tsx) ---- */
+.devtools-bar {
+  position: fixed;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 0 10px;
+  background: var(--bg-1);
+  border-top: 1px solid var(--line-2);
+  border-bottom: 1px solid var(--line-2);
+  color: var(--text-2);
+  font-size: 12px;
+  user-select: none;
+  touch-action: none;
+}
+.devtools-bar.is-bottom {
+  cursor: row-resize;
+}
+.devtools-bar.is-bottom.is-dragging,
+.devtools-bar.is-bottom:hover {
+  border-top-color: var(--accent);
+}
+.devtools-bar .icon-btn {
+  width: 24px;
+  height: 24px;
+  cursor: pointer;
+}
+.devtools-title {
+  font-weight: 600;
+  color: var(--text-1);
+}
+.devtools-host {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  color: var(--text-3);
+}
+.devtools-keys {
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.devtools-spacer {
+  flex: 1;
+}
+.devtools-grip {
+  position: fixed;
+  z-index: 6;
+  cursor: col-resize;
+  display: grid;
+  place-items: center;
+  background: var(--bg-1);
+  touch-action: none;
+}
+.devtools-grip:hover,
+.devtools-grip.is-dragging {
+  background: var(--accent-a28);
+}

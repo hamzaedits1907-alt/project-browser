@@ -38,6 +38,13 @@ struct Pending {
     deferral: ICoreWebView2Deferral,
     owner: MenuOwner,
     offered: Vec<i32>,
+    /// WebView2's "Inspect" command in this menu: choosing it opens DevTools, which is then docked.
+    inspect: Option<i32>,
+    ctl: ControllerHandle,
+}
+
+fn find_named(items: &[NativeMenuItem], name: &str) -> Option<i32> {
+    items.iter().find_map(|i| if i.name == name { Some(i.command_id) } else { find_named(&i.children, name) })
 }
 
 thread_local! {
@@ -223,7 +230,9 @@ pub unsafe fn hook(webview: &ICoreWebView2, owner: MenuOwner, ctl: &ControllerHa
             let _ = args.Location(&mut pt);
             let deferral = args.GetDeferral()?;
             let id = NEXT.fetch_add(1, Ordering::SeqCst);
-            PENDING.with(|p| p.borrow_mut().insert(id, Pending { args: args.clone(), deferral, owner: owner.clone(), offered }));
+            let inspect = find_named(&items, "inspectElement");
+            let pending = Pending { args: args.clone(), deferral, owner: owner.clone(), offered, inspect, ctl: ctl.clone() };
+            PENDING.with(|p| p.borrow_mut().insert(id, pending));
             let req = ContextRequest { id, owner: owner.clone(), target, location: (pt.x, pt.y), items };
             match &owner {
                 MenuOwner::Tab(tab) => {
@@ -243,6 +252,12 @@ pub fn choose(id: u64, command: Option<i32>) -> bool {
     let Some(p) = PENDING.with(|m| m.borrow_mut().remove(&id)) else { return false };
     let accepted = match command {
         Some(cmd) if p.offered.contains(&cmd) => {
+            if let (Some(inspect), MenuOwner::Tab(tab)) = (p.inspect, &p.owner) {
+                // Expected before WebView2 runs the command, so the window it opens is the one that gets docked.
+                if inspect == cmd && super::devtools::docking_enabled() {
+                    super::devtools::expect(*tab, p.ctl.clone());
+                }
+            }
             unsafe {
                 let _ = p.args.SetSelectedCommandId(cmd);
             }

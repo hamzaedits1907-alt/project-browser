@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { BookmarksBar } from "./components/chrome/BookmarksBar";
+import { DevtoolsBar } from "./features/devtools/DevtoolsBar";
 import { ContentHost } from "./components/chrome/ContentHost";
 import { FindBar } from "./components/chrome/FindBar";
 import { PermissionBar } from "./components/chrome/PermissionBar";
@@ -130,6 +131,7 @@ export function App() {
           </div>
         </div>
       </div>
+      {chrome && <DevtoolsBar />}
       <Toasts />
       <ContextMenuHost />
       <ShellMenu at={shellMenu} onClose={() => setShellMenu(null)} />

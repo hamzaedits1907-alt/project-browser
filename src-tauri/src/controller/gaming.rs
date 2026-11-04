@@ -53,6 +53,7 @@ impl Controller {
                     .iter()
                     .any(|(did, tid)| *tid == t.id && self.downloads.iter().any(|d| d.id == *did && d.state.is_active())),
                 never_sleep: host_of(&t.url).is_some_and(|h| self.settings.is_never_sleep(&h)),
+                devtools: self.layout.devtools.contains_key(&t.id),
                 last_active: t.last_active,
             })
             .collect()

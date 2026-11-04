@@ -5,6 +5,7 @@
 //! Event handlers never block; they only post work to the controller thread.
 
 pub mod context_menu;
+pub mod devtools;
 pub mod dialog;
 pub mod extensions;
 pub mod metrics;

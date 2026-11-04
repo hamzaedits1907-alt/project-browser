@@ -49,6 +49,8 @@ pub enum Command {
     ReaderMode,
     ToggleSplit,
     ShowShortcuts,
+    /// Opens or closes DevTools for the current tab (docked unless the settings say otherwise).
+    DevTools,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -75,6 +77,7 @@ const VK_F5: u32 = 0x74;
 const VK_F6: u32 = 0x75;
 const VK_F9: u32 = 0x78;
 const VK_F11: u32 = 0x7A;
+const VK_F12: u32 = 0x7B;
 const VK_OEM_PLUS: u32 = 0xBB;
 const VK_OEM_COMMA: u32 = 0xBC;
 const VK_OEM_MINUS: u32 = 0xBD;
@@ -84,7 +87,7 @@ const fn key(c: u8) -> u32 {
 }
 
 /// Maps a key-down to a browser command. Keys not listed here pass through
-/// to the page (Ctrl+C/V, Ctrl+P print, F12 devtools, plain Esc, ...).
+/// to the page (Ctrl+C/V, Ctrl+P print, plain Esc, ...).
 pub fn map_key(vk: u32, m: Mods) -> Option<Command> {
     use Command::*;
     let Mods { ctrl, shift, alt } = m;
@@ -130,6 +133,8 @@ pub fn map_key(vk: u32, m: Mods) -> Option<Command> {
         (true, _, false, VK_OEM_MINUS) | (true, _, false, VK_SUBTRACT) => Some(ZoomOut),
         (true, false, false, k) if k == key(b'0') || k == VK_NUMPAD0 => Some(ZoomReset),
         (false, false, false, VK_F11) => Some(Fullscreen),
+        (false, false, false, VK_F12) => Some(DevTools),
+        (true, true, false, k) if k == key(b'I') || k == key(b'J') || k == key(b'C') => Some(DevTools),
         _ => None,
     }
 }
@@ -214,7 +219,8 @@ mod tests {
             assert_eq!(map_key(key(c), C), None, "Ctrl+{}", c as char);
         }
         assert_eq!(map_key(VK_ESCAPE, NONE), None, "plain Esc belongs to the page");
-        assert_eq!(map_key(0x7B, NONE), None, "F12 opens devtools natively");
+        assert_eq!(map_key(0x7B, NONE), Some(Command::DevTools), "F12 opens docked DevTools");
+        assert_eq!(map_key(key(b'I'), Mods { ctrl: true, shift: true, alt: false }), Some(Command::DevTools));
     }
 
     #[test]

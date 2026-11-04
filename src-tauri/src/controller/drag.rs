@@ -79,6 +79,16 @@ impl Controller {
     /// The dragged tab moved outside its strip. Returns the window it is over (not counting its own).
     pub fn tab_drag_hover(&mut self, source: &str, tab_id: TabId) -> Option<String> {
         let over = self.window_at_pointer().filter(|(label, _, _)| label != source);
+        let title =
+            self.all_tabs().into_iter().find(|t| t.id == tab_id).map(|t| if t.title.trim().is_empty() { t.url } else { t.title }).unwrap_or_default();
+        let single = self.select_tab_window(tab_id) && self.tabs.len() <= 1;
+        self.select_window(source);
+        let hint = match (&over, single) {
+            (Some(_), _) => "Release to move it into this window",
+            (None, true) => "Release to move the window here",
+            (None, false) => "Release to open it in a new window",
+        };
+        let _ = self.app.run_on_main_thread(move || crate::native::drag_ghost::show(&title, hint));
         let previous = self.drag_hover.take();
         if let Some(prev) = previous.as_ref().filter(|p| over.as_ref().map(|o| &o.0) != Some(*p)) {
             self.emit_drag(prev, "leave", tab_id, 0.0, 0.0);
@@ -92,6 +102,7 @@ impl Controller {
 
     /// The drag ended. `detached`: the tab was pulled out of its strip (otherwise the shell already reordered it).
     pub fn tab_drag_end(&mut self, source: &str, tab_id: TabId, detached: bool, cancel: bool) -> Result<DragOutcome> {
+        let _ = self.app.run_on_main_thread(crate::native::drag_ghost::hide);
         if let Some(prev) = self.drag_hover.take() {
             if cancel || !detached {
                 self.emit_drag(&prev, "leave", tab_id, 0.0, 0.0);

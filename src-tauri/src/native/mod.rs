@@ -7,6 +7,7 @@
 pub mod context_menu;
 pub mod devtools;
 pub mod dialog;
+pub mod drag_ghost;
 pub mod extensions;
 pub mod metrics;
 

@@ -82,7 +82,7 @@ $logPath = Join-Path $DataDir "logs\project-browser.log"
 $windowsLog = Join-Path $ReportDir "windows.txt"
 # A local animated page (scripts/fixture-server.py): the probe needs a page that visibly runs.
 $python = (Get-Command python -ErrorAction SilentlyContinue).Source
-$server = Start-Process -FilePath $python -ArgumentList @("-I", (Join-Path $PSScriptRoot "fixture-server.py"), "8766") -PassThru -WindowStyle Hidden
+$server = Start-Process -FilePath $python -ArgumentList @("-I", ('"' + (Join-Path $PSScriptRoot "fixture-server.py") + '"'), "8766") -PassThru -WindowStyle Hidden
 for ($i = 0; $i -lt 50; $i++) { try { if ((Invoke-WebRequest "http://127.0.0.1:8766/anim.html" -UseBasicParsing -TimeoutSec 2).StatusCode -eq 200) { break } } catch { Start-Sleep -Milliseconds 200 } }
 $p = Start-Process -FilePath $Exe -ArgumentList "http://127.0.0.1:8766/anim.html" -PassThru
 $log = { if (Test-Path $logPath) { Get-Content $logPath -Raw } else { "" } }

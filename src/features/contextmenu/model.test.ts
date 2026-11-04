@@ -71,7 +71,7 @@ describe("links, images, media and fields", () => {
     const items = [item("openLinkInNewWindow"), copy, item("saveLinkAs"), item("share")];
     const m = buildMenu(event(target({ linkUrl: "https://a.example/x", linkText: "A link" }), items), ctx);
     const labels = all(m).map((e) => e.label);
-    expect(labels).toEqual(["Open link in new tab", "Open link in new window", "Open link in private window", "Copy link address", "Copy link text", "Save link as…", "Bookmark this link"]);
+    expect(labels).toEqual(["Open link in new tab", "Open link in new window", "Open link in private window", "Copy link address", "Copy link text", "Save link as…", "Bookmark this link", "Add link to Reading List"]);
     expect(all(m).find((e) => e.label === "Copy link address")?.native).toBe(copy.commandId);
     expect(m.title).toBe("https://a.example/x");
   });

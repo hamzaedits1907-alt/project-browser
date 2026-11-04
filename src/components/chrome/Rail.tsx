@@ -29,6 +29,7 @@ export interface RailEntry {
 /** Everything the sidebar can show, in catalogue order (ids match `SIDEBAR_ITEMS` in settings.rs). */
 export const RAIL_ENTRIES: RailEntry[] = [
   { id: "bookmarks", label: "Bookmarks", icon: "bookmarks", panel: "bookmarks" },
+  { id: "reading", label: "Reading List", icon: "book", panel: "reading" },
   { id: "history", label: "History", icon: "history", panel: "history" },
   { id: "downloads", label: "Downloads", icon: "download", panel: "downloads" },
   { id: "ai", label: "AI assistant", icon: "sparkle", panel: "ai" },

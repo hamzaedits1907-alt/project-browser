@@ -3,8 +3,8 @@ import { api } from "./ipc";
 import { readLocal, writeLocal } from "./storage";
 
 /** Side panels docked next to the page (they push the page aside: nothing has to float over the native view). */
-export type PanelId = "bookmarks" | "history" | "downloads" | "shield" | "notes" | "media" | "focus";
-const PANELS: PanelId[] = ["bookmarks", "history", "downloads", "shield", "notes", "media", "focus"];
+export type PanelId = "bookmarks" | "reading" | "history" | "downloads" | "shield" | "notes" | "media" | "focus";
+const PANELS: PanelId[] = ["bookmarks", "reading", "history", "downloads", "shield", "notes", "media", "focus"];
 
 function savedPanel(): PanelId | null {
   const p = readLocal<string | null>("panel", null);

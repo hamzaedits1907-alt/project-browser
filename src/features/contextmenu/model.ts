@@ -25,6 +25,7 @@ export type CustomAction =
   | { kind: "siteInfo" }
   | { kind: "fillLogin" }
   | { kind: "strongPassword" }
+  | { kind: "readLater"; url: string; title: string }
   | { kind: "muteTab"; muted: boolean }
   | { kind: "nav"; action: "back" | "forward" | "reload" };
 
@@ -157,6 +158,7 @@ export function buildMenu(e: ContextMenuEvent, ctx: MenuContext): MenuModel {
         !!t.linkText?.trim() && { key: "link-text", label: "Copy link text", icon: "copy", custom: { kind: "copyText", text: t.linkText.trim(), what: "Link text" } },
         native("saveLinkAs"),
         !e.private && { key: "link-bookmark", label: "Bookmark this link", icon: "star", custom: { kind: "bookmarkLink", url, title: t.linkText?.trim() || url } },
+        !e.private && { key: "link-read-later", label: "Add link to Reading List", icon: "book", custom: { kind: "readLater", url, title: t.linkText?.trim() || url } },
       ),
     );
   }

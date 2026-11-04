@@ -132,6 +132,7 @@ pub struct PinnedSite {
 /// Sidebar entries, in their default order. The shell knows what each one opens; unknown ids are dropped.
 pub const SIDEBAR_ITEMS: &[&str] = &[
     "bookmarks",
+    "reading",
     "history",
     "downloads",
     "ai",
@@ -146,7 +147,7 @@ pub const SIDEBAR_ITEMS: &[&str] = &[
     "media",
     "focus",
 ];
-pub const DEFAULT_SIDEBAR_ITEMS: &[&str] = &["bookmarks", "history", "downloads", "ai", "gaming", "shield", "passwords"];
+pub const DEFAULT_SIDEBAR_ITEMS: &[&str] = &["bookmarks", "reading", "history", "downloads", "ai", "gaming", "shield", "passwords"];
 /// Optional toolbar buttons (back, forward, reload, the address bar and the menu are always there).
 pub const TOOLBAR_ITEMS: &[&str] = &[
     "gaming",

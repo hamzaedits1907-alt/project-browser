@@ -4,6 +4,7 @@ import { emitTo, listen } from "@tauri-apps/api/event";
 import { Icon } from "../../components/ui/Icon";
 import { MenuHeading, MenuItem, MenuSeparator, Popover, usePopoverClose } from "../../components/ui/Popover";
 import { BAR_ID } from "../../lib/bookmarks";
+import { addToReadingList } from "../panels/ReadingList";
 import { api, on } from "../../lib/ipc";
 import { overlayIdle } from "../../lib/overlay";
 import { engineLabel } from "../../lib/settings";
@@ -86,6 +87,9 @@ function runCustom(a: CustomAction, e: ContextMenuEvent): void {
       return;
     case "fillLogin":
       emitBus("openFill");
+      return;
+    case "readLater":
+      void addToReadingList(a.url, a.title);
       return;
     case "strongPassword":
       if (e.tabId !== null) {

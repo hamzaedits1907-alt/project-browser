@@ -1,8 +1,8 @@
 import type { PinnedSite, SearchEngine, Settings } from "./types";
 
 /** Same lists as `SIDEBAR_ITEMS`, `TOOLBAR_ITEMS`, `NTP_WIDGETS`, `THEMES` and `NTP_BACKGROUNDS` in settings.rs (contract-tested). */
-export const SIDEBAR_ITEMS = ["bookmarks", "history", "downloads", "ai", "memory", "research", "gaming", "shield", "passwords", "privacy", "performance", "notes", "media", "focus"] as const;
-export const DEFAULT_SIDEBAR_ITEMS = ["bookmarks", "history", "downloads", "ai", "gaming", "shield", "passwords"];
+export const SIDEBAR_ITEMS = ["bookmarks", "reading", "history", "downloads", "ai", "memory", "research", "gaming", "shield", "passwords", "privacy", "performance", "notes", "media", "focus"] as const;
+export const DEFAULT_SIDEBAR_ITEMS = ["bookmarks", "reading", "history", "downloads", "ai", "gaming", "shield", "passwords"];
 export const TOOLBAR_ITEMS = ["gaming", "shield", "ai", "downloads", "bookmarks", "history", "memory", "performance", "privateWindow", "split", "reader", "screenshot", "commands", "dark"] as const;
 export const DEFAULT_TOOLBAR_ITEMS = ["gaming", "shield", "ai", "downloads"];
 export const NTP_WIDGETS = ["shortcuts", "continue", "closed", "bookmarks", "downloads", "system", "gaming", "ai"] as const;

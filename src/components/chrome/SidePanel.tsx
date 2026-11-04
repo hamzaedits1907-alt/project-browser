@@ -10,6 +10,7 @@ import type { PanelId } from "../../lib/ui";
 import type { Bookmark, HistoryEntry } from "../../lib/types";
 import { useLoad } from "../../lib/useLoad";
 import { FocusPanel, MediaPanel, NotesPanel } from "../../features/panels/ExtraPanels";
+import { ReadingListPanel } from "../../features/panels/ReadingList";
 import { ShieldSummary } from "../menus/ShieldSummary";
 import { Favicon } from "../ui/Favicon";
 import { Icon } from "../ui/Icon";
@@ -21,6 +22,7 @@ import { DownloadRow } from "./DownloadRow";
 
 const TITLES: Record<PanelId, { title: string; icon: IconName }> = {
   bookmarks: { title: "Bookmarks", icon: "bookmarks" },
+  reading: { title: "Reading List", icon: "book" },
   history: { title: "History", icon: "history" },
   downloads: { title: "Downloads", icon: "download" },
   shield: { title: "Project Shield", icon: "shieldCheck" },
@@ -265,6 +267,7 @@ function ShieldPanel() {
 
 const BODIES: Record<PanelId, () => ReactNode> = {
   bookmarks: () => <BookmarksPanel />,
+  reading: () => <ReadingListPanel />,
   history: () => <HistoryPanel />,
   downloads: () => <DownloadsPanel />,
   shield: () => <ShieldPanel />,

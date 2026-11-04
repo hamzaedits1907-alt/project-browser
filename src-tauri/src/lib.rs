@@ -52,8 +52,12 @@ fn load_all_from_args(args: &[String]) -> bool {
 
 pub fn run() {
     ai::ensure_crypto_provider();
-    tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+    // A run with its own data folder (`PROJECT_BROWSER_DATA_DIR`: tests, trying things out) is a separate browser and
+    // must not hand its start over to an already running one that uses the real profile.
+    let separate = std::env::var_os("PROJECT_BROWSER_DATA_DIR").is_some_and(|v| !v.is_empty());
+    let mut builder = tauri::Builder::default();
+    if !separate {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             if let Some(state) = app.try_state::<AppState>() {
                 for url in launch::urls_from_args(&argv) {
                     state.ctl.post(move |c| c.open_url_in_focused_window(url));
@@ -63,7 +67,9 @@ pub fn run() {
                 let _ = w.unminimize();
                 let _ = w.set_focus();
             }
-        }))
+        }));
+    }
+    builder
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let handle = app.handle().clone();

@@ -10,6 +10,7 @@ pub mod dialog;
 pub mod drag_ghost;
 pub mod extensions;
 pub mod metrics;
+pub mod site_data;
 
 use std::cell::RefCell;
 use std::collections::HashMap;

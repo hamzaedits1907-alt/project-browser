@@ -159,6 +159,7 @@ const STRUCTS: [file: string, rust: string, ts: string][] = [
   ["controller/mod.rs", "BrowserState", "BrowserState"],
   ["controller/devtools.rs", "DevtoolsView", "DevtoolsView"],
   ["extension_store.rs", "ExtensionDetails", "ExtensionDetails"],
+  ["native/site_data.rs", "CookieInfo", "CookieInfo"],
   ["controller/mod.rs", "Bootstrap", "Bootstrap"],
   ["controller/mod.rs", "PermissionPrompt", "PermissionPrompt"],
   ["controller/mod.rs", "FindState", "FindState"],

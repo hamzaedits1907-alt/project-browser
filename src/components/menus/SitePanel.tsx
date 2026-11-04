@@ -1,14 +1,15 @@
+import { useState } from "react";
 import type { RefObject } from "react";
 
 import { api } from "../../lib/ipc";
 import { useLoad } from "../../lib/useLoad";
-import { attempt } from "../../lib/store";
+import { attempt, toast } from "../../lib/store";
 import type { Tab } from "../../lib/types";
 import { hostOf, permissionName } from "../../lib/format";
 import { originOf } from "../../lib/urls";
 import { Icon } from "../ui/Icon";
 import type { IconName } from "../ui/Icon";
-import { IconButton, Select } from "../ui/controls";
+import { Button, IconButton, Select } from "../ui/controls";
 import { Popover } from "../ui/Popover";
 
 const COPY: Record<Tab["security"], { icon: IconName; title: string; body: string; tone: string }> = {
@@ -68,6 +69,7 @@ export function SitePanel({ tab, open, onClose, anchor }: { tab: Tab | null; ope
           )}
         </div>
       )}
+      {origin && /^https?:/.test(origin) && <SiteData tab={tab} open={open} />}
       {!tab.url.startsWith("browser://") && (
         <div className="site-section site-zoom">
           <span>Page zoom</span>
@@ -81,5 +83,57 @@ export function SitePanel({ tab, open, onClose, anchor }: { tab: Tab | null; ope
         </div>
       )}
     </Popover>
+  );
+}
+
+/** Chrome's "Cookies and site data": how many cookies the site keeps, the list on request, and one button that deletes
+ * everything the site stored (cookies, local storage, IndexedDB, caches, service workers) and reloads it. */
+function SiteData({ tab, open }: { tab: Tab; open: boolean }) {
+  const cookies = useLoad(() => api.siteCookies(tab.id), open ? `${tab.id}:${tab.url}` : null);
+  const [shown, setShown] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const list = cookies.data ?? [];
+  const clear = async () => {
+    setBusy(true);
+    const n = await attempt(() => api.siteDataClear(tab.id), "Could not delete the site's data");
+    setBusy(false);
+    if (n !== null && n !== undefined) {
+      toast(`Deleted ${n} cookie${n === 1 ? "" : "s"} and the stored data of ${hostOf(tab.url)}. The page was reloaded.`);
+      cookies.reload();
+    }
+  };
+  return (
+    <div className="site-section">
+      <h4>Cookies and site data</h4>
+      {cookies.error ? (
+        <p className="field-error">{cookies.error}</p>
+      ) : (
+        <p className="dim small">
+          {cookies.loading ? "Counting…" : `${list.length} cookie${list.length === 1 ? "" : "s"} in use on this page.`}{" "}
+          {list.length > 0 && (
+            <button type="button" className="link-btn" onClick={() => setShown((v) => !v)}>
+              {shown ? "Hide" : "Show"}
+            </button>
+          )}
+        </p>
+      )}
+      {shown && (
+        <ul className="cookie-list">
+          {list.map((c) => (
+            <li key={`${c.domain}${c.path}${c.name}`}>
+              <span className="mono truncate">{c.name}</span>
+              <span className="dim small truncate">
+                {c.domain}
+                {c.expires === null ? " · ends with the session" : ` · until ${new Date(c.expires * 1000).toLocaleDateString()}`}
+                {c.httpOnly ? " · HttpOnly" : ""}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <Button size="sm" variant="danger" icon="trash" disabled={busy} onClick={() => void clear()}>
+        {busy ? "Deleting…" : "Delete all data for this site"}
+      </Button>
+    </div>
   );
 }

@@ -102,6 +102,8 @@ const COMMANDS: &[&str] = &[
     "tab_drag_end",
     "devtools_action",
     "password_insert",
+    "site_cookies",
+    "site_data_clear",
     "extensions_details",
     "extension_install_store",
     "extension_install_crx",

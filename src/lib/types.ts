@@ -522,6 +522,17 @@ export interface ExtensionInfo {
   enabled: boolean;
 }
 
+/** A cookie of the current site (native/site_data.rs). */
+export interface CookieInfo {
+  name: string;
+  domain: string;
+  path: string;
+  /** Seconds since 1970; null for a session cookie. */
+  expires: number | null;
+  httpOnly: boolean;
+  secure: boolean;
+}
+
 /** An installed extension as the toolbar shows it (extension_store.rs). */
 export interface ExtensionDetails {
   id: string;

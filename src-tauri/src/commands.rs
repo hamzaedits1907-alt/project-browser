@@ -742,6 +742,41 @@ pub async fn fill_options(s: State<'_, AppState>, tab_id: TabId) -> Result<FillO
 
 const FILL_TIMEOUT: Duration = Duration::from_secs(6);
 
+/// The web address (and its origin) of tab `tab_id`, for the site information panel.
+async fn tab_site(s: &State<'_, AppState>, tab_id: TabId) -> Result<(String, String)> {
+    let url = s
+        .ctl
+        .call(move |c| c.all_tabs().into_iter().find(|t| t.id == tab_id).map(|t| t.url))
+        .await?
+        .ok_or_else(|| Error::msg("That tab is closed."))?;
+    let parsed = url::Url::parse(&url).map_err(|_| Error::msg("Not a web page."))?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err(Error::msg("Only web pages store site data."));
+    }
+    let origin = parsed.origin().ascii_serialization();
+    Ok((url, origin))
+}
+
+/// Cookies the site of tab `tab_id` keeps (Site information > Cookies and site data).
+#[tauri::command]
+pub async fn site_cookies(app: AppHandle, s: State<'_, AppState>, tab_id: TabId) -> Result<Vec<native::site_data::CookieInfo>> {
+    let (url, _) = tab_site(&s, tab_id).await?;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.run_on_main_thread(move || native::site_data::cookies(tab_id, url, tx))?;
+    tokio::time::timeout(FILL_TIMEOUT, rx).await.ok().and_then(|r| r.ok()).ok_or_else(|| Error::msg("WebView2 did not list the cookies."))
+}
+
+/// Deletes the cookies and stored data of the site of tab `tab_id`, then reloads it. Returns how many cookies went.
+#[tauri::command]
+pub async fn site_data_clear(app: AppHandle, s: State<'_, AppState>, tab_id: TabId) -> Result<usize> {
+    let (url, origin) = tab_site(&s, tab_id).await?;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.run_on_main_thread(move || native::site_data::clear(tab_id, url, origin, tx))?;
+    let n = tokio::time::timeout(FILL_TIMEOUT, rx).await.ok().and_then(|r| r.ok()).ok_or_else(|| Error::msg("WebView2 did not delete the data."))?;
+    app.run_on_main_thread(move || native::nav_action(tab_id, native::NavAction::Reload))?;
+    Ok(n)
+}
+
 /// "Insert a strong password" in the right-click menu of a text field: puts a new strong password into the focused
 /// field of the active tab and returns it (the shell copies it to the clipboard so it is not lost before it is saved).
 #[tauri::command]
@@ -2120,6 +2155,8 @@ macro_rules! all_commands {
             $crate::commands::tab_drag_end,
             $crate::commands::devtools_action,
             $crate::commands::password_insert,
+            $crate::commands::site_cookies,
+            $crate::commands::site_data_clear,
             $crate::commands::extensions_details,
             $crate::commands::extension_install_store,
             $crate::commands::extension_install_crx,

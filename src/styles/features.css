@@ -330,3 +330,27 @@
   text-transform: uppercase;
   color: var(--text-3);
 }
+
+/* ---- Cookies and site data (components/menus/SitePanel.tsx) ---- */
+.cookie-list {
+  list-style: none;
+  margin: 4px 0 8px;
+  padding: 0;
+  max-height: 160px;
+  overflow: auto;
+}
+.cookie-list li {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--line-2);
+  min-width: 0;
+}
+.link-btn {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+}

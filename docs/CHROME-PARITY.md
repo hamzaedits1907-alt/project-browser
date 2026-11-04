@@ -59,7 +59,7 @@ found the download bug fixed in 0.4.0.
 | Error pages | Tested (logic) | |
 | Pop-up handling | Built, unverified | **0.4.0**: the native `NewWindowRequested` event reports whether a click caused the request. Scripted pop-ups nobody asked for are blocked, with a bar to open it once or always allow the site. Sign-in pop-ups that a click opens (window.open with a size) get a real window that shares the profile (or the private session) and `window.opener`; closing it returns focus to the opener. A setting opens other new-window requests as a tab or a window. |
 | Search engine choice | Tested | Six engines and a custom address. |
-| Developer tools (F12) | Platform default | |
+| Developer tools (F12) | Built, probed locally (0.9.0) | Docked inside the window (bottom/right, resizable, per tab) or a separate window; `scripts/devtools-probe.ps1`. |
 | Accessibility | Not audited | Keyboard use works through standard controls; no screen-reader audit has been done. |
 
 ## Passwords, autofill, privacy
@@ -114,3 +114,17 @@ facts, not measurements.
 | Default browser status + button to Windows settings | Built, unverified | Settings > General. Reads the real registry; never writes the user's choice. |
 | Extensions | Built, unverified | See "Browser extensions" above. |
 | Own rendering engine (bundled Chromium / CEF) | Not done | Pages are still rendered by WebView2. See `docs/ENGINE.md` for why and what it would take. |
+
+## 0.9.0 additions
+
+| Capability | Status | Notes |
+|---|---|---|
+| Docked DevTools | Probed in the real app | F12 docks in ~0.3 s; F12 closes. WebView2's DevTools window adopted as a child window. |
+| Chrome Web Store installs | Download path checked with a real package | One click on a store page; packages from Google's update service; CRX2/3 unpacked. |
+| `.crx` install, extension toolbar, pop-ups, options, pinned icons | Built, unverified in a window | Pop-ups are `chrome-extension://` pages in a small window sharing the profile. |
+| Memory Saver (Off / Balanced / Maximum) | Tested (presets) | |
+| Reading List | Built, unverified in a window | Bookmarks in a "Reading list" folder. |
+| Global Privacy Control | Verified in the real app | `Sec-GPC: 1` and `navigator.globalPrivacyControl`. |
+| Strong password generator | Tested (generator) | Right-click a field. |
+| Cookies and site data per site | Built, unverified in a window | Site information panel; delete clears cookies and storage. |
+| Tab tear-off feedback | Probed (tear-off still works) | A card follows the pointer outside the window. |

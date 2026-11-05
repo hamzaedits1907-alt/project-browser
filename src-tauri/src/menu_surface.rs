@@ -26,6 +26,11 @@ pub struct Anchor {
     pub owner: String,
     pub x: i32,
     pub y: i32,
+    /// The point is the menu's top-right corner (a menu hanging from a button at the right end of the toolbar).
+    pub align_end: bool,
+    /// Escape, the arrow keys and Enter belong to the menu while it is open. False for the address bar's suggestion
+    /// list: the address bar keeps the keyboard and moves the highlight itself.
+    pub keyboard: bool,
 }
 
 static ANCHOR: Mutex<Option<Anchor>> = Mutex::new(None);
@@ -94,8 +99,15 @@ pub fn ensure(app: &AppHandle, profile: &Profile) {
 
 /// Top-left corner for a menu of `size` opened at `point` inside `work` (all physical pixels): to the right of and
 /// below the point when it fits, flipped to the other side when it does not, and never outside the work area.
-pub fn place(point: (i32, i32), size: (i32, i32), work: (i32, i32, i32, i32)) -> (i32, i32) {
+pub fn place(point: (i32, i32), size: (i32, i32), work: (i32, i32, i32, i32), align_end: bool) -> (i32, i32) {
     let (left, top, right, bottom) = work;
+    if align_end {
+        // Hanging from a toolbar button: right edges line up, it stays below the button and never flips over it.
+        // A menu taller than the room below is made shorter (it scrolls, see `fit_height`) instead of moving up.
+        let x = (point.0 - size.0).min(right - size.0).max(left);
+        let y = point.1.min(bottom - size.1.min(bottom - top)).max(top);
+        return (x, y);
+    }
     let mut x = point.0;
     let mut y = point.1;
     if x + size.0 > right {
@@ -107,6 +119,13 @@ pub fn place(point: (i32, i32), size: (i32, i32), work: (i32, i32, i32, i32)) ->
     x = x.min(right - size.0).max(left);
     y = y.min(bottom - size.1).max(top);
     (x, y)
+}
+
+/// Height for a menu hanging from a toolbar button at screen height `y`: all of it when it fits below the button,
+/// otherwise the room left down to the bottom of the work area (at least 200 px); the menu scrolls inside it.
+pub fn fit_height(y: i32, height: i32, work: (i32, i32, i32, i32)) -> i32 {
+    let room = (work.3 - y - 8).max(200);
+    height.min(room)
 }
 
 /// Shows the menu window at the current anchor with the given content size (CSS pixels).
@@ -127,8 +146,11 @@ pub fn present(app: &AppHandle, width: f64, height: f64) -> Result<(), String> {
         }
         None => (1.0, (i32::MIN / 2, i32::MIN / 2, i32::MAX / 2, i32::MAX / 2)),
     };
-    let size = ((width.max(40.0) * scale).ceil() as i32, (height.max(20.0) * scale).ceil() as i32);
-    let (x, y) = place((a.x, a.y), size, work);
+    let mut size = ((width.max(40.0) * scale).ceil() as i32, (height.max(20.0) * scale).ceil() as i32);
+    if a.align_end {
+        size.1 = fit_height(a.y, size.1, work);
+    }
+    let (x, y) = place((a.x, a.y), size, work, a.align_end);
     let menu_hwnd = window.hwnd().map_err(|e| e.to_string())?.0 as isize;
     if let Some(owner) = app.get_window(&a.owner) {
         if let Ok(owner) = owner.hwnd() {
@@ -175,7 +197,7 @@ pub fn request_dismiss(reason: &'static str) {
 /// A key typed into a page or a shell while a menu is open: Escape, arrows, Home/End and Enter belong to the menu.
 /// Returns true when the key was taken.
 pub fn route_key(vk: u32) -> bool {
-    if !is_open() {
+    if !is_open() || !anchor().is_some_and(|a| a.keyboard) {
         return false;
     }
     let key = match vk {
@@ -227,21 +249,32 @@ mod tests {
 
     #[test]
     fn a_menu_opens_below_and_right_of_the_point_when_it_fits() {
-        assert_eq!(place((100, 100), (300, 400), WORK), (100, 100));
+        assert_eq!(place((100, 100), (300, 400), WORK, false), (100, 100));
     }
 
     #[test]
     fn a_menu_flips_left_or_up_near_the_work_area_edges() {
-        assert_eq!(place((1800, 100), (300, 400), WORK), (1500, 100));
-        assert_eq!(place((100, 900), (300, 400), WORK), (100, 500));
-        assert_eq!(place((1800, 900), (300, 400), WORK), (1500, 500));
+        assert_eq!(place((1800, 100), (300, 400), WORK, false), (1500, 100));
+        assert_eq!(place((100, 900), (300, 400), WORK, false), (100, 500));
+        assert_eq!(place((1800, 900), (300, 400), WORK, false), (1500, 500));
+    }
+
+    #[test]
+    fn a_toolbar_menu_lines_up_with_its_buttons_right_edge_and_stays_below_it() {
+        assert_eq!(place((1900, 80), (300, 400), WORK, true), (1600, 80));
+        // Too tall for the room below: it is pushed up only as far as the work area demands.
+        assert_eq!(fit_height(80, 1000, WORK), 952);
+        assert_eq!(place((1900, 80), (300, 952), WORK, true), (1600, 80));
+        assert_eq!(fit_height(80, 400, WORK), 400);
+        // A button near the left edge: never off the screen.
+        assert_eq!(place((100, 80), (300, 400), WORK, true), (0, 80));
     }
 
     #[test]
     fn a_menu_never_leaves_the_work_area() {
         // Taller than the space on either side: pinned to the top of the work area.
-        assert_eq!(place((100, 500), (300, 1200), WORK), (100, 0));
+        assert_eq!(place((100, 500), (300, 1200), WORK, false), (100, 0));
         // A second monitor left of the primary one (negative coordinates).
-        assert_eq!(place((-50, 10), (300, 200), (-1920, 0, 0, 1080)), (-350, 10));
+        assert_eq!(place((-50, 10), (300, 200), (-1920, 0, 0, 1080), false), (-350, 10));
     }
 }

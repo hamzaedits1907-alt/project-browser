@@ -54,7 +54,8 @@ pub async fn set_layout(window: tauri::Window, s: State<'_, AppState>, content: 
 /// Hides the page while the shell draws menus over it, returning a snapshot of
 /// the page to show underneath (native webviews always render above the shell).
 #[tauri::command]
-pub async fn overlay_open(window: tauri::Window, app: AppHandle, s: State<'_, AppState>) -> Result<tauri::ipc::Response> {
+pub async fn overlay_open(window: tauri::Window, app: AppHandle, s: State<'_, AppState>, take_focus: Option<bool>) -> Result<tauri::ipc::Response> {
+    let take_focus = take_focus.unwrap_or(true);
     let started = std::time::Instant::now();
     let tab = s.ctl.call_in(window.label().to_string(), |c| c.active_live_tab()).await?;
     log::info!("overlay: a shell popup asked to cover the page (tab {tab:?})");
@@ -74,7 +75,7 @@ pub async fn overlay_open(window: tauri::Window, app: AppHandle, s: State<'_, Ap
         }
         None => None,
     };
-    s.ctl.call_in(window.label().to_string(), |c| c.set_overlay(true, false)).await?;
+    s.ctl.call_in(window.label().to_string(), move |c| c.set_overlay_focus(true, false, take_focus)).await?;
     log::info!("overlay: page covered after {} ms (snapshot: {})", started.elapsed().as_millis(), snapshot.is_some());
     Ok(tauri::ipc::Response::new(snapshot.unwrap_or_default()))
 }
@@ -1746,6 +1747,17 @@ pub async fn menu_surface_ready(window: tauri::Window) -> Result<()> {
     Ok(())
 }
 
+/// A shell popup (the main menu, the address bar's suggestions) is about to be drawn by the menu window, at point
+/// `(x, y)` of this browser window (CSS pixels). False when the menu window is not ready: the shell then draws the
+/// popup itself over a still capture of the page.
+#[tauri::command]
+pub async fn menu_anchor(window: tauri::Window, s: State<'_, AppState>, x: f64, y: f64, align_end: bool, keyboard: bool) -> Result<bool> {
+    if !crate::menu_surface::is_ready() {
+        return Ok(false);
+    }
+    s.ctl.call_in(window.label().to_string(), move |c| c.set_menu_anchor(x, y, align_end, keyboard)).await
+}
+
 /// The menu window rendered a menu of this size (CSS pixels): place it at the click and show it.
 #[tauri::command]
 pub async fn menu_present(window: tauri::Window, app: AppHandle, width: f64, height: f64) -> Result<()> {
@@ -2171,6 +2183,7 @@ macro_rules! all_commands {
             $crate::commands::save_text_file,
             $crate::commands::link_clean_undo,
             $crate::commands::menu_surface_ready,
+            $crate::commands::menu_anchor,
             $crate::commands::menu_present,
             $crate::commands::menu_dismiss,
             $crate::commands::window_active,

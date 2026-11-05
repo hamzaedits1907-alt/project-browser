@@ -1,10 +1,12 @@
 import type { RefObject } from "react";
 
 import { toggleAi } from "../../features/ai/aiStore";
+import type { MenuEntry, MenuModel } from "../../features/contextmenu/model";
+import { openPopup } from "../../features/contextmenu/popupMenu";
 import { update as updateState } from "../../features/update/updateStore";
 import { api } from "../../lib/ipc";
-import { activeTab, attempt, useStore } from "../../lib/store";
-import type { BrowserCommand } from "../../lib/types";
+import { activeTab, attempt, getState, useStore } from "../../lib/store";
+import type { BrowserCommand, Settings } from "../../lib/types";
 import { useSettings } from "../../lib/useSettings";
 import { openClearData, openCustomize, openSettingsSection, togglePanel } from "../../lib/ui";
 import { openInternalPage } from "../chrome/Rail";
@@ -102,4 +104,113 @@ export function MainMenu({ open, onClose, anchor, onImport }: { open: boolean; o
       </div>
     </Popover>
   );
+}
+
+/** The main menu as a model for the menu window, with what each entry does. Same entries as `MainMenu`. */
+export function mainMenuModel(onImport: () => void, update: (patch: Partial<Settings>) => unknown): { model: MenuModel; actions: Map<string, () => void> } {
+  const s = getState();
+  const tab = activeTab(s);
+  const web = !!tab && !tab.url.startsWith("browser://");
+  const u = updateState.get();
+  const updateVersion = u.phase === "available" ? u.version : null;
+  const actions = new Map<string, () => void>();
+  let n = 0;
+  const e = (label: string, icon: IconName | undefined, act: () => void, more: Partial<MenuEntry> = {}): MenuEntry => {
+    const key = `m${n++}`;
+    actions.set(key, act);
+    return { key, label, icon, ...more };
+  };
+  const cmd = (label: string, icon: IconName | undefined, command: BrowserCommand, hint?: string, more: Partial<MenuEntry> = {}) =>
+    e(label, icon, () => run(command), { hint, ...more });
+  const zoom = web && tab ? `${Math.round(tab.zoom * 100)}%` : "100%";
+  const sections: MenuModel["sections"] = [];
+  if (updateVersion) sections.push({ entries: [e(`Update available: ${updateVersion}`, "download", () => openSettingsSection("about"))] });
+  sections.push({
+    entries: [
+      cmd("New tab", "plus", { type: "newTab" }, "Ctrl+T"),
+      cmd("New window", "window", { type: "newWindow" }, "Ctrl+N"),
+      cmd("New private window", "incognito", { type: "newPrivateWindow" }, "Ctrl+Shift+N"),
+      cmd("New private tab", "incognito", { type: "newPrivateTab" }),
+      cmd("Reopen closed tab or window", "history", { type: "reopenTab" }, "Ctrl+Shift+T"),
+    ],
+  });
+  sections.push({
+    entries: [
+      cmd("Gaming Mode", "bolt", { type: "toggleGamingMode" }, "Ctrl+Shift+G", { checked: s.settings.gamingMode }),
+      cmd("Gaming dashboard", "gamepad", { type: "openGaming" }, "Ctrl+Shift+D"),
+      cmd("Performance monitor", "gauge", { type: "openPerformance" }, "Shift+Esc"),
+      e("AI assistant", "sparkle", toggleAi),
+      e("Research: compare pages", "flask", () => openInternalPage("research")),
+      e("Project Memory", "brain", () => openInternalPage("memory")),
+    ],
+  });
+  sections.push({
+    entries: [
+      cmd("Bookmarks", "bookmarks", { type: "openBookmarks" }, "Ctrl+Shift+O"),
+      cmd("History", "history", { type: "openHistory" }, "Ctrl+H"),
+      cmd("Downloads", "download", { type: "openDownloads" }, "Ctrl+J"),
+      e("Bookmarks panel", "sidebar", () => togglePanel("bookmarks")),
+      e("Passwords and autofill", "key", () => openSettingsSection("passwords")),
+      e("Import from Chrome, Edge or Brave…", "import", onImport),
+      e("Clear browsing data…", "broom", openClearData),
+    ],
+  });
+  sections.push({
+    heading: "This page",
+    entries: [cmd("Find in page…", "search", { type: "find" }, "Ctrl+F", { disabled: !web })],
+  });
+  sections.push({
+    heading: "Layout",
+    entries: [
+      cmd("Bookmarks bar", "star", { type: "toggleBookmarksBar" }, "Ctrl+Shift+B", { checked: s.settings.showBookmarksBar }),
+      e("Vertical tabs", "tabsVertical", () => void update({ verticalTabs: !s.settings.verticalTabs }), { checked: s.settings.verticalTabs }),
+      e("Customize toolbar…", "sliders", () => openCustomize("toolbar")),
+      e("Customize sidebar…", "sidebar", () => openCustomize("sidebar")),
+      e("Themes and appearance…", "palette", () => openSettingsSection("appearance")),
+    ],
+  });
+  sections.push({
+    entries: [
+      cmd("Settings", "settings", { type: "openSettings" }, "Ctrl+,"),
+      cmd("Close window", "close", { type: "closeWindow" }, "Ctrl+Shift+W"),
+      cmd("Exit (close all windows)", "power", { type: "quit" }),
+    ],
+  });
+  // Zoom row on top, as in Chrome's menu.
+  const navRow: MenuEntry[] = [
+    cmd("Zoom out", "minus", { type: "zoomOut" }, "Ctrl+-", { disabled: !web }),
+    cmd(zoom, undefined, { type: "zoomReset" }, "Ctrl+0", { disabled: !web }),
+    cmd("Zoom in", "plus", { type: "zoomIn" }, "Ctrl+=", { disabled: !web }),
+    cmd("Full screen", "fullscreen", { type: "fullscreen" }, "F11"),
+  ];
+  return { model: { title: null, navRow, sections }, actions };
+}
+
+let mainMenuOpen = false;
+let mainMenuClosedAt = 0;
+
+/**
+ * Opens the main menu in the menu window under `anchor` (right edges aligned), over the live page: the page keeps
+ * running while the menu is open. Resolves false when the menu window is not available; the caller then shows the menu
+ * drawn by the shell.
+ */
+export async function openMainMenuSurface(anchor: HTMLElement, onImport: () => void, update: (patch: Partial<Settings>) => unknown): Promise<boolean> {
+  // The press on the menu button while the menu is open already dismissed it (a click outside the menu window): that
+  // click only closes the menu, as in Chrome.
+  if (mainMenuOpen || performance.now() - mainMenuClosedAt < 300) return true;
+  const { model, actions } = mainMenuModel(onImport, update);
+  const r = anchor.getBoundingClientRect();
+  mainMenuOpen = true;
+  const handle = await openPopup(model, { x: r.right, y: r.bottom + 6, alignEnd: true }, { width: 340 });
+  if (!handle) {
+    mainMenuOpen = false;
+    return false;
+  }
+  void handle.result.then((key) => {
+    mainMenuOpen = false;
+    mainMenuClosedAt = performance.now();
+    const act = key ? actions.get(key) : undefined;
+    act?.();
+  });
+  return true;
 }

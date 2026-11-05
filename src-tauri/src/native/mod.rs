@@ -875,6 +875,62 @@ pub fn show_without_focus(hwnd: isize) {
     }
 }
 
+thread_local! {
+    /// Where each full-screen browser window was before (restored when it leaves full screen). UI thread only.
+    static BEFORE_FULLSCREEN: std::cell::RefCell<std::collections::HashMap<isize, windows::Win32::UI::WindowsAndMessaging::WINDOWPLACEMENT>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// Puts browser window `hwnd` into full screen (covering its whole monitor, taskbar included) or back where it was.
+///
+/// Done here rather than through Tauri: a maximized frameless window already covers the monitor, so Tauri took it for
+/// full screen and did nothing, and Windows kept its drawable area clipped above the taskbar (a strip stayed at the
+/// bottom of full-screen videos). The window leaves the maximized state first; its placement (maximized or not, and
+/// its normal size) is put back afterwards. UI thread only.
+pub fn set_window_fullscreen(hwnd: isize, on: bool) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowPlacement, IsZoomed, SetWindowPlacement, SetWindowPos, ShowWindow, HWND_TOP, SWP_FRAMECHANGED, SWP_NOOWNERZORDER, SW_RESTORE,
+        WINDOWPLACEMENT,
+    };
+    unsafe {
+        let h = HWND(hwnd as *mut _);
+        if on {
+            let mut wp = WINDOWPLACEMENT { length: std::mem::size_of::<WINDOWPLACEMENT>() as u32, ..Default::default() };
+            if GetWindowPlacement(h, &mut wp).is_ok() {
+                BEFORE_FULLSCREEN.with(|b| {
+                    b.borrow_mut().entry(hwnd).or_insert(wp);
+                });
+            }
+            if IsZoomed(h).as_bool() {
+                let _ = ShowWindow(h, SW_RESTORE);
+            }
+            let mon = MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST);
+            let mut mi = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+            if GetMonitorInfoW(mon, &mut mi).as_bool() {
+                let r = mi.rcMonitor;
+                let _ = SetWindowPos(h, Some(HWND_TOP), r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_FRAMECHANGED | SWP_NOOWNERZORDER);
+            }
+        } else if let Some(wp) = BEFORE_FULLSCREEN.with(|b| b.borrow_mut().remove(&hwnd)) {
+            let _ = SetWindowPlacement(h, &wp);
+            let _ = SetWindowPos(
+                h,
+                None,
+                0,
+                0,
+                0,
+                0,
+                SWP_FRAMECHANGED
+                    | SWP_NOOWNERZORDER
+                    | windows::Win32::UI::WindowsAndMessaging::SWP_NOMOVE
+                    | windows::Win32::UI::WindowsAndMessaging::SWP_NOSIZE
+                    | windows::Win32::UI::WindowsAndMessaging::SWP_NOZORDER,
+            );
+        }
+    }
+}
+
 /// Hides `hwnd` (the menu window is shown natively, so Tauri's own `hide` would think it is already hidden).
 pub fn hide_window(hwnd: isize) {
     use windows::Win32::Foundation::HWND;

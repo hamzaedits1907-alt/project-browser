@@ -192,6 +192,10 @@ pub fn run() {
                 }
                 WindowEvent::Focused(true) => state.ctl.post(move |c| c.last_focused = label),
                 WindowEvent::Focused(false) => menu_surface::owner_deactivated(window.app_handle()),
+                // A page in full screen is sized from the window itself. Entering full screen resizes the window only
+                // after the page asked for it, so the page is placed again once the window has its full-screen size
+                // (it used to keep the old, taskbar-sized height: a strip stayed at the bottom of full-screen videos).
+                WindowEvent::Resized(_) => state.ctl.post_window(label, |c| c.on_window_resized()),
                 _ => {}
             }
         })

@@ -157,6 +157,9 @@ pub(crate) struct Layout {
     pub overlay: bool,
     pub element_fullscreen: Option<TabId>,
     pub browser_fullscreen: bool,
+    /// Full screen as last applied to the window. Tauri cannot be asked: a maximized frameless window covers the whole
+    /// monitor, and Tauri reports it as full screen already.
+    pub fullscreen_applied: bool,
     /// The right-click menu this window's shell is showing (its WebView2 request id).
     pub context_menu: Option<u64>,
     /// Two tabs shown side by side (see `split.rs`).

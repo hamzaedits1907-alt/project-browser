@@ -66,6 +66,11 @@ function frame() { n++; c.fillStyle = "hsl(" + ((n * 7) % 360) + " 85% 62%)"; c.
   c.fillStyle = "#000"; c.font = "48px system-ui"; c.fillText(String(n), 30, 180); requestAnimationFrame(frame); }
 requestAnimationFrame(frame);
 </script>""",
+    "/fullscreen.html": """<!doctype html><title>Full screen page</title>
+<style>html,body{margin:0;height:100%;background:#fff}#v{width:100%;height:100%;background:#0a0;display:grid;place-items:center}
+#go{position:fixed;left:0;top:0;width:100%;height:100%;font:32px system-ui;background:transparent;border:0}</style>
+<div id="v"><button id="go">Click for full screen</button></div>
+<script>document.getElementById("go").onclick = () => document.getElementById("v").requestFullscreen();</script>""",
     "/blob.html": """<!doctype html><title>Blob download</title><h1>Blob download</h1>
 <script>
 const text = %s;

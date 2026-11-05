@@ -1016,7 +1016,10 @@ html.is-menu-surface #root {
   border-radius: 0;
   box-shadow: none;
   animation: none;
-  overflow: hidden;
+  /* A menu shortened to fit under its toolbar button scrolls (the window is the menu). */
+  max-height: 100vh;
+  overflow-x: hidden;
+  overflow-y: auto;
   outline: none;
 }
 /* Keyboard highlight in the right-click menu (it never has focus, so :focus-visible cannot show it). */
@@ -1024,4 +1027,83 @@ html.is-menu-surface #root {
 .menu-surface .ctx-nav-btn.is-hot {
   background: var(--bg-3);
   color: var(--text-1);
+}
+
+/* The address bar's suggestion list in the menu window (the page underneath keeps running). */
+.surface-list {
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  background: var(--bg-2) var(--sheen);
+}
+.surface-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+.surface-row:hover,
+.surface-row.is-hot {
+  background: var(--accent-a10);
+  color: var(--text-1);
+}
+.surface-row.is-hot::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+.surface-row-icon {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  flex: none;
+  color: var(--text-3);
+}
+.surface-row-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.surface-row-title {
+  font-size: 13px;
+}
+.surface-row-detail {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.surface-row-hint {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.surface-foot {
+  display: flex;
+  gap: 14px;
+  padding: 6px 10px 2px;
+  font-size: 11px;
+  color: var(--text-3);
+  border-top: 1px solid var(--line-2);
+  margin-top: 4px;
+}
+.ctx-nav-btn.is-text {
+  width: auto;
+  min-width: 48px;
+  padding: 0 8px;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
 }

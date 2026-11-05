@@ -187,6 +187,7 @@ export const COMMANDS = [
   "save_text_file",
   "menu_surface_ready",
   "menu_present",
+  "menu_anchor",
   "menu_dismiss",
   "window_active",
   "shield_state",
@@ -225,7 +226,7 @@ export function errorMessage(e: unknown): string {
 export const api = {
   shellReady: () => call<Bootstrap>("shell_ready"),
   setLayout: (content: ContentRect, viewport: Viewport) => call("set_layout", { content, viewport }),
-  overlayOpen: () => call<ArrayBuffer | Uint8Array | string | null>("overlay_open").then(snapshotUrl),
+  overlayOpen: (takeFocus = true) => call<ArrayBuffer | Uint8Array | string | null>("overlay_open", { takeFocus }).then(snapshotUrl),
   overlayClose: (focusPage = true) => call("overlay_close", { focusPage }),
   runCommand: (command: BrowserCommand) => call("run_command", { command }),
 
@@ -387,6 +388,7 @@ export const api = {
   menuSurfaceReady: () => call("menu_surface_ready"),
   /** The menu window (only): place the rendered menu of this CSS size at the click and show it. */
   menuPresent: (width: number, height: number) => call("menu_present", { width, height }),
+  menuAnchor: (x: number, y: number, alignEnd: boolean, keyboard: boolean) => call<boolean>("menu_anchor", { x, y, alignEnd, keyboard }),
   /** The menu window (only): hide. */
   menuDismiss: () => call("menu_dismiss"),
   /** This browser window is the one Windows has in front. */

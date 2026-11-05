@@ -119,6 +119,7 @@ const COMMANDS: &[&str] = &[
     "link_clean_undo",
     "menu_surface_ready",
     "menu_present",
+    "menu_anchor",
     "menu_dismiss",
     "window_active",
     "shield_state",

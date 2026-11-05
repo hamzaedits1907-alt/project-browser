@@ -7,12 +7,20 @@ import type { MenuEntry, MenuModel } from "./model";
 export const MENU_LABEL = "ctxmenu";
 export const MENU_SHOW = "pb:menu-show";
 export const MENU_PICK = "pb:menu-pick";
+/** A shell closes the menu it showed (for example the suggestion list when the address bar loses focus). */
+export const MENU_DISMISS = "pb:menu-dismiss";
 
 export interface MenuShow {
   requestId: number;
   /** Label of the browser window the menu belongs to (where the pick goes). */
   owner: string;
   model: MenuModel;
+  /** Width in CSS pixels (the right-click menu's default when absent). */
+  width?: number;
+  /** "list": the address bar's suggestion list (rows with a second line, no menu keyboard handling). */
+  variant?: "menu" | "list";
+  /** Row highlighted by the keyboard in the owner (list variant). */
+  hot?: number;
 }
 
 export interface MenuPick {

@@ -45,7 +45,7 @@ async function openStep(): Promise<void> {
   if (!tab || isInternalUrl(tab.url)) return; // internal pages are drawn by the shell: nothing to hide
   let snapshot: string | null = null;
   try {
-    snapshot = await api.overlayOpen();
+    snapshot = await api.overlayOpen(!userIsTyping());
   } catch {
     /* the page is hidden either way; we just have no backdrop */
   }

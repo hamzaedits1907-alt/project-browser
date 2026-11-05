@@ -1,6 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 
+import { openPopup } from "../../features/contextmenu/popupMenu";
+import type { PopupHandle } from "../../features/contextmenu/popupMenu";
+import type { MenuModel } from "../../features/contextmenu/model";
 import { instantAnswer, resolveBang } from "../../features/omnibox/instant";
 import { api } from "../../lib/ipc";
 import { useOverlay } from "../../lib/overlay";
@@ -94,8 +97,14 @@ export function Omnibox() {
   const bang = useMemo(() => (focused ? resolveBang(text, getState().settings.customBangs) : null), [focused, text]);
   const extras = (instant ? 1 : 0) + (bang ? 1 : 0);
 
-  // The page is replaced by a snapshot while the address is being edited, so the suggestion list can be drawn over it.
-  const overlayReady = useOverlay(focused && suggestions.length + extras > 0);
+  // The suggestion list is drawn by the menu window over the live page (keyboard focus stays here, the page keeps
+  // running). Only when that window is not available is the list drawn here, over a still capture of the page.
+  const wantList = focused && suggestions.length + extras > 0;
+  const [fallback, setFallback] = useState(false);
+  const overlayReady = useOverlay(fallback && wantList);
+  const surface = useRef<PopupHandle | null>(null);
+  const opening = useRef(false);
+  const [, setTick] = useState(0);
 
   const idle = idleAddress(tab);
   const shown = focused ? text : idle;
@@ -117,6 +126,7 @@ export function Omnibox() {
   useEffect(() => onBus("focusOmnibox", focusInput), [focusInput]);
   useEffect(() => onBus("openSiteInfo", () => setSiteOpen(true)), []);
   useEffect(() => onBus("openFill", () => setFillOpen(true)), []);
+
 
   const query = useCallback((value: string) => {
     window.clearTimeout(timer.current);
@@ -196,9 +206,66 @@ export function Omnibox() {
       .catch(() => toast("Could not copy"));
   };
 
+
+  // A row picked in the menu window. Declared as an effect event: it reads the latest list and text.
+  const onPick = useEffectEvent((key: string, alt: boolean) => {
+    if (key === "answer") copyAnswer();
+    else if (key === "bang") commit(text, undefined, alt);
+    else {
+      const sg = suggestions[Number(key.slice(1))];
+      if (sg) commit(sg.kind === "search" ? text : sg.url, sg, alt);
+    }
+  });
+
+  useEffect(() => {
+    if (fallback) return;
+    if (!wantList) {
+      surface.current?.close();
+      surface.current = null;
+      return;
+    }
+    const rows: MenuModel["sections"][number]["entries"] = [];
+    if (instant) rows.push({ key: "answer", icon: "calculator", label: `${instant.question} = ${instant.answer}`, hint: "Copy · Ctrl+Enter" });
+    if (bang) rows.push({ key: "bang", icon: "zap", label: bang.query, hint: `Search ${bang.bang.name}` });
+    suggestions.forEach((sg, i) =>
+      rows.push({
+        key: `s${i}`,
+        icon: KIND_ICON[sg.kind],
+        label: sg.kind === "search" ? text : sg.title || sg.url,
+        detail: sg.kind !== "search" && sg.title && sg.title !== sg.url ? sg.url : undefined,
+        hint: sg.kind === "search" ? `Search ${engineLabel(settings)}` : KIND_LABEL[sg.kind],
+      }),
+    );
+    const model: MenuModel = { title: null, navRow: [], sections: [{ entries: rows }] };
+    const r = wrapRef.current?.getBoundingClientRect();
+    const width = Math.round(r?.width ?? 600);
+    const hot = selected >= 0 ? selected + extras : -1;
+    if (surface.current) {
+      surface.current.update(model, { hot, width });
+      return;
+    }
+    if (opening.current) return;
+    opening.current = true;
+    void openPopup(model, { x: r?.left ?? 0, y: (r?.bottom ?? 0) + 6, keyboard: false }, { variant: "list", width, hot }).then((h) => {
+      opening.current = false;
+      if (!h) {
+        setFallback(true);
+        return;
+      }
+      surface.current = h;
+      // Something changed while it was opening: show the latest list.
+      setTick((t) => t + 1);
+      void h.result.then((key) => {
+        if (surface.current === h) surface.current = null;
+        if (key) onPick(key, false);
+      });
+    });
+  });
+  useEffect(() => () => surface.current?.close(), []);
+
   const sec = securityIcon(tab);
   const parts = splitUrl(idle);
-  const showList = focused && overlayReady && suggestions.length + extras > 0;
+  const showList = fallback && focused && overlayReady && suggestions.length + extras > 0;
   const canBookmark = !!tab && !tab.url.startsWith("browser://") && !tab.error;
 
   return (

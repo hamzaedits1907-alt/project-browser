@@ -5,10 +5,12 @@ import { Icon } from "../../components/ui/Icon";
 import { MenuHeading, MenuItem, MenuSeparator, PopoverContext } from "../../components/ui/Popover";
 import { api } from "../../lib/ipc";
 import { applyCachedLook } from "../../lib/theme";
-import { MENU_PICK, MENU_SHOW } from "./surface";
+import { MENU_DISMISS, MENU_PICK, MENU_SHOW } from "./surface";
 import type { MenuPick, MenuShow } from "./surface";
 
 const WIDTH = 288;
+
+const allRows = (model: NonNullable<MenuShow["model"]>) => model.sections.flatMap((s) => s.entries);
 
 function items(root: HTMLElement): HTMLElement[] {
   return [...root.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled), [role="menuitemcheckbox"]:not(:disabled)')];
@@ -66,11 +68,16 @@ export function MenuSurface() {
       // A newer menu replaces one still open: the old one is answered as dismissed.
       if (current.current && current.current.requestId !== e.payload.requestId) finish(null);
       applyCachedLook();
+      const same = current.current?.requestId === e.payload.requestId;
       current.current = e.payload;
-      hot.current = -1;
+      if (!same) hot.current = -1;
       setMenu(e.payload);
     }).then(keep);
-    void listen<string>("pb:menu-dismiss", () => finish(null)).then(keep);
+    void listen<string | { requestId: number }>(MENU_DISMISS, (e) => {
+      // A shell closing its own popup names it: a newer menu shown meanwhile stays open.
+      if (typeof e.payload === "object" && e.payload && current.current?.requestId !== e.payload.requestId) return;
+      finish(null);
+    }).then(keep);
     void listen<string>("pb:menu-key", (e) => {
       const el = root.current;
       if (!el || !current.current) return;
@@ -97,13 +104,38 @@ export function MenuSurface() {
     const el = root.current;
     if (!menu || !el) return;
     const r = el.getBoundingClientRect();
-    void api.menuPresent(Math.ceil(r.width), Math.ceil(r.height)).catch(() => finish(null));
-  }, [menu, finish]);
+    if (menu.hot !== undefined) highlight(menu.hot);
+    // The full content height (the window may still have the previous, smaller menu's size).
+    void api.menuPresent(Math.ceil(r.width), Math.ceil(Math.max(r.height, el.scrollHeight))).catch(() => finish(null));
+  }, [menu, finish, highlight]);
 
   const model = menu?.model;
+  if (menu?.variant === "list" && model) {
+    const rows = allRows(model);
+    return (
+      <div ref={root} role="listbox" aria-label="Suggestions" className="popover menu-surface surface-list" style={{ width: menu.width ?? WIDTH }}>
+        {rows.map((entry) => (
+          <button key={entry.key} type="button" role="menuitem" className="surface-row" onClick={() => finish(entry.key)}>
+            <span className="surface-row-icon">{entry.icon && <Icon name={entry.icon} size={15} />}</span>
+            <span className="surface-row-text">
+              <span className="surface-row-title truncate">{entry.label}</span>
+              {entry.detail && <span className="surface-row-detail truncate">{entry.detail}</span>}
+            </span>
+            {entry.hint && <span className="surface-row-hint">{entry.hint}</span>}
+          </button>
+        ))}
+        <div className="surface-foot" aria-hidden="true">
+          <span>↑↓ choose</span>
+          <span>Enter open</span>
+          <span>Alt+Enter new tab</span>
+          <span>Esc close</span>
+        </div>
+      </div>
+    );
+  }
   return (
     <PopoverContext.Provider value={{ close: () => {} }}>
-      <div ref={root} role="menu" aria-label="Page menu" className="popover menu ctx-menu menu-surface" style={{ width: WIDTH }} onPointerMove={() => hot.current >= 0 && highlight(-1)}>
+      <div ref={root} role="menu" aria-label="Page menu" className="popover menu ctx-menu menu-surface" style={{ width: menu?.width ?? WIDTH }} onPointerMove={() => hot.current >= 0 && highlight(-1)}>
         {model && (
           <>
             {model.title && (
@@ -114,8 +146,8 @@ export function MenuSurface() {
             {model.navRow.length > 0 && (
               <div className="ctx-nav" role="group" aria-label="Navigation">
                 {model.navRow.map((n) => (
-                  <button key={n.key} type="button" role="menuitem" className="ctx-nav-btn" title={n.label} aria-label={n.label} onClick={() => finish(n.key)}>
-                    {n.icon && <Icon name={n.icon} size={17} />}
+                  <button key={n.key} type="button" role="menuitem" className={n.icon ? "ctx-nav-btn" : "ctx-nav-btn is-text"} title={n.hint ? `${n.label} (${n.hint})` : n.label} aria-label={n.label} disabled={n.disabled} onClick={() => finish(n.key)}>
+                    {n.icon ? <Icon name={n.icon} size={17} /> : n.label}
                   </button>
                 ))}
               </div>
@@ -125,7 +157,7 @@ export function MenuSurface() {
                 {(i > 0 || model.navRow.length > 0 || model.title) && <MenuSeparator />}
                 {s.heading && <MenuHeading>{s.heading}</MenuHeading>}
                 {s.entries.map((entry) => (
-                  <MenuItem key={entry.key} icon={entry.icon} label={entry.label} hint={entry.hint} checked={entry.checked} onSelect={() => finish(entry.key)} />
+                  <MenuItem key={entry.key} icon={entry.icon} label={entry.label} hint={entry.hint} checked={entry.checked} disabled={entry.disabled} onSelect={() => finish(entry.key)} />
                 ))}
               </div>
             ))}

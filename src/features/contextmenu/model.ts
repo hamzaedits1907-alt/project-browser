@@ -34,7 +34,10 @@ export interface MenuEntry {
   label: string;
   icon?: IconName;
   hint?: string;
+  /** Second line (the address under a suggestion's title). */
+  detail?: string;
   checked?: boolean;
+  disabled?: boolean;
   native?: number;
   custom?: CustomAction;
 }

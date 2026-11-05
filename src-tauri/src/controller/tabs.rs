@@ -583,10 +583,17 @@ impl Controller {
     /// `focus_page` gives keyboard focus back to the page; the shell passes false
     /// while one of its own text fields still has focus.
     pub fn set_overlay(&mut self, open: bool, focus_page: bool) {
+        self.set_overlay_focus(open, focus_page, true);
+    }
+
+    /// `set_overlay`, where `take_focus` false leaves keyboard focus alone when the page is hidden: the shell passes
+    /// false while one of its own text fields has focus already (moving focus into the shell webview again made the
+    /// field lose and regain focus, which reset what was being typed into the address bar).
+    pub fn set_overlay_focus(&mut self, open: bool, focus_page: bool, take_focus: bool) {
         if self.layout.overlay != open {
             self.layout.overlay = open;
             self.relayout();
-            if open {
+            if open && take_focus {
                 // The hidden page would otherwise keep keyboard focus: Escape and the arrow keys must reach the
                 // shell's menu (a right-click leaves focus in the page).
                 if let Some(shell) = self.app.get_webview(&self.current) {
@@ -635,11 +642,27 @@ impl Controller {
         Some(super::ContentRect { x: 0.0, y: 0.0, width: size.width as f64 / scale, height: size.height as f64 / scale })
     }
 
-    pub(crate) fn apply_window_fullscreen(&self) {
-        let want = self.layout.browser_fullscreen || self.layout.element_fullscreen.is_some();
-        if let Some(w) = self.app.get_window(&self.current) {
-            let _ = w.set_fullscreen(want);
+    /// The window changed size. Pages in full screen cover the whole window, so they follow it; everything else
+    /// follows the shell's own layout report.
+    pub fn on_window_resized(&mut self) {
+        if self.layout.element_fullscreen.is_some() || self.layout.browser_fullscreen {
+            self.relayout();
         }
+    }
+
+    pub(crate) fn apply_window_fullscreen(&mut self) {
+        let want = self.layout.browser_fullscreen || self.layout.element_fullscreen.is_some();
+        let Some(w) = self.app.get_window(&self.current) else { return };
+        if self.layout.fullscreen_applied == want {
+            return;
+        }
+        self.layout.fullscreen_applied = want;
+        log::info!("full screen: {}", if want { "on" } else { "off" });
+        if let Ok(h) = w.hwnd() {
+            let hwnd = h.0 as isize;
+            let _ = self.app.run_on_main_thread(move || crate::native::set_window_fullscreen(hwnd, want));
+        }
+        self.relayout();
     }
 
     // ---- commands -----------------------------------------------------------------

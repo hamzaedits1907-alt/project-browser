@@ -9,7 +9,8 @@ import { openDialog, togglePanel, ui } from "../../lib/ui";
 import { startScreenshot } from "../../features/dialogs/screenshotState";
 import { openImportWizard } from "../../lib/ui";
 import type { Download } from "../../lib/types";
-import { MainMenu } from "../menus/MainMenu";
+import { useSettings } from "../../lib/useSettings";
+import { MainMenu, openMainMenuSurface } from "../menus/MainMenu";
 import { darkFor, toggleDark } from "../../features/sitetools/siteprefs";
 import { trace } from "../../lib/trace";
 import { ExtensionsButton } from "../../features/extensions/ExtensionsButton";
@@ -168,6 +169,7 @@ export function Toolbar({ onShellMenu }: { onShellMenu: (x: number, y: number) =
   const items = useStore((s) => s.settings.toolbarItems);
   const menuRef = useRef<HTMLDivElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const { update: updateSettings } = useSettings();
   const web = !!tab && !tab.url.startsWith("browser://");
   const loading = !!tab?.loading;
 
@@ -203,7 +205,17 @@ export function Toolbar({ onShellMenu }: { onShellMenu: (x: number, y: number) =
         ))}
         <ExtensionsButton />
         <div ref={menuRef} className="tool-anchor">
-          <IconButton icon="dotsV" label="Menu" active={menuOpen} onPointerDown={() => trace("toolbar: menu button pressed")} onClick={() => { trace(`toolbar: menu button clicked (open: ${!menuOpen})`); setMenuOpen((o) => !o); }} />
+          <IconButton icon="dotsV" label="Menu" active={menuOpen} onPointerDown={() => trace("toolbar: menu button pressed")} onClick={() => {
+              trace(`toolbar: menu button clicked (open: ${!menuOpen})`);
+              if (menuOpen) return setMenuOpen(false);
+              const el = menuRef.current;
+              if (!el) return;
+              // Drawn by the menu window over the live page; the shell's own menu only when that window is not ready.
+              void openMainMenuSurface(el, openImportWizard, updateSettings).then((shown) => {
+                if (!shown) setMenuOpen(true);
+              });
+            }}
+          />
         </div>
       </div>
 

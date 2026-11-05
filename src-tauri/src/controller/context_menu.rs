@@ -81,18 +81,20 @@ impl Controller {
             req.items.len()
         );
         let private = tab_id.and_then(|id| self.tabs.get(id)).map(|t| t.private).unwrap_or(self.private_window);
-        let popup = crate::menu_surface::is_ready() && self.set_menu_anchor(x, y);
+        let popup = crate::menu_surface::is_ready() && self.set_menu_anchor(x, y, false, true);
         self.emit("pb:contextmenu", ContextMenuEvent { request_id: req.id, tab_id, x, y, private, target: req.target, items: req.items, popup });
     }
 
     /// Records where the menu window should open: point `(x, y)` of this window (CSS pixels) on the screen.
-    fn set_menu_anchor(&self, x: f64, y: f64) -> bool {
+    pub fn set_menu_anchor(&self, x: f64, y: f64, align_end: bool, keyboard: bool) -> bool {
         let Some(window) = self.app.get_window(&self.current) else { return false };
         let (Ok(inner), Ok(scale)) = (window.inner_position(), window.scale_factor()) else { return false };
         crate::menu_surface::set_anchor(crate::menu_surface::Anchor {
             owner: self.current.clone(),
             x: inner.x + (x * scale).round() as i32,
             y: inner.y + (y * scale).round() as i32,
+            align_end,
+            keyboard,
         });
         true
     }

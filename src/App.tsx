@@ -23,7 +23,7 @@ import { AiPanel } from "./features/ai/AiPanel";
 import { ai } from "./features/ai/aiStore";
 import { checkForUpdates } from "./features/update/updateStore";
 import { FirstRun } from "./features/firstrun/FirstRun";
-import { ScreenshotDialog, ShareDialog, ShortcutsDialog, WorkspacesDialog } from "./features/dialogs/ToolDialogs";
+import { CleanupDialog, ScreenshotDialog, ShareDialog, ShortcutsDialog, WorkspacesDialog } from "./features/dialogs/ToolDialogs";
 import { CommandPalette } from "./features/palette/CommandPalette";
 import { ReaderView } from "./features/reader/ReaderView";
 import { useHighlights, useScreenTime, useShellShortcuts, useSitePrefs } from "./features/shellHooks";
@@ -58,6 +58,12 @@ export function App() {
   useScreenTime();
   useSitePrefs();
   useHighlights();
+
+  // Energy Saver (power.rs): the shell's own animations stop while it is on.
+  const energySaver = useStore((s) => s.browser.energySaver);
+  useEffect(() => {
+    document.documentElement.classList.toggle("is-energy-saver", energySaver);
+  }, [energySaver]);
 
   // One quiet look for a new version shortly after startup (announced with a toast, never installed unasked).
   const checkUpdates = settings.checkUpdates;
@@ -147,6 +153,7 @@ export function App() {
       <ShortcutsDialog />
       <ShareDialog />
       <WorkspacesDialog />
+      <CleanupDialog />
       {firstRun && <FirstRun />}
     </div>
   );

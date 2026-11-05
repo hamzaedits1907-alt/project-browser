@@ -1125,3 +1125,78 @@
   display: flex;
   gap: 6px;
 }
+
+/* ---- Password Checkup ---- */
+.checkup-summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.checkup-summary > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px;
+  border-radius: var(--r-md);
+  background: var(--bg-2);
+}
+.checkup-summary strong {
+  font-size: 22px;
+}
+.checkup-summary span {
+  font-size: 12px;
+  color: var(--text-3);
+}
+.checkup-summary .is-bad strong {
+  color: var(--bad, #ff5d6c);
+}
+.checkup-summary .is-warn strong {
+  color: var(--warn, #ffcf5a);
+}
+.checkup-summary .is-good strong {
+  color: var(--good, #4ade80);
+}
+.checkup-problems {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.checkup-tag {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--bg-3);
+  color: var(--text-2);
+}
+.checkup-tag.is-leaked {
+  background: rgb(255 93 108 / 0.18);
+  color: #ff8b96;
+}
+.checkup-tag.is-reused {
+  background: rgb(255 207 90 / 0.16);
+  color: #ffd77a;
+}
+
+/* ---- Your own shortcuts ---- */
+.custom-shortcut-keys {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.key-recorder {
+  min-width: 96px;
+  padding: 3px 10px;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.key-recorder.is-recording {
+  border-style: solid;
+  border-color: var(--accent);
+  color: var(--accent);
+}

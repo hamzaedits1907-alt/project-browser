@@ -97,3 +97,31 @@ export async function closeToTheRight(tabs: Tab[], id: TabId): Promise<number> {
   for (const t of ids) await api.tabClose(t);
   return ids.length;
 }
+
+/** Why a tab is suggested in Tab cleanup. */
+export type CleanupReason = "duplicate" | "inactive";
+
+export interface CleanupSuggestion {
+  id: TabId;
+  reason: CleanupReason;
+  /** Days since the tab was last looked at (inactive tabs). */
+  days: number;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Tab cleanup, like Chrome's tab declutter: duplicates of another open tab, and tabs not looked at for `days` days.
+ * Pinned tabs, the active tab and tabs playing sound are never suggested. Pure.
+ */
+export function cleanupSuggestions(tabs: Tab[], activeId: TabId | null, now: number = Date.now(), days = 7): CleanupSuggestion[] {
+  const dupes = new Set(duplicateTabs(tabs, activeId));
+  const out: CleanupSuggestion[] = [];
+  for (const t of tabs) {
+    if (t.pinned || t.id === activeId || (t.audible && !t.muted)) continue;
+    const idle = Math.floor((now - (t.lastActive || now)) / DAY_MS);
+    if (dupes.has(t.id)) out.push({ id: t.id, reason: "duplicate", days: idle });
+    else if (idle >= days) out.push({ id: t.id, reason: "inactive", days: idle });
+  }
+  return out.sort((a, b) => (a.reason === b.reason ? b.days - a.days : a.reason === "duplicate" ? -1 : 1));
+}

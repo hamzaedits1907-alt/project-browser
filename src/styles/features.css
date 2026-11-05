@@ -476,3 +476,36 @@
   border-radius: 3px;
   padding: 0 2px;
 }
+
+/* ---- Tab cleanup ---- */
+.cleanup-days {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.cleanup-list {
+  max-height: 46vh;
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cleanup-list label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 4px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.cleanup-list label:hover {
+  background: var(--bg-3);
+}
+.cleanup-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}

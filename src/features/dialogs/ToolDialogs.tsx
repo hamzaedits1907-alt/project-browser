@@ -4,6 +4,7 @@ import qrcode from "qrcode-generator";
 import { Modal } from "../../components/ui/Modal";
 import { Button, Spinner } from "../../components/ui/controls";
 import { Icon } from "../../components/ui/Icon";
+import { EmptyState } from "../../components/ui/Section";
 import { hostOf } from "../../lib/format";
 import { api, errorMessage } from "../../lib/ipc";
 import { SHORTCUT_GROUPS } from "../../lib/shortcuts";
@@ -14,6 +15,7 @@ import { isInternalUrl } from "../../lib/urls";
 import { cleanLink } from "../palette/commands";
 import { getShot, startScreenshot } from "./screenshotState";
 import { deleteWorkspace, listWorkspaces, openWorkspace, saveWorkspace } from "../workspaces/workspaces";
+import { cleanupSuggestions } from "../tabtools/tabtools";
 
 // ---- Screenshot ------------------------------------------------------------------------------------
 
@@ -209,6 +211,82 @@ export function WorkspacesDialog() {
             <Button size="sm" variant="ghost" icon="trash" aria-label={`Delete ${ws.name}`} onClick={() => void deleteWorkspace(ws).catch((e) => toast(errorMessage(e)))} />
           </div>
         ))}
+      </div>
+    </Modal>
+  );
+}
+
+// ---- Tab cleanup -------------------------------------------------------------------------------------
+
+/** Tab cleanup, like Chrome's: duplicate tabs and tabs not looked at for a week, closed together after a check. */
+export function CleanupDialog() {
+  const open = ui.use((s) => s.dialog === "cleanup");
+  const tabs = useStore((s) => s.browser.tabs);
+  const activeId = useStore((s) => s.browser.activeId);
+  const [days, setDays] = useState(7);
+  const [skip, setSkip] = useState<Set<number>>(new Set());
+  const suggestions = useMemo(() => (open ? cleanupSuggestions(tabs, activeId, undefined, days) : []), [open, tabs, activeId, days]);
+  const chosen = suggestions.filter((s) => !skip.has(s.id));
+  const close = async () => {
+    const ids = chosen.map((s) => s.id);
+    for (const id of ids) await api.tabClose(id).catch(() => {});
+    closeDialog();
+    toast(`Closed ${ids.length} tab${ids.length === 1 ? "" : "s"}. Ctrl+Shift+T brings them back one by one.`);
+  };
+  return (
+    <Modal open={open} title="Tab cleanup" onClose={closeDialog} width={560}>
+      <p className="dim">Duplicate tabs and tabs you haven't looked at for a while. Pinned tabs and tabs playing sound are left alone.</p>
+      <div className="cleanup-days">
+        <span>Not used for</span>
+        {[3, 7, 14, 30].map((d) => (
+          <Button key={d} size="sm" variant={d === days ? "primary" : "ghost"} onClick={() => setDays(d)}>
+            {d} days
+          </Button>
+        ))}
+      </div>
+      {suggestions.length === 0 ? (
+        <EmptyState icon="check" title="Nothing to clean up">
+          No duplicate tabs and nothing unused for {days} days.
+        </EmptyState>
+      ) : (
+        <ul className="cleanup-list">
+          {suggestions.map((s) => {
+            const t = tabs.find((x) => x.id === s.id);
+            if (!t) return null;
+            return (
+              <li key={s.id}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={!skip.has(s.id)}
+                    onChange={() =>
+                      setSkip((old) => {
+                        const n = new Set(old);
+                        if (n.has(s.id)) n.delete(s.id);
+                        else n.add(s.id);
+                        return n;
+                      })
+                    }
+                  />
+                  <span className="cleanup-text">
+                    <span className="truncate">{t.title || t.url}</span>
+                    <span className="dim small truncate">
+                      {hostOf(t.url)} · {s.reason === "duplicate" ? "Open in another tab too" : `Not used for ${s.days} days`}
+                    </span>
+                  </span>
+                </label>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <div className="row-actions">
+        <Button variant="ghost" onClick={closeDialog}>
+          Cancel
+        </Button>
+        <Button icon="broom" disabled={chosen.length === 0} onClick={() => void close()}>
+          Close {chosen.length} tab{chosen.length === 1 ? "" : "s"}
+        </Button>
       </div>
     </Modal>
   );

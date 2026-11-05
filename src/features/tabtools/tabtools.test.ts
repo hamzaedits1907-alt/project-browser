@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Tab } from "../../lib/types";
-import { comparableUrl, duplicateTabs, linksAsMarkdown, siteGroups, sortedBySite, tabsToTheRight } from "./tabtools";
+import { cleanupSuggestions, comparableUrl, duplicateTabs, linksAsMarkdown, siteGroups, sortedBySite, tabsToTheRight } from "./tabtools";
 
 let next = 1;
 function tab(url: string, extra: Partial<Tab> = {}): Tab {
@@ -66,5 +66,24 @@ describe("tab tools", () => {
     expect(tabsToTheRight([a, b, c], a.id)).toEqual([c.id]);
     expect(tabsToTheRight([a, b, c], 999)).toEqual([]);
     expect(linksAsMarkdown([c, tab("browser://newtab")])).toBe("- [C beta](https://c.example/)");
+  });
+});
+
+describe("tab cleanup", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const now = 100 * DAY;
+  it("suggests duplicates first, then tabs unused for a week, never pinned, active or playing tabs", () => {
+    const active = tab("https://a.test/", { lastActive: now });
+    const dupe = tab("https://a.test/", { lastActive: now - DAY });
+    const old = tab("https://old.test/", { lastActive: now - 10 * DAY });
+    const fresh = tab("https://fresh.test/", { lastActive: now - 2 * DAY });
+    const pinned = tab("https://pin.test/", { lastActive: now - 30 * DAY, pinned: true });
+    const playing = tab("https://music.test/", { lastActive: now - 30 * DAY, audible: true });
+    const s = cleanupSuggestions([active, dupe, old, fresh, pinned, playing], active.id, now);
+    expect(s.map((x) => [x.id, x.reason])).toEqual([
+      [dupe.id, "duplicate"],
+      [old.id, "inactive"],
+    ]);
+    expect(s[1]?.days).toBe(10);
   });
 });

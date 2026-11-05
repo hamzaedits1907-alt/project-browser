@@ -139,6 +139,123 @@ pub fn map_key(vk: u32, m: Mods) -> Option<Command> {
     }
 }
 
+// ---- the user's own shortcuts (Settings > Keyboard shortcuts) ----------------------------------------------------
+
+/// Commands the user can give a shortcut of their own, by the names the settings use.
+pub const CUSTOMIZABLE: &[&str] = &[
+    "newTab",
+    "newPrivateTab",
+    "newWindow",
+    "newPrivateWindow",
+    "closeTab",
+    "reopenTab",
+    "nextTab",
+    "prevTab",
+    "commandPalette",
+    "focusOmnibox",
+    "reload",
+    "hardReload",
+    "back",
+    "forward",
+    "find",
+    "bookmarkPage",
+    "toggleBookmarksBar",
+    "openHistory",
+    "openDownloads",
+    "openBookmarks",
+    "openSettings",
+    "openPerformance",
+    "openGaming",
+    "toggleGamingMode",
+    "screenshot",
+    "readerMode",
+    "toggleSplit",
+    "devTools",
+    "fullscreen",
+    "zoomIn",
+    "zoomOut",
+    "zoomReset",
+];
+
+/// The command a customizable name stands for.
+pub fn command_by_name(name: &str) -> Option<Command> {
+    if !CUSTOMIZABLE.contains(&name) {
+        return None;
+    }
+    serde_json::from_value(serde_json::json!({ "type": name })).ok()
+}
+
+/// Reads keys like "Ctrl+Shift+K", "Alt+F5" or "F8". A shortcut needs Ctrl or Alt unless it is a function key, so it
+/// never takes a key away from typing. Pure.
+pub fn parse_keys(text: &str) -> Option<(Mods, u32)> {
+    let mut m = Mods::default();
+    let mut vk = None;
+    for part in text.split('+').map(str::trim).filter(|p| !p.is_empty()) {
+        match part.to_ascii_lowercase().as_str() {
+            "ctrl" | "control" => m.ctrl = true,
+            "shift" => m.shift = true,
+            "alt" => m.alt = true,
+            other => {
+                if vk.is_some() {
+                    return None;
+                }
+                vk = Some(match other {
+                    k if k.len() == 1 && k.as_bytes()[0].is_ascii_alphanumeric() => k.to_ascii_uppercase().as_bytes()[0] as u32,
+                    k if k.starts_with('f') && k[1..].parse::<u32>().is_ok_and(|n| (1..=12).contains(&n)) => VK_F1 + k[1..].parse::<u32>().ok()? - 1,
+                    "," | "comma" => VK_OEM_COMMA,
+                    "-" | "minus" => VK_OEM_MINUS,
+                    "=" | "plus" => VK_OEM_PLUS,
+                    "." | "period" => 0xBE,
+                    "/" | "slash" => 0xBF,
+                    ";" => 0xBA,
+                    "[" => 0xDB,
+                    "]" => 0xDD,
+                    "left" | "arrowleft" => VK_LEFT,
+                    "right" | "arrowright" => VK_RIGHT,
+                    "up" | "arrowup" => 0x26,
+                    "down" | "arrowdown" => 0x28,
+                    "pageup" => VK_PRIOR,
+                    "pagedown" => VK_NEXT,
+                    "home" => 0x24,
+                    "end" => 0x23,
+                    "insert" => 0x2D,
+                    "delete" => 0x2E,
+                    _ => return None,
+                });
+            }
+        }
+    }
+    let vk = vk?;
+    let function_key = (VK_F1..=VK_F1 + 11).contains(&vk);
+    (function_key || m.ctrl || m.alt).then_some((m, vk))
+}
+
+static OVERRIDES: std::sync::RwLock<Vec<(Mods, u32, Command)>> = std::sync::RwLock::new(Vec::new());
+
+/// Applies the user's shortcuts (unknown commands and unreadable keys are skipped).
+pub fn set_overrides(list: &[crate::settings::ShortcutOverride]) {
+    let parsed: Vec<(Mods, u32, Command)> = list
+        .iter()
+        .filter_map(|o| {
+            let (m, vk) = parse_keys(&o.keys)?;
+            Some((m, vk, command_by_name(&o.command)?))
+        })
+        .collect();
+    if let Ok(mut w) = OVERRIDES.write() {
+        *w = parsed;
+    }
+}
+
+/// `map_key`, with the user's own shortcuts first.
+pub fn map_key_with_overrides(vk: u32, m: Mods) -> Option<Command> {
+    if let Ok(r) = OVERRIDES.read() {
+        if let Some((_, _, cmd)) = r.iter().find(|(om, ov, _)| *om == m && *ov == vk) {
+            return Some(*cmd);
+        }
+    }
+    map_key(vk, m)
+}
+
 /// Chrome's zoom ladder.
 pub const ZOOM_STEPS: &[f64] = &[0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0];
 
@@ -159,6 +276,22 @@ mod tests {
     const A: Mods = Mods { ctrl: false, shift: false, alt: true };
     const NONE: Mods = Mods { ctrl: false, shift: false, alt: false };
     const S: Mods = Mods { ctrl: false, shift: true, alt: false };
+
+    #[test]
+    fn own_shortcuts_are_read_and_win_over_the_defaults() {
+        assert_eq!(parse_keys("Ctrl+Shift+K"), Some((CS, key(b'K'))));
+        assert_eq!(parse_keys("F8"), Some((NONE, VK_F1 + 7)));
+        assert_eq!(parse_keys("alt + left"), Some((A, VK_LEFT)));
+        assert_eq!(parse_keys("K"), None, "a plain letter would take the key away from typing");
+        assert_eq!(parse_keys("Ctrl+K+L"), None);
+        assert_eq!(command_by_name("closeTab"), Some(Command::CloseTab));
+        assert_eq!(command_by_name("quit"), None);
+        set_overrides(&[crate::settings::ShortcutOverride { command: "openHistory".into(), keys: "Ctrl+T".into() }]);
+        assert_eq!(map_key_with_overrides(key(b'T'), C), Some(Command::OpenHistory));
+        assert_eq!(map_key_with_overrides(key(b'H'), C), Some(Command::OpenHistory), "the default stays too");
+        set_overrides(&[]);
+        assert_eq!(map_key_with_overrides(key(b'T'), C), Some(Command::NewTab));
+    }
 
     #[test]
     fn tab_shortcuts() {

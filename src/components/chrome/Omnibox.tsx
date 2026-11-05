@@ -5,6 +5,7 @@ import { openPopup } from "../../features/contextmenu/popupMenu";
 import type { PopupHandle } from "../../features/contextmenu/popupMenu";
 import type { MenuModel } from "../../features/contextmenu/model";
 import { instantAnswer, resolveBang } from "../../features/omnibox/instant";
+import { inScope, parseScope, scopeHints } from "../../features/omnibox/scopes";
 import { api } from "../../lib/ipc";
 import { useOverlay } from "../../lib/overlay";
 import { SEARCH_ENGINES, engineLabel } from "../../lib/settings";
@@ -136,13 +137,26 @@ export function Omnibox() {
       setSelected(-1);
       return;
     }
+    const hints = scopeHints(value);
+    if (hints.length) {
+      setSuggestions(hints);
+      setSelected(0);
+      return;
+    }
+    const scope = parseScope(value);
+    if (scope && !scope.query) {
+      setSuggestions([]);
+      setSelected(-1);
+      return;
+    }
     timer.current = window.setTimeout(() => {
       api
-        .suggest(value)
+        .suggest(scope ? scope.query : value)
         .then((list) => {
           if (mine !== seq.current) return;
-          setSuggestions(list);
-          setSelected(-1);
+          const shown = scope ? inScope(list, scope.kind) : list;
+          setSuggestions(shown);
+          setSelected(scope && shown.length ? 0 : -1);
         })
         .catch(() => {
           if (mine === seq.current) setSuggestions([]);
@@ -154,6 +168,19 @@ export function Omnibox() {
 
   const commit = (value: string, suggestion?: Suggestion, newTab = false) => {
     const input = inputRef.current;
+    // A scope hint fills in the scope and keeps the address bar open for the words.
+    if (suggestion && suggestion.url.startsWith("@") && suggestion.kind === "url") {
+      setText(suggestion.url);
+      query(suggestion.url);
+      input?.focus();
+      return;
+    }
+    // A scoped search ("@tabs …") only ever opens one of its results, never a web search for the text.
+    if (!suggestion && parseScope(value)) {
+      const first = suggestions[0];
+      if (first) commit(first.kind === "search" ? value : first.url, first, newTab);
+      return;
+    }
     setSuggestions([]);
     const viaBang = !suggestion ? resolveBang(value, getState().settings.customBangs) : null;
     if (suggestion?.tabId != null) {

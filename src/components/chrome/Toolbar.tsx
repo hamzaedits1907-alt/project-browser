@@ -10,6 +10,7 @@ import { startScreenshot } from "../../features/dialogs/screenshotState";
 import { openImportWizard } from "../../lib/ui";
 import type { Download } from "../../lib/types";
 import { useSettings } from "../../lib/useSettings";
+import { openSettingsSection } from "../../lib/ui";
 import { MainMenu, openMainMenuSurface } from "../menus/MainMenu";
 import { darkFor, toggleDark } from "../../features/sitetools/siteprefs";
 import { trace } from "../../lib/trace";
@@ -170,6 +171,7 @@ export function Toolbar({ onShellMenu }: { onShellMenu: (x: number, y: number) =
   const menuRef = useRef<HTMLDivElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const { update: updateSettings } = useSettings();
+  const energySaver = useStore((s) => s.browser.energySaver);
   const web = !!tab && !tab.url.startsWith("browser://");
   const loading = !!tab?.loading;
 
@@ -203,6 +205,9 @@ export function Toolbar({ onShellMenu }: { onShellMenu: (x: number, y: number) =
         {items.map((id) => (
           <ToolbarItem key={id} id={id} />
         ))}
+        {energySaver && (
+          <IconButton icon="leaf" label="Energy Saver is on: background tabs sleep sooner and animations are off. Click for settings." className="energy-btn" onClick={() => openSettingsSection("performance")} />
+        )}
         <ExtensionsButton />
         <div ref={menuRef} className="tool-anchor">
           <IconButton icon="dotsV" label="Menu" active={menuOpen} onPointerDown={() => trace("toolbar: menu button pressed")} onClick={() => {

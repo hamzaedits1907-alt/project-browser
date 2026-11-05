@@ -8,7 +8,7 @@ import { hostOf } from "../../lib/format";
 import { api } from "../../lib/ipc";
 import { attempt, toast } from "../../lib/store";
 import { useLoad } from "../../lib/useLoad";
-import type { LoginSummary } from "../../lib/types";
+import type { CheckupReport, LoginSummary } from "../../lib/types";
 import { filterLogins, usedText } from "../../lib/vault";
 
 export function Passwords() {
@@ -81,6 +81,8 @@ export function Passwords() {
         )}
       </Card>
 
+      {all.length > 0 && <Checkup />}
+
       <Card title="Saved addresses" subtitle="Addresses brought over from another browser, stored encrypted. Used to fill empty name, address, e-mail and phone fields when you ask.">
         {profiles.error && <Notice tone="bad">{profiles.error}</Notice>}
         {(profiles.data ?? []).length === 0 && !profiles.loading ? (
@@ -119,5 +121,80 @@ export function Passwords() {
         )}
       </Modal>
     </>
+  );
+}
+
+const PROBLEM_TEXT = { leaked: "Found in a data breach", reused: "Used on more than one site", weak: "Weak" } as const;
+
+/** Password Checkup, like Chrome's: weak, reused and leaked saved passwords. */
+function Checkup() {
+  const [report, setReport] = useState<CheckupReport | null>(null);
+  const [busy, setBusy] = useState(false);
+  const run = async (breaches: boolean) => {
+    setBusy(true);
+    const r = await attempt(() => api.passwordCheckup(breaches), "Could not check the passwords");
+    setBusy(false);
+    if (r) setReport(r);
+  };
+  const count = (p: "leaked" | "reused" | "weak") => report?.items.filter((i) => i.problems.includes(p)).length ?? 0;
+  return (
+    <Card
+      title="Password Checkup"
+      subtitle="Finds saved passwords that are weak, used on more than one site, or known from data breaches. Your passwords never leave this computer: for the breach check only the first 5 characters of each password's hash are sent to Have I Been Pwned."
+      actions={
+        <>
+          <Button variant="ghost" disabled={busy} onClick={() => void run(false)}>Check here only</Button>
+          <Button icon="shieldCheck" disabled={busy} onClick={() => void run(true)}>{busy ? "Checking…" : "Check passwords"}</Button>
+        </>
+      }
+    >
+      {report && (
+        <>
+          {report.breachError && <Notice tone="warn">{report.breachError}</Notice>}
+          <div className="checkup-summary">
+            <div className={count("leaked") ? "is-bad" : "is-good"}>
+              <strong>{report.breachesChecked ? count("leaked") : "–"}</strong>
+              <span>leaked</span>
+            </div>
+            <div className={count("reused") ? "is-warn" : "is-good"}>
+              <strong>{count("reused")}</strong>
+              <span>reused</span>
+            </div>
+            <div className={count("weak") ? "is-warn" : "is-good"}>
+              <strong>{count("weak")}</strong>
+              <span>weak</span>
+            </div>
+            <div>
+              <strong>{report.checked}</strong>
+              <span>checked</span>
+            </div>
+          </div>
+          {report.items.length === 0 ? (
+            <Notice tone="good">No problems found.{report.breachesChecked ? "" : " (Leaks were not checked.)"}</Notice>
+          ) : (
+            <ul className="login-list">
+              {report.items.map((i) => (
+                <li key={i.id}>
+                  <div className="login-main">
+                    <strong className="truncate" data-selectable>{hostOf(i.origin)}</strong>
+                    <span className="dim truncate">{i.username || "(no user name)"}</span>
+                  </div>
+                  <span className="checkup-problems">
+                    {i.problems.map((p) => (
+                      <span key={p} className={`checkup-tag is-${p}`} title={p === "weak" && i.weakReason ? i.weakReason : p === "leaked" ? `Seen ${i.leakCount.toLocaleString()} times in breaches` : undefined}>
+                        {PROBLEM_TEXT[p]}
+                      </span>
+                    ))}
+                  </span>
+                  <Button size="sm" variant="ghost" icon="external" onClick={() => void attempt(() => api.tabNew(i.displayUrl || i.origin))}>
+                    Change it
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </Card>
   );
 }

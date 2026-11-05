@@ -21,7 +21,7 @@ export const ui = createStore({
   /** Bumped when something asks Settings to show a section (an already open Settings page follows it). */
   settingsJump: { section: "", n: 0 },
   /** Shell dialogs and full-page views opened from the Command Center, menus and shortcuts. */
-  dialog: null as null | "palette" | "reader" | "screenshot" | "shortcuts" | "share" | "workspaces",
+  dialog: null as null | "palette" | "reader" | "screenshot" | "shortcuts" | "share" | "workspaces" | "cleanup",
 });
 
 export type ShellDialog = NonNullable<ReturnType<typeof ui.get>["dialog"]>;

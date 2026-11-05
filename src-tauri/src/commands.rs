@@ -1870,6 +1870,112 @@ pub async fn save_url(url: String, referrer: Option<String>) -> Result<String> {
     Ok(path.to_string_lossy().into_owned())
 }
 
+/// Password Checkup: weak, reused and (when `breaches` is true) leaked saved passwords. See password_checkup.rs.
+#[tauri::command]
+pub async fn password_checkup(
+    s: State<'_, AppState>,
+    vault_state: State<'_, VaultState>,
+    breaches: bool,
+) -> Result<crate::password_checkup::CheckupReport> {
+    use crate::password_checkup::{parse_range, sha1_hex, weakness, CheckupItem, CheckupReport};
+    let records = s
+        .ctl
+        .call(|c| -> Result<Vec<crate::db::vault::LoginRecord>> {
+            let mut out = Vec::new();
+            for l in c.db.logins_list()? {
+                if let Some(r) = c.db.login_get(l.id)? {
+                    out.push(r);
+                }
+            }
+            Ok(out)
+        })
+        .await??;
+    let sealer = vault_state.sealer.clone();
+    // Opening the passwords and hashing them: off the async threads. Plain text lives only inside this closure.
+    let rows: Vec<(crate::db::vault::LoginRecord, Option<String>, Option<String>)> = tauri::async_runtime::spawn_blocking(move || {
+        records
+            .into_iter()
+            .map(|r| match crate::vault::open_password(sealer.as_ref(), &r) {
+                Ok(secret) => {
+                    let weak = weakness(secret.expose(), &r.username);
+                    let hash = sha1_hex(secret.expose());
+                    (r, weak, hash)
+                }
+                Err(_) => (r, None, None),
+            })
+            .collect()
+    })
+    .await
+    .map_err(|e| Error::msg(e.to_string()))?;
+
+    let mut uses: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for (_, _, h) in &rows {
+        if let Some(h) = h {
+            *uses.entry(h.clone()).or_default() += 1;
+        }
+    }
+    let mut leaks: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
+    let mut breach_error = None;
+    if breaches && !rows.is_empty() {
+        crate::ai::ensure_crypto_provider();
+        let client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(8))
+            .timeout(std::time::Duration::from_secs(20))
+            .user_agent(concat!("ProjectBrowser/", env!("CARGO_PKG_VERSION"), " password-checkup"))
+            .build()
+            .map_err(|e| Error::msg(e.to_string()))?;
+        let prefixes: std::collections::BTreeSet<String> = uses.keys().map(|h| h[..5].to_string()).collect();
+        for prefix in prefixes {
+            let reply = client.get(format!("https://api.pwnedpasswords.com/range/{prefix}")).header("Add-Padding", "true").send().await;
+            match reply {
+                Ok(r) if r.status().is_success() => {
+                    let body = r.text().await.unwrap_or_default();
+                    for (suffix, count) in parse_range(&body) {
+                        leaks.insert(format!("{prefix}{suffix}"), count);
+                    }
+                }
+                Ok(r) => {
+                    breach_error = Some(format!("The breach check answered {}.", r.status()));
+                    break;
+                }
+                Err(_) => {
+                    breach_error = Some("The breach check could not be reached (offline?). Weak and reused passwords were still checked.".into());
+                    break;
+                }
+            }
+        }
+    }
+    let checked = rows.len();
+    let mut items: Vec<CheckupItem> = rows
+        .into_iter()
+        .filter_map(|(r, weak, hash)| {
+            let mut problems = Vec::new();
+            let leak_count = hash.as_ref().and_then(|h| leaks.get(h)).copied().unwrap_or(0);
+            if leak_count > 0 {
+                problems.push("leaked".to_string());
+            }
+            if hash.as_ref().is_some_and(|h| uses.get(h).copied().unwrap_or(0) > 1) {
+                problems.push("reused".to_string());
+            }
+            if weak.is_some() {
+                problems.push("weak".to_string());
+            }
+            (!problems.is_empty()).then_some(CheckupItem {
+                id: r.id,
+                origin: r.origin,
+                display_url: r.display_url,
+                username: r.username,
+                problems,
+                weak_reason: weak,
+                leak_count,
+            })
+        })
+        .collect();
+    items.sort_by_key(|i| (!i.problems.contains(&"leaked".to_string()), !i.problems.contains(&"reused".to_string()), i.origin.clone()));
+    log::info!("password checkup: {checked} checked, {} with problems", items.len());
+    Ok(CheckupReport { checked, breaches_checked: breaches && breach_error.is_none(), breach_error, items })
+}
+
 /// A small picture of tab `tab_id` for its hover card (JPEG bytes; empty when there is none). The tab in front is
 /// captured fresh; others give the picture kept when they went to the background.
 #[tauri::command]
@@ -2435,6 +2541,7 @@ macro_rules! all_commands {
             $crate::commands::zapper_pick,
             $crate::commands::site_controls,
             $crate::commands::tab_thumbnail,
+            $crate::commands::password_checkup,
             $crate::commands::site_control_set,
             $crate::commands::site_css,
             $crate::commands::save_url,

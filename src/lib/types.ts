@@ -55,6 +55,7 @@ export interface BrowserState {
   fullscreen: boolean;
   browserFullscreen: boolean;
   gaming: boolean;
+  energySaver: boolean;
   /** This window holds private tabs only and is never saved. */
   privateWindow: boolean;
   windowCount: number;
@@ -977,4 +978,21 @@ export interface TextHit {
 export interface SiteControl {
   blockScripts: boolean;
   muted: boolean;
+}
+
+export interface CheckupItem {
+  id: number;
+  origin: string;
+  displayUrl: string;
+  username: string;
+  problems: ("weak" | "reused" | "leaked")[];
+  weakReason: string | null;
+  leakCount: number;
+}
+
+export interface CheckupReport {
+  checked: number;
+  breachesChecked: boolean;
+  breachError: string | null;
+  items: CheckupItem[];
 }

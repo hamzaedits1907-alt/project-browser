@@ -229,6 +229,8 @@ pub struct BrowserState {
     pub fullscreen: bool,
     pub browser_fullscreen: bool,
     pub gaming: bool,
+    /// Energy Saver is on now (power.rs): the shell stops its animations.
+    pub energy_saver: bool,
     /// This window holds private tabs only.
     pub private_window: bool,
     pub window_count: usize,
@@ -462,6 +464,7 @@ impl Controller {
         crate::native::devtools::set_docking(init.settings.devtools_dock != crate::settings::DevtoolsDock::Window);
         crate::native::set_global_privacy_control(init.settings.global_privacy_control);
         crate::native::page_features::set(page_switches(&init.settings));
+        crate::shortcuts::set_overrides(&init.settings.shortcut_overrides);
         crate::native::page_features::set_site_controls(init.db.kv_get(crate::commands::SITE_CONTROLS_KEY).ok().flatten().unwrap_or_default());
         crate::native::set_clean_exceptions(init.settings.clean_links_exceptions.clone());
         crate::native::set_popup_policy(
@@ -723,6 +726,7 @@ impl Controller {
             fullscreen: self.layout.browser_fullscreen || self.layout.element_fullscreen.is_some(),
             browser_fullscreen: self.layout.browser_fullscreen,
             gaming: self.settings.gaming_mode,
+            energy_saver: crate::power::active(self.settings.energy_saver),
             private_window: self.private_window,
             window_count: self.window_order.len(),
             split: self.layout.split,
@@ -1004,6 +1008,7 @@ impl Controller {
         crate::native::set_download_ask(next.download_ask);
         crate::native::set_global_privacy_control(next.global_privacy_control);
         crate::native::page_features::set(page_switches(&next));
+        crate::shortcuts::set_overrides(&next.shortcut_overrides);
         if prev.index_page_text && !next.index_page_text {
             // Switched off: the kept page text goes too.
             let _ = self.db.clear_page_text();

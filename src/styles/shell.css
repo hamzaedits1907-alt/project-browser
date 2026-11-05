@@ -1965,3 +1965,15 @@
   border-radius: var(--r-sm);
   border: 1px solid var(--line-1);
 }
+
+/* ---- Energy Saver: the shell's own animations stop ---- */
+html.is-energy-saver *,
+html.is-energy-saver *::before,
+html.is-energy-saver *::after {
+  animation-duration: 0s !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0s !important;
+}
+.energy-btn {
+  color: #4ade80;
+}

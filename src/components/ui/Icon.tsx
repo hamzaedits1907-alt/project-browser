@@ -46,6 +46,7 @@ const PATHS = {
   mute: "M4 10v4h3.5L12 18V6L7.5 10zM16 9.5l5 5M21 9.5l-5 5",
   sound: "M4 10v4h3.5L12 18V6L7.5 10zM16 9.5a4 4 0 010 5",
   moon: "M20 14.5A8 8 0 019.5 4a8 8 0 1010.5 10.5z",
+  leaf: "M5 19c0-8 5-13 15-14-1 10-6 15-14 15M5 19l7-7",
   pin: "M9 4h6l-1 6 3 3H7l3-3zM12 13v7",
   pinFilled: "M9 4h6l-1 6 3 3H7l3-3zM12 13v7",
   copy: "M9 9h10v11H9zM5 15V4h10",

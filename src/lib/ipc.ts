@@ -31,6 +31,7 @@ import type {
   ClearOptions,
   ContentRect,
   PageMediaItem,
+  CheckupReport,
   SiteControl,
   TextHit,
   DetectedProfile,
@@ -199,6 +200,7 @@ export const COMMANDS = [
   "zapper_pick",
   "site_controls",
   "tab_thumbnail",
+  "password_checkup",
   "site_control_set",
   "site_css",
   "save_url",
@@ -402,6 +404,7 @@ export const api = {
   menuSurfaceReady: () => call("menu_surface_ready"),
   /** The menu window (only): place the rendered menu of this CSS size at the click and show it. */
   menuPresent: (width: number, height: number) => call("menu_present", { width, height }),
+  passwordCheckup: (breaches: boolean) => call<CheckupReport>("password_checkup", { breaches }),
   tabThumbnail: (tabId: number) => call<ArrayBuffer | Uint8Array | string | null>("tab_thumbnail", { tabId }).then(snapshotUrl),
   siteControls: () => call<{ [site: string]: SiteControl }>("site_controls"),
   siteControlSet: (site: string, control: SiteControl) => call("site_control_set", { site, control }),

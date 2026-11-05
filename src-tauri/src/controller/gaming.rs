@@ -65,12 +65,20 @@ impl Controller {
 
     /// Periodic check that puts idle background tabs to sleep.
     pub(crate) fn sleep_tick(&mut self) {
+        if crate::power::changed(crate::power::active(self.settings.energy_saver)) {
+            log::info!("energy saver: {}", if crate::power::active(self.settings.energy_saver) { "on" } else { "off" });
+            self.each_window(|c| c.mark_state());
+        }
         self.each_window(|c| c.sleep_tick_window());
     }
 
     fn sleep_tick_window(&mut self) {
         let now = now_ms();
-        let timeout_ms = if self.settings.gaming_mode { GAMING_BACKGROUND_GRACE_MS } else { self.settings.sleep_after_minutes as i64 * 60_000 };
+        let mut minutes = self.settings.sleep_after_minutes;
+        if crate::power::active(self.settings.energy_saver) {
+            minutes = minutes.min(crate::power::SLEEP_MINUTES);
+        }
+        let timeout_ms = if self.settings.gaming_mode { GAMING_BACKGROUND_GRACE_MS } else { minutes as i64 * 60_000 };
         let action = if self.settings.gaming_mode { self.settings.gaming_background_action } else { BackgroundTabAction::Sleep };
         let ids = sleep_policy::idle_sleepers(&self.tab_facts(), now, timeout_ms, self.settings.protect_pinned_tabs);
         for id in ids {

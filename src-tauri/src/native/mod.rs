@@ -32,7 +32,7 @@ use windows::Win32::System::Com::{IStream, STATFLAG_NONAME, STATSTG, STREAM_SEEK
 use windows::Win32::UI::Input::KeyboardAndMouse::GetKeyState;
 
 use crate::controller::ControllerHandle;
-use crate::shortcuts::{map_key, Mods};
+use crate::shortcuts::Mods;
 use crate::tabs::TabId;
 
 #[derive(Clone)]
@@ -339,7 +339,7 @@ unsafe fn hook_accelerators(controller: &ICoreWebView2Controller, ctl: &Controll
                 args.SetHandled(true)?;
                 return Ok(());
             }
-            if let Some(cmd) = map_key(vk, current_mods()) {
+            if let Some(cmd) = crate::shortcuts::map_key_with_overrides(vk, current_mods()) {
                 args.SetHandled(true)?;
                 match &origin {
                     AccelOrigin::Tab(id) => ctl.post_tab(*id, move |c| c.run_command(cmd)),

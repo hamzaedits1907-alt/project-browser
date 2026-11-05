@@ -140,6 +140,21 @@ export function General() {
         </SettingRow>
       </Card>
 
+      <Card title="Mouse, video and history" subtitle="Helpers that work on every page. Changes apply to tabs opened afterwards.">
+        <SettingRow title="Mouse gestures" description="Hold the right mouse button and draw: left = back, right = forward, up then down = reload, down then right = close tab, down then left = reopen closed tab, up = new tab, up-left / up-right = previous / next tab.">
+          <Toggle label="Mouse gestures" checked={settings.mouseGestures} onChange={(mouseGestures) => void update({ mouseGestures })} />
+        </SettingRow>
+        <SettingRow title="Video speed keys" description="On any video: S slower, D faster, R normal speed, Z back 10 seconds, X forward 10 seconds.">
+          <Toggle label="Video speed keys" checked={settings.videoKeys} onChange={(videoKeys) => void update({ videoKeys })} />
+        </SettingRow>
+        <SettingRow title="Automatic picture-in-picture" description="A video playing with sound keeps playing in a small window when you switch to another tab, and comes back when you return.">
+          <Toggle label="Automatic picture-in-picture" checked={settings.autoPip} onChange={(autoPip) => void update({ autoPip })} />
+        </SettingRow>
+        <SettingRow title="Search inside visited pages" description="Keeps the words of pages you visit (normal tabs only, on this computer) so History can find a page by what it said. Turning it off deletes what was kept.">
+          <Toggle label="Search inside visited pages" checked={settings.indexPageText} onChange={(indexPageText) => void update({ indexPageText })} />
+        </SettingRow>
+      </Card>
+
       <Card title="Downloads">
         <SettingRow title="Save files to" description={settings.downloadDir ? "Custom folder" : "Your Windows Downloads folder"} stacked>
           <div className="inline-form">

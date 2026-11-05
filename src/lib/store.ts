@@ -42,6 +42,7 @@ const EMPTY_BROWSER: BrowserState = {
   fullscreen: false,
   browserFullscreen: false,
   gaming: false,
+    energySaver: false,
   privateWindow: false,
   windowCount: 1,
   split: null,

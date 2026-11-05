@@ -128,6 +128,7 @@ const COMMANDS: &[&str] = &[
     "zapper_pick",
     "site_controls",
     "tab_thumbnail",
+    "password_checkup",
     "site_control_set",
     "site_css",
     "save_url",

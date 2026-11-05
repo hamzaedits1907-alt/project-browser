@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { Button, Segmented, Slider, Toggle } from "../../components/ui/controls";
+import type { EnergySaver } from "../../lib/types";
 import { Card, SettingRow } from "../../components/ui/Section";
 import { MEMORY_SAVER, memorySaverLevel, parseHostList } from "../../lib/settings";
 import type { MemorySaverLevel } from "../../lib/settings";
@@ -30,6 +31,22 @@ export function PerformanceSettings() {
             onChange={(level) => {
               if (level !== "custom") void update(MEMORY_SAVER[level]);
             }}
+          />
+        </SettingRow>
+      </Card>
+
+      <Card title="Energy Saver" subtitle="Like Chrome's: saves battery. While it is on, background tabs sleep after 5 minutes at most and the browser's own animations stop. A leaf in the toolbar shows when it is on.">
+        <SettingRow title="Turn Energy Saver on">
+          <Segmented<EnergySaver>
+            label="Energy Saver"
+            value={settings.energySaver}
+            options={[
+              { value: "off", label: "Never" },
+              { value: "lowBattery", label: "Battery at 20 % or less" },
+              { value: "battery", label: "On battery" },
+              { value: "always", label: "Always" },
+            ]}
+            onChange={(energySaver) => void update({ energySaver })}
           />
         </SettingRow>
       </Card>

@@ -1,4 +1,4 @@
-# Chrome feature parity (0.6.0)
+# Chrome feature parity (1.0.0)
 
 Project Browser is **not** equivalent to Chrome and does not claim to be. This matrix says, feature by feature, what exists,
 what has actually been checked, and what is missing or impossible on this engine (WebView2). Use it to decide what to build
@@ -128,3 +128,24 @@ facts, not measurements.
 | Strong password generator | Tested (generator) | Right-click a field. |
 | Cookies and site data per site | Built, unverified in a window | Site information panel; delete clears cookies and storage. |
 | Tab tear-off feedback | Probed (tear-off still works) | A card follows the pointer outside the window. |
+
+## 1.0.0 additions
+
+| Capability | Status | Notes |
+|---|---|---|
+| Address bar typing with live suggestions | Probed in the real app | Suggestions in the menu window; focus never moves. |
+| Main menu over a live page | Probed in the real app | Menu window, right-aligned under its button, scrolls when tall. |
+| Popovers over a live page | CI-probed (popup-probe) | Window region holes in the page host window. |
+| Page full screen on a maximized window | Probed in the real app | Applied natively; placement restored. |
+| HTTPS-Only Mode, Do Not Track, clear cookies on exit | Tested (logic) | |
+| Fingerprinting protection, cookie-banner blocker | Built, unverified in a window | Document-created scripts. |
+| Mouse gestures, video speed keys, auto picture-in-picture | Built, unverified in a window | |
+| Site settings (JavaScript, sound) | Built, unverified in a window | |
+| Tab hover cards | Built, unverified in a window | WinRT-shrunk captures, 30 kept. |
+| Highlighter, copy link to highlight | Built, unverified in a window | CSS Custom Highlight API. |
+| Copy text from image | Built, unverified in a window | Windows.Media.Ocr. |
+| Full-text history | Tested (FTS5) | |
+| Element zapper, page media panel | Built, unverified in a window | |
+| Password Checkup | Tested (logic) | HIBP k-anonymity range API. |
+| Tab cleanup, address-bar scopes, own shortcuts, Energy Saver | Tested (logic) | |
+| AI actions: 33 tools | Tested (planner, checks) | |

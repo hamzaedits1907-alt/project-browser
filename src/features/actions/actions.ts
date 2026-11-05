@@ -13,6 +13,8 @@
 import type { AiChatMessage, Bookmark, MemoryDraft, MemoryItem, PageSnapshotView } from "../../lib/types";
 import { extractJson } from "../research/provenance";
 import { fenceSafe, hostOf, oneLine } from "../research/sources";
+import { MORE_TOOLS, runMoreTool } from "./moreTools";
+import type { BrowserOps, MoreToolName } from "./moreTools";
 
 export type ToolName =
   | "open_pages"
@@ -23,16 +25,20 @@ export type ToolName =
   | "compare_tabs"
   | "save_to_memory"
   | "restyle_page"
-  | "undo_restyle";
+  | "undo_restyle"
+  | MoreToolName;
 
 /** What a step does that the user should know about before confirming. */
-export type Effect = "loads-web" | "sends-page" | "changes-view" | "saves-memory" | "none";
+export type Effect = "loads-web" | "sends-page" | "changes-view" | "changes-tabs" | "closes-tabs" | "saves-memory" | "uses-ai" | "none";
 
 export const EFFECT_LABEL: Record<Effect, string> = {
   "loads-web": "Opens web pages",
   "sends-page": "Sends this page's text to NVIDIA",
   "changes-view": "Changes how this page looks (local)",
-  "saves-memory": "Saves to Project Memory (local)",
+  "changes-tabs": "Switches or arranges tabs",
+  "closes-tabs": "Closes tabs (Ctrl+Shift+T brings them back)",
+  "saves-memory": "Saves in the browser (local)",
+  "uses-ai": "Asks the AI (no page is sent)",
   none: "Reads only",
 };
 
@@ -110,7 +116,7 @@ export function checkPageCss(css: unknown): { ok: true; css: string } | { ok: fa
   return { ok: true, css };
 }
 
-const TOOLS: Record<ToolName, ToolSpec> = {
+const BASE_TOOLS = {
   open_pages: {
     effect: "loads-web",
     help: 'args: { "urls": [up to 8 full https:// addresses] }. Opens each in a new background tab.',
@@ -201,7 +207,9 @@ const TOOLS: Record<ToolName, ToolSpec> = {
     check: () => ok({}),
     describe: () => "Undo the page style change",
   },
-};
+} satisfies Record<string, ToolSpec>;
+
+const TOOLS: Record<ToolName, ToolSpec> = { ...BASE_TOOLS, ...MORE_TOOLS };
 
 export const TOOL_NAMES = Object.keys(TOOLS) as ToolName[];
 
@@ -276,7 +284,12 @@ export function parsePlan(reply: string): PlanOutcome {
 
 /** Steps that can't run in the current context, with the reason: the page-reading and page-changing tools need a web page that isn't private. */
 export function stepBlocker(step: Step, context: PageContext): string | null {
-  const needsPage = step.tool === "summarize_page" || step.tool === "extract_from_page" || step.tool === "restyle_page" || step.tool === "undo_restyle";
+  const needsPage =
+    step.tool === "summarize_page" ||
+    step.tool === "extract_from_page" ||
+    step.tool === "restyle_page" ||
+    step.tool === "undo_restyle" ||
+    !!(MORE_TOOLS as Record<string, { needsPage?: boolean }>)[step.tool]?.needsPage;
   if (!needsPage) return null;
   if (context === "private") return "this page is in a private tab, which the assistant never reads or changes";
   if (context !== "web") return "there is no web page open to work on";
@@ -303,6 +316,8 @@ export interface ActionDeps {
   ask: (system: string, messages: AiChatMessage[], maxTokens: number) => { promise: Promise<string>; cancel: () => void };
   setStyle: (tabId: number, css: string | null) => Promise<boolean>;
   openResearch: (question: string) => void;
+  /** Tabs, history, page tools and the other browser abilities of the newer tools (moreTools.ts). */
+  browser?: BrowserOps;
   /** The user's context limit, in characters. */
   maxContext: number;
 }
@@ -405,6 +420,33 @@ async function runStep(step: Step, deps: ActionDeps, canceller: Canceller, previ
       if (!tab || !tab.web) throw new Error("There is no web page open to work on.");
       await deps.setStyle(tab.id, null);
       return { status: "done", text: "Removed the page style." };
+    }
+    default: {
+      const ops = deps.browser;
+      if (!ops) throw new Error("This browser can't do that step.");
+      const askWith = async (system: string, messages: AiChatMessage[]) => {
+        const handle = deps.ask(system, messages, 2000);
+        canceller.attach(handle.cancel);
+        try {
+          return (await handle.promise).trim();
+        } finally {
+          canceller.attach(null);
+        }
+      };
+      const text = await runMoreTool(step.tool, a, {
+        ops,
+        active: deps.active(),
+        previous,
+        askPage: async (request) => {
+          const { snapshot } = await readActive(deps);
+          return askWith(pageSystem("You read the page and answer the request."), pageMessages(snapshot, request));
+        },
+        askPlain: (request) =>
+          askWith("You write text for a user of a web browser: emails, messages, lists, summaries. Write clearly and naturally in the user's language. Output only the text.", [
+            { role: "user", content: request },
+          ]),
+      });
+      return { status: "done", text };
     }
   }
 }

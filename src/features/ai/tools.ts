@@ -36,3 +36,15 @@ export const EXTRACT_DATA = "Extract the key structured data from this page (nam
 
 export const CITED_SUMMARY =
   "Summarize this page in a few bullet points. After each point, quote the exact words from the page that support it, in quotation marks. Do not include a point you cannot quote, and do not add anything the page doesn't say.";
+
+/** More one-click requests for the chat (each one sends the current page, like the others). */
+export const PAGE_PRESETS: { label: string; title: string; prompt: string }[] = [
+  { label: "TL;DR", title: "The page in three sentences", prompt: "Give me the gist of this page in at most three sentences." },
+  { label: "Key takeaways", title: "What to remember from the page", prompt: "List the 5 most important takeaways from this page, each in one line." },
+  { label: "Explain simply", title: "The page as if for a 12-year-old", prompt: "Explain what this page is about in simple words, as if to a 12-year-old. Keep it short." },
+  { label: "Pros and cons", title: "Arguments for and against", prompt: "From this page, list the pros and cons (or arguments for and against) of what it discusses, as two short lists. Only use what the page says." },
+  { label: "Action items", title: "Things to do from the page", prompt: "List the concrete actions, steps or to-dos this page asks for or describes, as a checklist. If there are none, say so." },
+  { label: "Quiz me", title: "Five questions to test what you read", prompt: "Write 5 short quiz questions about this page, with the answers listed after all the questions." },
+  { label: "Fact check", title: "Claims to double-check", prompt: "List the main factual claims this page makes. For each, say whether the page gives a source or evidence for it. Don't judge whether they are true; just show what is backed and what is not." },
+  { label: "Reply draft", title: "Draft a reply to this message or post", prompt: "Draft a short, friendly reply to the message, email or post on this page. Give only the reply." },
+];

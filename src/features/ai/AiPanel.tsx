@@ -6,7 +6,7 @@ import { Icon } from "../../components/ui/Icon";
 import { api } from "../../lib/ipc";
 import { ActionsTab } from "../actions/ActionsTab";
 import { draftFromAnswer } from "../memory/memory";
-import { CITED_SUMMARY, EXPLAIN_SELECTION, EXTRACT_DATA, LANGUAGES, defaultLanguage, translateSelection } from "./tools";
+import { CITED_SUMMARY, EXPLAIN_SELECTION, EXTRACT_DATA, LANGUAGES, PAGE_PRESETS, defaultLanguage, translateSelection } from "./tools";
 import { writeLocal } from "../../lib/storage";
 import { activeTab, attempt, toast, useStore } from "../../lib/store";
 import { isInternalUrl } from "../../lib/urls";
@@ -216,7 +216,12 @@ export function AiPanel() {
             </span>
             <button type="button" className="chip" disabled={!pageAvailable || streaming} title="Pull names, numbers and dates out of the page" onClick={() => sendWithPage(EXTRACT_DATA)}>Extract data</button>
             <button type="button" className="chip" disabled={!pageAvailable || streaming} title="Summary where every point quotes the page" onClick={() => sendWithPage(CITED_SUMMARY)}>Cited summary</button>
-            <button type="button" className="chip" onClick={() => setView("act")} title="Change how the page looks, locally and reversibly">Restyle page…</button>
+            {PAGE_PRESETS.map((p) => (
+              <button key={p.label} type="button" className="chip" disabled={!pageAvailable || streaming} title={p.title} onClick={() => sendWithPage(p.prompt)}>
+                {p.label}
+              </button>
+            ))}
+            <button type="button" className="chip" onClick={() => setView("act")} title="Let the assistant do things in the browser: tabs, history, pages, notes and more (you confirm each plan)">Do it for me…</button>
           </div>
         )}
         <label className="ai-page-toggle">

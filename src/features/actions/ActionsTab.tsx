@@ -11,6 +11,9 @@ const EFFECT_TONE: Record<Effect, "neutral" | "accent" | "warn" | "good"> = {
   "loads-web": "warn",
   "sends-page": "warn",
   "changes-view": "accent",
+  "changes-tabs": "accent",
+  "closes-tabs": "warn",
+  "uses-ai": "neutral",
   "saves-memory": "neutral",
   none: "neutral",
 };
@@ -22,6 +25,12 @@ const EXAMPLES = [
   "Summarize this page and save it to my memory",
   "Find all route names on this page",
   "Make this page dark with bigger text",
+  "Close all my YouTube tabs and group the rest by site",
+  "What did that article I read last week about solar panels say? Open it",
+  "Translate this page into German and copy it",
+  "Write a polite email declining this invitation and copy it",
+  "Highlight the price on this page and add it to my Reading List",
+  "Start a 50 minute focus session and open my notes",
 ];
 
 /**

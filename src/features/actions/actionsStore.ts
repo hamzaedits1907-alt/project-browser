@@ -8,6 +8,14 @@ import { ask, AskError } from "../ai/ask";
 import { setQuestion } from "../research/researchStore";
 import { Canceller, addHistory, historyEntry, parsePlan, plannerMessages, plannerSystem, runPlan, stepBlocker } from "./actions";
 import type { ActionDeps, ActiveTabInfo, HistoryEntry, PageContext, Plan, StepOutcome } from "./actions";
+import type { BrowserOps } from "./moreTools";
+import { startScreenshot } from "../dialogs/screenshotState";
+import { startSession } from "../focus/focus";
+import { addHighlight } from "../highlights/highlights";
+import { addToReadingList } from "../panels/ReadingList";
+import { DARK_CSS, updatePrefs } from "../sitetools/siteprefs";
+import { closeDuplicates, groupBySite } from "../tabtools/tabtools";
+import { togglePanel, ui } from "../../lib/ui";
 
 export interface ActionsState {
   phase: "idle" | "planning" | "review" | "running" | "done" | "error";
@@ -62,7 +70,59 @@ export function liveDeps(maxContext: number): ActionDeps {
       setQuestion(question);
       void api.tabNew("browser://research");
     },
+    browser: liveBrowserOps(),
     maxContext,
+  };
+}
+
+/** What the newer AI tools may do in the browser (moreTools.ts). Each is an existing shell feature. */
+export function liveBrowserOps(): BrowserOps {
+  const tabs = () => getState().browser.tabs;
+  return {
+    tabs: () => tabs().map((t) => ({ id: t.id, title: t.title, url: t.url, pinned: t.pinned, audible: t.audible, private: t.private })),
+    activate: (id) => api.tabActivate(id),
+    close: async (ids) => {
+      let n = 0;
+      for (const id of ids) if (await api.tabClose(id).then(() => true, () => false)) n++;
+      return n;
+    },
+    closeDuplicates: () => closeDuplicates(tabs(), getState().browser.activeId),
+    groupBySite: () => groupBySite(tabs()),
+    historySearch: (q) => api.historyQuery(q, undefined, 30),
+    historyText: (q) => api.historyTextSearch(q),
+    search: (q, isPrivate) => api.tabNew(q, isPrivate),
+    bookmarkActive: async () => {
+      const t = activeTab(getState());
+      if (t && !t.bookmarked) await api.bookmarkToggle(t.id);
+    },
+    readingList: (url, title) => addToReadingList(url, title),
+    highlight: (tabId, url, title, text) => addHighlight(tabId, url, title, text, false),
+    find: async (text) => {
+      await api.runCommand({ type: "find" });
+      await api.findQuery(text, false);
+    },
+    zoom: (tabId, factor) => api.zoom("set", factor, tabId),
+    darkPage: async (tabId, on) => {
+      const t = tabs().find((x) => x.id === tabId);
+      if (!t) return;
+      updatePrefs(t.url, { dark: on });
+      await api.pageStyle(tabId, on ? DARK_CSS : null, on);
+    },
+    screenshot: (full) => startScreenshot(full),
+    reader: () => api.runCommand({ type: "readerMode" }),
+    mute: (tabId, on) => api.tabMute(tabId, on),
+    focus: (minutes) => void startSession(minutes),
+    note: (text) => {
+      const old = readLocal<string>("notes.all", "");
+      writeLocal("notes.all", `${old ? `${old}
+
+` : ""}${text}`);
+    },
+    openPanel: (panel) => {
+      if (ui.get().panel !== panel) togglePanel(panel);
+    },
+    copy: (text) => navigator.clipboard.writeText(text),
+    pageMedia: (tabId) => api.pageMedia(tabId),
   };
 }
 

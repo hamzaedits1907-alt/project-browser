@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { AiChatMessage, Bookmark, MemoryDraft, MemoryItem, PageSnapshotView } from "../../lib/types";
 import { Canceller, HISTORY_LIMIT, MAX_STEPS, TOOL_NAMES, addHistory, checkPageCss, checkWebUrl, describeStep, effectOf, historyEntry, isLocalHost, pageMessages, parsePlan, plannerMessages, plannerSystem, runPlan, stepBlocker } from "./actions";
 import type { ActionDeps, ActiveTabInfo, Plan, Step } from "./actions";
+import { runMoreTool } from "./moreTools";
+import type { BrowserOps } from "./moreTools";
 
 const plan = (steps: unknown[], summary = "s") => JSON.stringify({ summary, steps });
 
@@ -35,7 +37,7 @@ describe("what a plan may contain", () => {
   it("offers no tool for the shell, files, forms, downloads, passwords or cookies", () => {
     const names = TOOL_NAMES.join(" ");
     expect(names).not.toMatch(/shell|powershell|exec|file|form|submit|download|password|cookie|login|fill/);
-    expect(TOOL_NAMES).toHaveLength(9);
+    expect(TOOL_NAMES).toHaveLength(33);
   });
 
   it("rejects addresses that aren't public web pages", () => {
@@ -281,5 +283,52 @@ describe("action history", () => {
     for (let i = 0; i < HISTORY_LIMIT + 10; i++) list = addHistory(list, historyEntry(`r${i}`, p, [], i));
     expect(list).toHaveLength(HISTORY_LIMIT);
     expect(list[0]!.request).toBe(`r${HISTORY_LIMIT + 9}`);
+  });
+});
+
+describe("the newer browser tools", () => {
+  it("are offered to the planner and checked like the others", () => {
+    const sys = plannerSystem("web");
+    for (const t of ["close_tabs", "search_history", "write_text", "translate_page", "start_focus"]) expect(sys).toContain(t);
+    const good = parsePlan(JSON.stringify({ summary: "s", steps: [{ tool: "set_zoom", args: { percent: 150 } }, { tool: "open_panel", args: { panel: "notes" } }] }));
+    expect(good.ok).toBe(true);
+    expect(parsePlan(JSON.stringify({ summary: "s", steps: [{ tool: "set_zoom", args: { percent: 9000 } }] })).ok).toBe(false);
+    expect(parsePlan(JSON.stringify({ summary: "s", steps: [{ tool: "open_panel", args: { panel: "settings" } }] })).ok).toBe(false);
+    expect(parsePlan(JSON.stringify({ summary: "s", steps: [{ tool: "start_focus", args: { minutes: 1 } }] })).ok).toBe(false);
+  });
+
+  it("never closes pinned tabs or the current tab", async () => {
+    const closed: number[][] = [];
+    const tabsList = [
+      { id: 1, title: "YouTube - one", url: "https://youtube.com/a", pinned: false, audible: false, private: false },
+      { id: 2, title: "YouTube - two", url: "https://youtube.com/b", pinned: true, audible: false, private: false },
+      { id: 3, title: "YouTube - three", url: "https://youtube.com/c", pinned: false, audible: false, private: false },
+      { id: 4, title: "News", url: "https://news.test/", pinned: false, audible: false, private: false },
+    ];
+    const ops = new Proxy({} as BrowserOps, {
+      get: (_t, name) =>
+        name === "tabs"
+          ? () => tabsList
+          : name === "close"
+            ? async (ids: number[]) => {
+                closed.push(ids);
+                return ids.length;
+              }
+            : () => {
+                throw new Error(`unexpected ${String(name)}`);
+              },
+    });
+    const text = await runMoreTool("close_tabs", { query: "youtube" }, { ops, active: { id: 3, url: "https://youtube.com/c", title: "", private: false, web: true }, previous: null, askPage: async () => "", askPlain: async () => "" });
+    expect(closed).toEqual([[1]]);
+    expect(text).toContain("Closed 1 tab");
+  });
+
+  it("refuse page tools in private tabs and use the previous result for copy and notes", async () => {
+    expect(stepBlocker({ tool: "translate_page", args: { language: "German" }, why: "" }, "private")).toMatch(/private/);
+    expect(stepBlocker({ tool: "search_history", args: { query: "x" }, why: "" }, "private")).toBeNull();
+    let copied = "";
+    const ops = { copy: async (t: string) => void (copied = t) } as unknown as BrowserOps;
+    await runMoreTool("copy_to_clipboard", {}, { ops, active: null, previous: "earlier answer", askPage: async () => "", askPlain: async () => "" });
+    expect(copied).toBe("earlier answer");
   });
 });

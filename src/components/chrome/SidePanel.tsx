@@ -199,10 +199,7 @@ function HistoryPanel() {
   // Full-text history: pages whose words match, beyond titles and addresses.
   const [hits, setHits] = useState<TextHit[]>([]);
   useEffect(() => {
-    if (q.trim().length < 3) {
-      setHits([]);
-      return;
-    }
+    if (q.trim().length < 3) return;
     let live = true;
     const t = setTimeout(() => {
       api
@@ -225,7 +222,7 @@ function HistoryPanel() {
         </label>
       </div>
       <div className="panel-body">
-        {hits.length > 0 && (
+        {q.trim().length >= 3 && hits.length > 0 && (
           <section>
             <div className="eyebrow panel-heading">Found inside pages</div>
             {hits.map((h) => (

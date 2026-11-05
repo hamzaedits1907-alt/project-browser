@@ -1870,6 +1870,78 @@ pub async fn save_url(url: String, referrer: Option<String>) -> Result<String> {
     Ok(path.to_string_lossy().into_owned())
 }
 
+/// A small picture of tab `tab_id` for its hover card (JPEG bytes; empty when there is none). The tab in front is
+/// captured fresh; others give the picture kept when they went to the background.
+#[tauri::command]
+pub async fn tab_thumbnail(app: AppHandle, s: State<'_, AppState>, tab_id: TabId) -> Result<tauri::ipc::Response> {
+    let live = s.ctl.call_tab(tab_id, move |c| c.active_live_tab() == Some(tab_id)).await.unwrap_or(false);
+    if live {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        app.run_on_main_thread(move || native::thumbs::capture(tab_id, Some(tx)))?;
+        if let Ok(Ok(Some(b))) = tokio::time::timeout(std::time::Duration::from_secs(3), rx).await {
+            return Ok(tauri::ipc::Response::new(b));
+        }
+    }
+    Ok(tauri::ipc::Response::new(native::thumbs::get(tab_id).unwrap_or_default()))
+}
+
+/// Site controls (site information panel): all of them, keyed by site.
+#[tauri::command]
+pub async fn site_controls(s: State<'_, AppState>) -> Result<std::collections::HashMap<String, native::page_features::SiteControl>> {
+    s.ctl.call(|c| c.db.kv_get(SITE_CONTROLS_KEY).ok().flatten().unwrap_or_default()).await
+}
+
+pub const SITE_CONTROLS_KEY: &str = "site_controls";
+
+/// Sets (or with both switches off, removes) the controls of `site`, and applies them at once to its open tabs:
+/// JavaScript changes reload them, sound changes mute or unmute them.
+#[tauri::command]
+pub async fn site_control_set(s: State<'_, AppState>, site: String, control: native::page_features::SiteControl) -> Result<()> {
+    let site = site.trim().trim_start_matches("www.").to_ascii_lowercase();
+    if site.is_empty() || site.len() > 253 || !site.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-') {
+        return Err(Error::msg("That isn't a site name."));
+    }
+    s.ctl
+        .call(move |c| -> Result<()> {
+            let mut map: std::collections::HashMap<String, native::page_features::SiteControl> =
+                c.db.kv_get(SITE_CONTROLS_KEY).ok().flatten().unwrap_or_default();
+            let before = map.get(&site).cloned().unwrap_or_default();
+            if control == native::page_features::SiteControl::default() {
+                map.remove(&site);
+            } else {
+                map.insert(site.clone(), control.clone());
+            }
+            c.db.kv_set(SITE_CONTROLS_KEY, &map)?;
+            native::page_features::set_site_controls(map);
+            c.apply_site_control(&site, &before, &control);
+            Ok(())
+        })
+        .await?
+}
+
+/// Element zapper: lets the user click something on the page and returns a CSS selector for it (None: cancelled).
+#[tauri::command]
+pub async fn zapper_pick(app: AppHandle, tab_id: TabId) -> Result<Option<String>> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.run_on_main_thread(move || native::page_features::evaluate_await(tab_id, include_str!("native/zapper.js"), tx))?;
+    let value = tokio::time::timeout(std::time::Duration::from_secs(130), rx).await.ok().and_then(|r| r.ok()).flatten();
+    Ok(value.and_then(|v| v.as_str().map(|s| s.chars().take(500).collect())))
+}
+
+/// Puts the browser's own style sheet `css` (id `pb-site-css`: hidden elements) into tab `tab_id`'s page.
+#[tauri::command]
+pub async fn site_css(app: AppHandle, tab_id: TabId, css: String) -> Result<()> {
+    if css.len() > 100_000 {
+        return Err(Error::msg("Too many hidden elements on this site."));
+    }
+    let text = serde_json::to_string(&css).map_err(|e| Error::msg(e.to_string()))?;
+    let script = format!(
+        "(()=>{{let s=document.getElementById('pb-site-css');if(!s){{s=document.createElement('style');s.id='pb-site-css';(document.head||document.documentElement).appendChild(s)}}s.textContent={text}}})()"
+    );
+    app.run_on_main_thread(move || native::exec_script(tab_id, script))?;
+    Ok(())
+}
+
 /// Full-text history: pages whose text contains the words (newest text of each address).
 #[tauri::command]
 pub async fn history_text_search(s: State<'_, AppState>, query: String) -> Result<Vec<crate::db::pagetext::TextHit>> {
@@ -2360,6 +2432,11 @@ macro_rules! all_commands {
             $crate::commands::tab_highlights,
             $crate::commands::page_media,
             $crate::commands::history_text_search,
+            $crate::commands::zapper_pick,
+            $crate::commands::site_controls,
+            $crate::commands::tab_thumbnail,
+            $crate::commands::site_control_set,
+            $crate::commands::site_css,
             $crate::commands::save_url,
             $crate::commands::menu_present,
             $crate::commands::menu_dismiss,

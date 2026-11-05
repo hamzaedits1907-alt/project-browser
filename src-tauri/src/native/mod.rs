@@ -13,6 +13,7 @@ pub mod metrics;
 pub mod ocr;
 pub mod page_features;
 pub mod site_data;
+pub mod thumbs;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -402,6 +403,15 @@ unsafe fn install_tab_inner(id: TabId, pw: &PlatformWebview, ctl: &ControllerHan
                 page_features::note_upgrade(id, &secure, &uri);
                 c.post_tab(id, move |ctl| ctl.on_https_upgrade(id, secure));
                 return Ok(());
+            }
+            if let Some(wv) = sender.as_ref() {
+                if (uri.starts_with("http://") || uri.starts_with("https://")) && page_features::sync_scripts(wv, &uri) {
+                    // JavaScript was switched on or off for this site: load it again so the change applies.
+                    args.SetCancel(true)?;
+                    let again = uri.clone();
+                    c.post_tab(id, move |ctl| ctl.on_https_upgrade(id, again));
+                    return Ok(());
+                }
             }
             if let Some(clean) = link_clean_target(id, &uri) {
                 // Cancelled here, loaded again without the tracking parameters (the controller navigates).
@@ -1122,6 +1132,7 @@ pub fn downloads_folder() -> Option<PathBuf> {
 }
 
 pub fn remove_tab(id: TabId) {
+    thumbs::forget(id);
     context_menu::forget(&context_menu::MenuOwner::Tab(id));
     TABS.with(|t| t.borrow_mut().remove(&id));
     TOP_HOST.with(|t| t.borrow_mut().remove(&id));

@@ -4,7 +4,9 @@ import type { RefObject } from "react";
 import { api } from "../../lib/ipc";
 import { useLoad } from "../../lib/useLoad";
 import { attempt, toast } from "../../lib/store";
-import type { Tab } from "../../lib/types";
+import type { SiteControl, Tab } from "../../lib/types";
+import { siteKey } from "../../features/sitetools/siteprefs";
+import { clearZapRules, startZapper, zapRulesFor } from "../../features/zapper/zapper";
 import { hostOf, permissionName } from "../../lib/format";
 import { originOf } from "../../lib/urls";
 import { Icon } from "../ui/Icon";
@@ -69,6 +71,7 @@ export function SitePanel({ tab, open, onClose, anchor }: { tab: Tab | null; ope
           )}
         </div>
       )}
+      {origin && /^https?:/.test(origin) && <SiteControls tab={tab} open={open} />}
       {origin && /^https?:/.test(origin) && <SiteData tab={tab} open={open} />}
       {!tab.url.startsWith("browser://") && (
         <div className="site-section site-zoom">
@@ -83,6 +86,62 @@ export function SitePanel({ tab, open, onClose, anchor }: { tab: Tab | null; ope
         </div>
       )}
     </Popover>
+  );
+}
+
+/** Per-site switches (JavaScript, sound) and the elements hidden on this site with the element zapper. */
+function SiteControls({ tab, open }: { tab: Tab; open: boolean }) {
+  const site = siteKey(tab.url);
+  const controls = useLoad(() => api.siteControls(), open ? "site-controls" : null);
+  const [, setTick] = useState(0);
+  const zapped = zapRulesFor(tab.url);
+  if (!site) return null;
+  const current: SiteControl = controls.data?.[site] ?? { blockScripts: false, muted: false };
+  const set = async (patch: Partial<SiteControl>) => {
+    await attempt(() => api.siteControlSet(site, { ...current, ...patch }), "Could not change the site's settings");
+    controls.reload();
+  };
+  return (
+    <div className="site-section">
+      <h4>Settings for {site}</h4>
+      <div className="perm-row">
+        <span>JavaScript</span>
+        <Select
+          label="JavaScript on this site"
+          value={current.blockScripts ? "block" : "allow"}
+          options={[
+            { value: "allow", label: "Allow" },
+            { value: "block", label: "Block" },
+          ]}
+          onChange={(v) => void set({ blockScripts: v === "block" })}
+        />
+      </div>
+      <div className="perm-row">
+        <span>Sound</span>
+        <Select
+          label="Sound on this site"
+          value={current.muted ? "mute" : "allow"}
+          options={[
+            { value: "allow", label: "Allow" },
+            { value: "mute", label: "Always muted" },
+          ]}
+          onChange={(v) => void set({ muted: v === "mute" })}
+        />
+      </div>
+      <div className="perm-row">
+        <span>{zapped.length === 0 ? "No hidden elements" : `${zapped.length} hidden element${zapped.length === 1 ? "" : "s"}`}</span>
+        <div className="row-actions">
+          <Button size="sm" variant="ghost" icon="eyeOff" onClick={() => void startZapper(tab)}>
+            Hide one…
+          </Button>
+          {zapped.length > 0 && (
+            <Button size="sm" variant="ghost" icon="eye" onClick={() => void clearZapRules(tab).then(() => setTick((t) => t + 1))}>
+              Show all
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 

@@ -11,6 +11,7 @@ import { isInternalUrl } from "../lib/urls";
 import { startScreenshot } from "./dialogs/screenshotState";
 import { addUsage, blockReason, loadConfig, loadUsage, saveUsage, siteOf } from "./focus/focus";
 import { applyHighlights, highlightsFor } from "./highlights/highlights";
+import { applyZapRules, zapRulesFor } from "./zapper/zapper";
 import { DARK_CSS, darkFor, prefsFor, siteKey, updatePrefs } from "./sitetools/siteprefs";
 
 const TICK_S = 5;
@@ -103,7 +104,7 @@ export function useShellShortcuts(): void {
   }, []);
 }
 
-/** Marks a page's saved highlights each time it finishes loading (any tab of this window). */
+/** Marks a page's saved highlights and hides its zapped elements each time it finishes loading (any tab of this window). */
 export function useHighlights(): void {
   useEffect(() => {
     const seen = new Map<number, string>();
@@ -114,6 +115,7 @@ export function useHighlights(): void {
         if (seen.get(tab.id) === key) continue;
         seen.set(tab.id, key);
         if (highlightsFor(tab.url).length > 0) void applyHighlights(tab.id, tab.url);
+        if (zapRulesFor(tab.url).length > 0) void applyZapRules(tab.id, tab.url);
       }
     });
   }, []);

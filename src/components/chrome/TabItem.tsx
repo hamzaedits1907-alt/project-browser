@@ -68,7 +68,7 @@ function TabItemView({ tab, active, groupColor, shift, dragged, torn, dropBefore
         shift !== 0 && !dragged && "is-shifting",
       )}
       style={style}
-      title={status.length ? `${title}\n${status.join(" · ")}` : title}
+      aria-label={status.length ? `${title}, ${status.join(", ")}` : title}
       // A press starts a possible drag; the tab is activated on release if it was a click (useTabDrag), so dragging a
       // background tab never switches to it.
       onPointerDown={(e) => onPointerDown(tab, e)}

@@ -257,6 +257,27 @@ fn evaluate_with_gesture(id: TabId, script: &str, then: impl FnOnce(bool) + 'sta
     }
 }
 
+/// Runs `script` in tab `id`'s page, waits for the promise it returns, and replies with its JSON value. UI thread.
+pub fn evaluate_await(id: TabId, script: &str, reply: tokio::sync::oneshot::Sender<Option<serde_json::Value>>) {
+    let Some(wv) = crate::native::tab_webview(id) else {
+        let _ = reply.send(None);
+        return;
+    };
+    let params = serde_json::json!({ "expression": script, "awaitPromise": true, "returnByValue": true }).to_string();
+    unsafe {
+        let _ = wv.CallDevToolsProtocolMethod(
+            windows::core::w!("Runtime.evaluate"),
+            &HSTRING::from(params),
+            &CallDevToolsProtocolMethodCompletedHandler::create(Box::new(move |res, json| {
+                let value =
+                    res.ok().and_then(|_| serde_json::from_str::<serde_json::Value>(&json).ok()).and_then(|v| v.pointer("/result/value").cloned());
+                let _ = reply.send(value);
+                Ok(())
+            })),
+        );
+    }
+}
+
 /// Tab `id` (playing sound) was left: its video goes picture-in-picture. UI thread.
 pub fn auto_pip_enter(id: TabId) {
     evaluate_with_gesture(id, PIP_ENTER, move |ok| {
@@ -271,6 +292,67 @@ pub fn auto_pip_enter(id: TabId) {
 pub fn auto_pip_leave(id: TabId) {
     if AUTO_PIP.with(|s| s.borrow_mut().remove(&id)) {
         evaluate_with_gesture(id, PIP_LEAVE, |_| {});
+    }
+}
+
+// ---- site controls ------------------------------------------------------------------------------------------------
+
+/// Per-site choices from the site information panel (site -> control), set by the controller.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SiteControl {
+    /// JavaScript is switched off on this site.
+    pub block_scripts: bool,
+    /// Tabs on this site start muted.
+    pub muted: bool,
+}
+
+static SITE_CONTROLS: Mutex<Option<HashMap<String, SiteControl>>> = Mutex::new(None);
+
+pub fn set_site_controls(map: HashMap<String, SiteControl>) {
+    if let Ok(mut m) = SITE_CONTROLS.lock() {
+        *m = Some(map);
+    }
+}
+
+/// The site key used for site controls: the host without "www.".
+pub fn site_of(url: &str) -> Option<String> {
+    let u = url::Url::parse(url).ok()?;
+    if u.scheme() != "http" && u.scheme() != "https" {
+        return None;
+    }
+    Some(u.host_str()?.trim_start_matches("www.").to_ascii_lowercase())
+}
+
+/// The control for `url`'s site (also matching parent domains: a choice for example.com covers www.example.com).
+pub fn control_for(url: &str) -> SiteControl {
+    let Some(host) = site_of(url) else { return SiteControl::default() };
+    let Ok(m) = SITE_CONTROLS.lock() else { return SiteControl::default() };
+    let Some(map) = m.as_ref() else { return SiteControl::default() };
+    let mut h = host.as_str();
+    loop {
+        if let Some(c) = map.get(h) {
+            return c.clone();
+        }
+        match h.find('.') {
+            Some(i) if h[i + 1..].contains('.') => h = &h[i + 1..],
+            _ => return SiteControl::default(),
+        }
+    }
+}
+
+/// Top-level navigation of tab `id` to `uri` is starting: JavaScript is switched on or off for the site. Returns true
+/// when the setting had to change; the navigation is then started again (WebView2 applies the setting to the next
+/// navigation), so the page loads with the right setting.
+pub fn sync_scripts(webview: &ICoreWebView2, uri: &str) -> bool {
+    let want = !control_for(uri).block_scripts;
+    unsafe {
+        let Ok(settings) = webview.Settings() else { return false };
+        let mut on = windows::core::BOOL::default();
+        if settings.IsScriptEnabled(&mut on).is_err() || on.as_bool() == want {
+            return false;
+        }
+        settings.SetIsScriptEnabled(want).is_ok()
     }
 }
 

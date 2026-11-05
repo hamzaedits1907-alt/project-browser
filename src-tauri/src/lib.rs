@@ -54,9 +54,10 @@ fn load_all_from_args(args: &[String]) -> bool {
 
 pub fn run() {
     ai::ensure_crypto_provider();
-    // A run with its own data folder (`PROJECT_BROWSER_DATA_DIR`: tests, trying things out) is a separate browser and
-    // must not hand its start over to an already running one that uses the real profile.
-    let separate = std::env::var_os("PROJECT_BROWSER_DATA_DIR").is_some_and(|v| !v.is_empty());
+    // `PROJECT_BROWSER_SEPARATE=1` (trying a build next to the installed browser): this run is a browser of its own and
+    // does not hand its start over to an already running one. Test runs with only `PROJECT_BROWSER_DATA_DIR` keep the
+    // single-instance behaviour, which the registration and download checks rely on (a second link goes to the first).
+    let separate = std::env::var_os("PROJECT_BROWSER_SEPARATE").is_some_and(|v| v == "1");
     let mut builder = tauri::Builder::default();
     if !separate {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {

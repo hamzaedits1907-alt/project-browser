@@ -14,6 +14,7 @@ import { isInternalUrl } from "../../lib/urls";
 import { startScreenshot } from "../dialogs/screenshotState";
 import { endSession, loadConfig, startSession } from "../focus/focus";
 import { darkFor, toggleDark } from "../sitetools/siteprefs";
+import { startZapper } from "../zapper/zapper";
 import { closeDuplicates, closeToTheRight, groupBySite, linksAsMarkdown, sortBySite } from "../tabtools/tabtools";
 
 export interface PaletteCommand {
@@ -94,6 +95,9 @@ export function buildCommands(tab: Tab | null, tabs: Tab[], settings: Settings):
     web && { id: "reader", title: "Reader view and Listen", icon: "book", keywords: "read aloud speech article clean immersive", hint: "F9", run: () => openDialog("reader") },
     web && { id: "screenshot", title: "Screenshot of what you see", icon: "crop", keywords: "capture image picture", hint: "Ctrl+Shift+S", run: () => void startScreenshot(false) },
     web && { id: "screenshot-full", title: "Screenshot of the whole page", icon: "crop", keywords: "capture image picture full page scrolling long", run: () => void startScreenshot(true) },
+    web && { id: "zapper", title: "Hide an element on this page…", icon: "eyeOff", keywords: "zapper block remove annoying banner popup sticky element picker", run: () => void startZapper(tab) },
+    { id: "highlights", title: "Highlights: everything you highlighted", icon: "edit", keywords: "highlighter marked text quotes", run: () => togglePanel("highlights") },
+    web && { id: "page-media", title: "Media on this page: pictures, videos, sounds", icon: "image", keywords: "images download save all pictures video grabber", run: () => togglePanel("pagemedia") },
     web && { id: "share", title: "Share: QR code and links", icon: "qr", keywords: "phone send copy link", run: () => openDialog("share") },
     web && { id: "copy-link", title: "Copy page link", icon: "link", keywords: "url address", run: () => void copy(tab.url, "Link") },
     web && { id: "copy-clean", title: "Copy clean link (no tracking)", icon: "broom", keywords: "utm fbclid", run: () => void copy(cleanLink(tab.url), "Clean link") },

@@ -86,6 +86,7 @@ impl Controller {
             }
             tab.error = None;
             crate::native::page_features::upgrade_done(id);
+            let mute_site = crate::native::page_features::control_for(&source).muted && !tab.muted;
             if !source.is_empty() {
                 tab.url = source.clone();
             }
@@ -106,6 +107,9 @@ impl Controller {
                 if self.settings.index_page_text {
                     self.index_page_text_later(id, source.clone());
                 }
+            }
+            if mute_site {
+                self.set_muted(id, true);
             }
             self.refresh_tab_meta(id);
             self.sponsor_check(id);

@@ -52,6 +52,30 @@ impl Controller {
     }
 
     /// The page asked for an address with tracking parameters; it was cancelled and the clean address is loaded.
+    /// A site's controls changed: its open tabs (in every window) follow at once.
+    pub fn apply_site_control(
+        &mut self,
+        site: &str,
+        before: &crate::native::page_features::SiteControl,
+        now: &crate::native::page_features::SiteControl,
+    ) {
+        let matches = |url: &str| crate::native::page_features::site_of(url).is_some_and(|h| h == site || h.ends_with(&format!(".{site}")));
+        let site = site.to_string();
+        let (before, now) = (before.clone(), now.clone());
+        self.each_window(|c| {
+            let ids: Vec<TabId> = c.tabs.tabs().iter().filter(|t| matches(&t.url)).map(|t| t.id).collect();
+            for id in ids {
+                if before.muted != now.muted {
+                    c.set_muted(id, now.muted);
+                }
+                if before.block_scripts != now.block_scripts && c.views.contains_key(&id) {
+                    let _ = c.app.run_on_main_thread(move || native::nav_action(id, native::NavAction::Reload));
+                }
+            }
+        });
+        let _ = site;
+    }
+
     /// HTTPS-Only Mode upgraded a plain-HTTP address of tab `id`: load the secure one.
     pub fn on_https_upgrade(&mut self, id: TabId, secure: String) {
         log::info!("https-only: tab {id} loads the secure version of an address");

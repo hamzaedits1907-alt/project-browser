@@ -972,3 +972,9 @@ export interface TextHit {
   snippet: string;
   visitedAt: number;
 }
+
+/** Per-site choices from the site information panel. */
+export interface SiteControl {
+  blockScripts: boolean;
+  muted: boolean;
+}

@@ -13,6 +13,7 @@ import type { Tab, TabGroup } from "../../lib/types";
 import { IconButton, cx } from "../ui/controls";
 import { GroupChip, GroupContextMenu, TabContextMenu } from "./TabMenus";
 import type { MenuAt } from "./TabMenus";
+import { TabHoverCard } from "./TabHoverCard";
 import { TabItem } from "./TabItem";
 import { useForeignTabDrop } from "./useForeignTabDrop";
 import { useTabDrag } from "./useTabDrag";
@@ -157,6 +158,7 @@ export function TabStrip({ vertical = false }: { vertical?: boolean }) {
         {items}
       </div>
       {!vertical && newTab}
+      <TabHoverCard strip={listRef} vertical={vertical} suppressed={!!drag} />
       {drag?.torn && (
         <div className="tear-hint" role="status">
           Release to open in a new window, or over another window to move it there

@@ -462,6 +462,7 @@ impl Controller {
         crate::native::devtools::set_docking(init.settings.devtools_dock != crate::settings::DevtoolsDock::Window);
         crate::native::set_global_privacy_control(init.settings.global_privacy_control);
         crate::native::page_features::set(page_switches(&init.settings));
+        crate::native::page_features::set_site_controls(init.db.kv_get(crate::commands::SITE_CONTROLS_KEY).ok().flatten().unwrap_or_default());
         crate::native::set_clean_exceptions(init.settings.clean_links_exceptions.clone());
         crate::native::set_popup_policy(
             init.settings.popup_allowed_hosts.clone(),

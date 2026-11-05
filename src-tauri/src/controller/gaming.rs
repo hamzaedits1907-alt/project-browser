@@ -206,6 +206,8 @@ impl Controller {
         if self.views.contains_key(&id) {
             let pip = self.settings.auto_pip && self.tabs.get(id).is_some_and(|t| t.audible && !t.muted);
             let _ = self.app.run_on_main_thread(move || {
+                // Its picture for the tab strip's hover card, while it is still drawn.
+                native::thumbs::capture(id, None);
                 native::set_memory_target(id, true);
                 if pip {
                     native::page_features::auto_pip_enter(id);

@@ -11,7 +11,9 @@ use crate::tabs::TabId;
 pub const WIDTH: u32 = 320;
 const KEEP: usize = 30;
 
-static THUMBS: Mutex<Option<HashMap<TabId, (Vec<u8>, Instant)>>> = Mutex::new(None);
+/// Tab -> (small JPEG, when it was captured).
+type ThumbMap = HashMap<TabId, (Vec<u8>, Instant)>;
+static THUMBS: Mutex<Option<ThumbMap>> = Mutex::new(None);
 
 /// The kept picture of tab `id`, if any.
 pub fn get(id: TabId) -> Option<Vec<u8>> {

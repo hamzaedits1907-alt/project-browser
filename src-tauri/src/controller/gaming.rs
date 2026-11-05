@@ -204,7 +204,13 @@ impl Controller {
     /// WebView2 trims caches and memory it can rebuild. (Before 0.8 this was a Gaming Mode option only.)
     pub(crate) fn on_backgrounded(&mut self, id: TabId) {
         if self.views.contains_key(&id) {
-            let _ = self.app.run_on_main_thread(move || native::set_memory_target(id, true));
+            let pip = self.settings.auto_pip && self.tabs.get(id).is_some_and(|t| t.audible && !t.muted);
+            let _ = self.app.run_on_main_thread(move || {
+                native::set_memory_target(id, true);
+                if pip {
+                    native::page_features::auto_pip_enter(id);
+                }
+            });
         }
     }
 

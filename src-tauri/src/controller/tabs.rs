@@ -204,6 +204,10 @@ impl Controller {
     pub(crate) fn after_activation(&mut self) {
         self.close_find();
         let Some(tab) = self.tabs.active().cloned() else { return };
+        if self.views.contains_key(&tab.id) {
+            let id = tab.id;
+            let _ = self.app.run_on_main_thread(move || crate::native::page_features::auto_pip_leave(id));
+        }
         // Any suspend still in flight for this tab is now out of date.
         *self.epochs.entry(tab.id).or_insert(0) += 1;
         self.dirty_until.remove(&tab.id);

@@ -216,6 +216,24 @@ export interface Settings {
   globalPrivacyControl: boolean;
   devtoolsDock: DevtoolsDock;
   devtoolsSize: number;
+  fingerprintProtection: boolean;
+  cookieBannerBlocker: boolean;
+  doNotTrack: boolean;
+  httpsOnly: boolean;
+  clearCookiesOnExit: boolean;
+  mouseGestures: boolean;
+  videoKeys: boolean;
+  autoPip: boolean;
+  indexPageText: boolean;
+  energySaver: EnergySaver;
+  shortcutOverrides: ShortcutOverride[];
+}
+
+export type EnergySaver = "off" | "lowBattery" | "battery" | "always";
+
+export interface ShortcutOverride {
+  command: string;
+  keys: string;
 }
 
 export interface ProfileMeta {
@@ -938,3 +956,19 @@ export type GroupOp =
   | { op: "update"; group: GroupId; title?: string; color?: string; collapsed?: boolean }
   | { op: "ungroup"; group: GroupId }
   | { op: "close"; group: GroupId };
+
+export interface PageMediaItem {
+  kind: "image" | "video" | "audio";
+  url: string;
+  width: number;
+  height: number;
+  alt: string;
+}
+
+/** Full-text history hit; `snippet` marks matched words with  … . */
+export interface TextHit {
+  url: string;
+  title: string;
+  snippet: string;
+  visitedAt: number;
+}

@@ -7,6 +7,7 @@ pub mod bookmarks;
 pub mod downloads;
 pub mod history;
 pub mod memory;
+pub mod pagetext;
 pub mod permissions;
 pub mod vault;
 
@@ -124,6 +125,10 @@ CREATE TABLE memory_items (
   updated_at   INTEGER NOT NULL
 );
 CREATE INDEX memory_items_updated ON memory_items(updated_at DESC);
+"#,
+    // v4: full-text history (db/pagetext.rs).
+    r#"
+CREATE VIRTUAL TABLE page_text USING fts5(url UNINDEXED, title, body, visited_at UNINDEXED, tokenize = 'unicode61 remove_diacritics 2');
 "#,
 ];
 

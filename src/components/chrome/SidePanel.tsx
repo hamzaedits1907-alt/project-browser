@@ -7,9 +7,10 @@ import { api, errorMessage } from "../../lib/ipc";
 import { activeTab, attempt, useStore } from "../../lib/store";
 import { closePanel, openClearData, openSettingsSection, ui } from "../../lib/ui";
 import type { PanelId } from "../../lib/ui";
-import type { Bookmark, HistoryEntry } from "../../lib/types";
+import type { Bookmark, HistoryEntry, TextHit } from "../../lib/types";
 import { useLoad } from "../../lib/useLoad";
 import { FocusPanel, MediaPanel, NotesPanel } from "../../features/panels/ExtraPanels";
+import { HighlightsPanel, PageMediaPanel } from "../../features/panels/PagePanels";
 import { ReadingListPanel } from "../../features/panels/ReadingList";
 import { ShieldSummary } from "../menus/ShieldSummary";
 import { Favicon } from "../ui/Favicon";
@@ -29,6 +30,8 @@ const TITLES: Record<PanelId, { title: string; icon: IconName }> = {
   notes: { title: "Notes", icon: "note" },
   media: { title: "Media hub", icon: "headphones" },
   focus: { title: "Focus & Screen Time", icon: "target" },
+  highlights: { title: "Highlights", icon: "edit" },
+  pagemedia: { title: "Media on this page", icon: "image" },
 };
 
 /** Opens a page in the current tab, or in a new one with Ctrl or the middle button. */
@@ -163,6 +166,15 @@ function BookmarksPanel() {
   );
 }
 
+/** A full-text snippet with its matched words (between  and ) highlighted. */
+function snippetParts(snippet: string): ReactNode[] {
+  return snippet.split("").flatMap((part, i) => {
+    if (i === 0) return [part];
+    const [hit = "", rest = ""] = part.split("");
+    return [<mark key={i}>{hit}</mark>, rest];
+  });
+}
+
 function HistoryPanel() {
   const [q, setQ] = useState("");
   const [rows, setRows] = useState<HistoryEntry[]>([]);
@@ -184,16 +196,47 @@ function HistoryPanel() {
     );
     return () => clearTimeout(t);
   }, [q]);
+  // Full-text history: pages whose words match, beyond titles and addresses.
+  const [hits, setHits] = useState<TextHit[]>([]);
+  useEffect(() => {
+    if (q.trim().length < 3) {
+      setHits([]);
+      return;
+    }
+    let live = true;
+    const t = setTimeout(() => {
+      api
+        .historyTextSearch(q)
+        .then((h) => live && setHits(h))
+        .catch(() => live && setHits([]));
+    }, 250);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [q]);
   const groups = groupByDay(rows, (r) => r.visitedAt);
   return (
     <>
       <div className="panel-tools">
         <label className="search-field">
           <Icon name="search" size={15} />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search history" aria-label="Search history" spellCheck={false} />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search history, even inside pages" aria-label="Search history" spellCheck={false} />
         </label>
       </div>
       <div className="panel-body">
+        {hits.length > 0 && (
+          <section>
+            <div className="eyebrow panel-heading">Found inside pages</div>
+            {hits.map((h) => (
+              <button key={h.url} type="button" className="text-hit" title={h.url} onClick={(e) => openUrl(h.url, e)}>
+                <span className="text-hit-title truncate">{h.title || h.url}</span>
+                <span className="text-hit-snippet">{snippetParts(h.snippet)}</span>
+                <span className="panel-sub truncate">{hostOf(h.url)}</span>
+              </button>
+            ))}
+          </section>
+        )}
         {error && <Notice tone="bad">{error}</Notice>}
         {loading && rows.length === 0 && <div className="pad"><Spinner size={16} /></div>}
         {!loading && rows.length === 0 && !error && <EmptyState icon="history" title={q ? "Nothing matches" : "No history yet"}>{q ? "Try other words." : "Pages you visit appear here. Private tabs are never recorded."}</EmptyState>}
@@ -274,6 +317,8 @@ const BODIES: Record<PanelId, () => ReactNode> = {
   notes: () => <NotesPanel />,
   media: () => <MediaPanel />,
   focus: () => <FocusPanel />,
+  highlights: () => <HighlightsPanel />,
+  pagemedia: () => <PageMediaPanel />,
 };
 
 /**

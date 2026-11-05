@@ -270,7 +270,8 @@ mod tests {
         let mut keys = keys;
         keys.sort();
         assert_eq!(keys, ["appVersion", "bookmarks", "createdAt", "format", "notes", "settings", "shell", "shield", "version"]);
-        let lower = text.to_lowercase();
+        // Setting names that only switch cookie features on or off are not cookies.
+        let lower = text.to_lowercase().replace("cookiebannerblocker", "").replace("clearcookiesonexit", "");
         for secret in ["cookie", "apikey", "api_key", "nvapi-", "token"] {
             assert!(!lower.contains(secret), "backup mentions {secret}");
         }

@@ -94,8 +94,9 @@ impl Db {
         for id in visit_ids {
             tx.execute("DELETE FROM visits WHERE id = ?1", [id])?;
         }
-        // Drop urls that no longer have visits so they stop appearing in suggestions.
+        // Drop urls that no longer have visits so they stop appearing in suggestions (and their page text).
         tx.execute("DELETE FROM urls WHERE id NOT IN (SELECT DISTINCT url_id FROM visits)", [])?;
+        tx.execute("DELETE FROM page_text WHERE url NOT IN (SELECT url FROM urls)", [])?;
         tx.execute(
             "UPDATE urls SET visit_count = (SELECT COUNT(*) FROM visits WHERE url_id = urls.id),
                              last_visit = (SELECT MAX(visited_at) FROM visits WHERE url_id = urls.id)",
@@ -112,10 +113,12 @@ impl Db {
             None => {
                 tx.execute("DELETE FROM visits", [])?;
                 tx.execute("DELETE FROM urls", [])?;
+                tx.execute("DELETE FROM page_text", [])?;
             }
             Some(t) => {
                 tx.execute("DELETE FROM visits WHERE visited_at >= ?1", [t])?;
                 tx.execute("DELETE FROM urls WHERE id NOT IN (SELECT DISTINCT url_id FROM visits)", [])?;
+                tx.execute("DELETE FROM page_text WHERE url NOT IN (SELECT url FROM urls)", [])?;
                 tx.execute(
                     "UPDATE urls SET visit_count = (SELECT COUNT(*) FROM visits WHERE url_id = urls.id),
                                      last_visit = (SELECT MAX(visited_at) FROM visits WHERE url_id = urls.id)",

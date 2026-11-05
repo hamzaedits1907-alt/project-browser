@@ -1747,6 +1747,170 @@ pub async fn menu_surface_ready(window: tauri::Window) -> Result<()> {
     Ok(())
 }
 
+/// A picture, video or sound on a page (the page media panel).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PageMediaItem {
+    pub kind: String,
+    pub url: String,
+    pub width: u32,
+    pub height: u32,
+    pub alt: String,
+}
+
+const PAGE_MEDIA_JS: &str = r#"(()=>{const out=[],seen=new Set();const add=(kind,url,w,h,alt)=>{if(!url||!/^https?:/i.test(url)||seen.has(url))return;seen.add(url);out.push({kind,url,width:Math.round(w||0),height:Math.round(h||0),alt:String(alt||'').slice(0,200)})};
+for(const i of document.images){if((i.naturalWidth||0)>=48&&(i.naturalHeight||0)>=48)add('image',i.currentSrc||i.src,i.naturalWidth,i.naturalHeight,i.alt)}
+for(const v of document.querySelectorAll('video')){add('video',v.currentSrc||v.src,v.videoWidth,v.videoHeight,v.title);for(const s of v.querySelectorAll('source'))add('video',s.src,v.videoWidth,v.videoHeight,v.title);if(v.poster)add('image',v.poster,v.clientWidth,v.clientHeight,'Video poster')}
+for(const a of document.querySelectorAll('audio')){add('audio',a.currentSrc||a.src,0,0,a.title);for(const s of a.querySelectorAll('source'))add('audio',s.src,0,0,a.title)}
+for(const m of document.querySelectorAll('meta[property="og:image"],meta[name="twitter:image"]'))add('image',m.content,0,0,'Preview image');
+return out.slice(0,500)})()"#;
+
+/// Every picture, video and sound file the page shows (addresses only; `blob:` streams cannot be saved).
+#[tauri::command]
+pub async fn page_media(app: AppHandle, tab_id: TabId) -> Result<Vec<PageMediaItem>> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.run_on_main_thread(move || native::run_script(tab_id, PAGE_MEDIA_JS.to_string(), tx))?;
+    let json = tokio::time::timeout(std::time::Duration::from_secs(5), rx).await.ok().and_then(|r| r.ok()).flatten().unwrap_or_default();
+    Ok(serde_json::from_str(&json).unwrap_or_default())
+}
+
+/// A file name for `url`: its last path segment, cleaned for Windows, with an extension guessed from `content_type`.
+pub fn file_name_for(url: &str, content_type: &str) -> String {
+    let last = url::Url::parse(url).ok().and_then(|u| u.path_segments().and_then(|mut s| s.next_back().map(str::to_string))).unwrap_or_default();
+    let decoded = percent_decode(&last);
+    let mut name: String = decoded.chars().map(|c| if c.is_control() || r#"<>:"/\|?*"#.contains(c) { '_' } else { c }).collect();
+    name = name.trim().trim_matches('.').chars().take(120).collect();
+    if name.is_empty() {
+        name = "media".into();
+    }
+    if !name.contains('.') {
+        let ext = match content_type.split(';').next().unwrap_or("").trim() {
+            "image/jpeg" => "jpg",
+            "image/png" => "png",
+            "image/gif" => "gif",
+            "image/webp" => "webp",
+            "image/avif" => "avif",
+            "image/svg+xml" => "svg",
+            "video/mp4" => "mp4",
+            "video/webm" => "webm",
+            "audio/mpeg" => "mp3",
+            "audio/ogg" => "ogg",
+            "audio/wav" => "wav",
+            _ => "bin",
+        };
+        name = format!("{name}.{ext}");
+    }
+    name
+}
+
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let hex = |c: u8| (c as char).to_digit(16).map(|v| v as u8);
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() {
+            if let (Some(h), Some(l)) = (hex(b[i + 1]), hex(b[i + 2])) {
+                out.push(h * 16 + l);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Saves the file at `url` (a picture or video found on a page) into the download folder. Returns the saved path.
+#[tauri::command]
+pub async fn save_url(url: String, referrer: Option<String>) -> Result<String> {
+    let parsed = url::Url::parse(&url).map_err(|_| Error::msg("That isn't a web address."))?;
+    if parsed.scheme() != "https" && parsed.scheme() != "http" {
+        return Err(Error::msg("Only web addresses can be saved."));
+    }
+    crate::ai::ensure_crypto_provider();
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(300))
+        .user_agent(concat!("Mozilla/5.0 (Windows NT 10.0; Win64; x64) ProjectBrowser/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .map_err(|e| Error::msg(e.to_string()))?;
+    let mut req = client.get(parsed.clone());
+    if let Some(r) = referrer.filter(|r| r.starts_with("http")) {
+        req = req.header("Referer", r);
+    }
+    let resp = req.send().await.map_err(|e| Error::msg(format!("Could not download it: {e}")))?;
+    if !resp.status().is_success() {
+        return Err(Error::msg(format!("The site answered {}.", resp.status())));
+    }
+    const MAX: u64 = 1024 * 1024 * 1024;
+    if resp.content_length().is_some_and(|n| n > MAX) {
+        return Err(Error::msg("That file is larger than 1 GB; open it and use Save as instead."));
+    }
+    let content_type = resp.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+    let bytes = resp.bytes().await.map_err(|e| Error::msg(format!("Could not download it: {e}")))?;
+    if bytes.len() as u64 > MAX {
+        return Err(Error::msg("That file is larger than 1 GB."));
+    }
+    let dir = native::save_folder().ok_or_else(|| Error::msg("There is no download folder."))?;
+    let name = file_name_for(parsed.as_str(), &content_type);
+    let (stem, ext) = match name.rsplit_once('.') {
+        Some((s, e)) => (s.to_string(), format!(".{e}")),
+        None => (name.clone(), String::new()),
+    };
+    let mut path = dir.join(&name);
+    let mut n = 2;
+    while path.exists() {
+        path = dir.join(format!("{stem} ({n}){ext}"));
+        n += 1;
+    }
+    std::fs::write(&path, &bytes).map_err(|e| Error::msg(format!("Could not save it: {e}")))?;
+    log::info!("page media saved ({} bytes)", bytes.len());
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// Full-text history: pages whose text contains the words (newest text of each address).
+#[tauri::command]
+pub async fn history_text_search(s: State<'_, AppState>, query: String) -> Result<Vec<crate::db::pagetext::TextHit>> {
+    let query: String = query.chars().take(200).collect();
+    s.ctl.call(move |c| c.db.search_page_text(&query, 40)).await?
+}
+
+/// Marks the saved highlights `texts` in tab `tab_id`'s page (see native/highlight.js). Returns how many were found
+/// (-1 when the page cannot show highlights).
+#[tauri::command]
+pub async fn tab_highlights(app: AppHandle, tab_id: TabId, texts: Vec<String>) -> Result<i64> {
+    let texts: Vec<String> = texts.into_iter().filter(|t| !t.trim().is_empty()).map(|t| t.chars().take(2000).collect()).take(200).collect();
+    let data = serde_json::to_string(&texts).map_err(|e| Error::msg(e.to_string()))?;
+    let script = include_str!("native/highlight.js").replace("(DATA)", &format!("({data})"));
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.run_on_main_thread(move || native::run_script(tab_id, script, tx))?;
+    let out = tokio::time::timeout(std::time::Duration::from_secs(5), rx).await.ok().and_then(|r| r.ok()).flatten();
+    Ok(out.and_then(|s| s.trim().parse::<i64>().ok()).unwrap_or(0))
+}
+
+/// "Copy text from image": the text Windows' recognizer reads in picture `src` of tab `tab_id` (see native/ocr.rs).
+#[tauri::command]
+pub async fn image_text(app: AppHandle, tab_id: TabId, src: String) -> Result<String> {
+    if src.len() > 8192 {
+        return Err(Error::msg("That picture's address is too long."));
+    }
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.run_on_main_thread(move || native::ocr::capture_image(tab_id, src, tx))?;
+    let png = tokio::time::timeout(std::time::Duration::from_secs(15), rx)
+        .await
+        .ok()
+        .and_then(|r| r.ok())
+        .flatten()
+        .ok_or_else(|| Error::msg("The picture could not be captured (it may have scrolled away or been removed)."))?;
+    let text = tauri::async_runtime::spawn_blocking(move || native::ocr::recognize_png(&png))
+        .await
+        .map_err(|e| Error::msg(e.to_string()))?
+        .map_err(Error::msg)?;
+    Ok(text)
+}
+
 /// Shell popups are drawn at these rectangles (CSS pixels of this window); the pages get holes there and keep running.
 #[tauri::command]
 pub async fn page_holes(window: tauri::Window, s: State<'_, AppState>, holes: Vec<ContentRect>) -> Result<()> {
@@ -2192,6 +2356,11 @@ macro_rules! all_commands {
             $crate::commands::menu_surface_ready,
             $crate::commands::menu_anchor,
             $crate::commands::page_holes,
+            $crate::commands::image_text,
+            $crate::commands::tab_highlights,
+            $crate::commands::page_media,
+            $crate::commands::history_text_search,
+            $crate::commands::save_url,
             $crate::commands::menu_present,
             $crate::commands::menu_dismiss,
             $crate::commands::window_active,
@@ -2233,6 +2402,15 @@ mod tests {
         assert_eq!(civil_from_days(0), (1970, 1, 1));
         assert_eq!(civil_from_days(19_723), (2024, 1, 1));
         assert!(screenshot_name("not a url", 0).starts_with("Screenshot page 1970-01-01"));
+    }
+
+    #[test]
+    fn saved_media_get_clean_windows_file_names() {
+        assert_eq!(file_name_for("https://x.test/a/photo%20one.jpg?x=1", "image/jpeg"), "photo one.jpg");
+        assert_eq!(file_name_for("https://x.test/img", "image/webp"), "img.webp");
+        assert_eq!(file_name_for("https://x.test/", ""), "media.bin");
+        assert_eq!(file_name_for("https://x.test/a%3Ab%2Fc", "image/png"), "a_b_c.png");
+        assert_eq!(file_name_for("https://x.test/%E2%82%AC%", "image/png"), "\u{20ac}%.png");
     }
 
     #[test]

@@ -85,6 +85,7 @@ impl Controller {
                 return;
             }
             tab.error = None;
+            crate::native::page_features::upgrade_done(id);
             if !source.is_empty() {
                 tab.url = source.clone();
             }
@@ -101,6 +102,9 @@ impl Controller {
             if !private && is_recordable(&source) {
                 if let Err(e) = self.db.record_visit(&source, &title, now_ms()) {
                     log::warn!("history write failed: {e}");
+                }
+                if self.settings.index_page_text {
+                    self.index_page_text_later(id, source.clone());
                 }
             }
             self.refresh_tab_meta(id);
@@ -120,10 +124,51 @@ impl Controller {
         }
         log::warn!("tab {id}: navigation failed ({code})");
         let failed_url = tab.url.clone();
+        if let Some(insecure) = crate::native::page_features::failed_upgrade(id, &failed_url) {
+            // HTTPS-Only Mode: the site has no working secure version. The warning lets the user continue.
+            tab.error = Some(NavError {
+                url: insecure.clone(),
+                code: "HTTPS_ONLY".into(),
+                description: "This site doesn't offer a secure connection.".into(),
+            });
+            let html = crate::native::page_features::insecure_page(&insecure);
+            let _ = self.app.run_on_main_thread(move || native::show_error_page(id, html));
+            self.mark_state();
+            return;
+        }
         tab.error = Some(NavError { url: failed_url.clone(), code: code.clone(), description: description.clone() });
         let html = crate::error_page::render(&failed_url, &code, &description);
         let _ = self.app.run_on_main_thread(move || native::show_error_page(id, html));
         self.mark_state();
+    }
+
+    /// Full-text history: reads the page's words a moment after it loaded (so late content is included) and keeps them.
+    fn index_page_text_later(&self, id: TabId, url: String) {
+        let app = self.app.clone();
+        let handle = self.handle.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(2500));
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            if app.run_on_main_thread(move || native::page_text(id, tx)).is_err() {
+                return;
+            }
+            let Ok(Some(raw)) = rx.blocking_recv() else { return };
+            let Ok(page) = serde_json::from_str::<crate::ai::PageSnapshot>(&raw) else { return };
+            if page.text.trim().len() < 40 {
+                return;
+            }
+            handle.post_tab(id, move |c| {
+                // Only if the tab still shows that page and is not private (it could have moved on meanwhile).
+                let Some(tab) = c.tabs.get(id) else { return };
+                if tab.private || tab.url != url {
+                    return;
+                }
+                let title = tab.title.clone();
+                if let Err(e) = c.db.index_page_text(&url, &title, &page.text, now_ms()) {
+                    log::warn!("full-text history: could not keep a page's text: {e}");
+                }
+            });
+        });
     }
 
     pub fn on_title(&mut self, id: TabId, title: String) {

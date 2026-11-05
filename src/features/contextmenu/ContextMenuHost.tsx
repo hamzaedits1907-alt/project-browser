@@ -4,6 +4,7 @@ import { emitTo, listen } from "@tauri-apps/api/event";
 import { Icon } from "../../components/ui/Icon";
 import { MenuHeading, MenuItem, MenuSeparator, Popover, usePopoverClose } from "../../components/ui/Popover";
 import { BAR_ID } from "../../lib/bookmarks";
+import { addHighlight, linkToHighlight } from "../highlights/highlights";
 import { addToReadingList } from "../panels/ReadingList";
 import { api, on } from "../../lib/ipc";
 import { overlayIdle } from "../../lib/overlay";
@@ -110,6 +111,33 @@ function runCustom(a: CustomAction, e: ContextMenuEvent): void {
       return;
     case "nav":
       void attempt(() => api.nav(a.action, e.tabId ?? undefined));
+      return;
+    case "highlight": {
+      const tab = getState().browser.tabs.find((t) => t.id === e.tabId);
+      if (tab) void addHighlight(tab.id, tab.url, tab.title, a.text, tab.private);
+      return;
+    }
+    case "linkToHighlight": {
+      const tab = getState().browser.tabs.find((t) => t.id === e.tabId);
+      if (tab) copy(linkToHighlight(tab.url, a.text), "Link to highlight");
+      return;
+    }
+    case "imageText":
+      if (e.tabId !== null) {
+        const id = e.tabId;
+        toast("Reading the text in the image…");
+        void attempt(() => api.imageText(id, a.src), "Could not read the image").then((text) => {
+          if (text === undefined) return;
+          if (!text.trim()) {
+            toast("No text found in this image");
+            return;
+          }
+          void navigator.clipboard
+            .writeText(text)
+            .then(() => toast(`Copied the image's text (${text.length} characters)`))
+            .catch(() => toast("Could not copy the text"));
+        });
+      }
       return;
   }
 }

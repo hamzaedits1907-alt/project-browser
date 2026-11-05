@@ -81,12 +81,12 @@ describe("links, images, media and fields", () => {
     expect(all(m).some((e) => e.label.startsWith("Open link"))).toBe(false);
   });
 
-  it("image: open, save, copy, address and visual search, but no visual search for data: images", () => {
+  it("image: open, save, copy, text, address and visual search, but no visual search for data: images", () => {
     const items = [item("saveImageAs"), item("copyImage"), item("copyImageLocation")];
     const web = buildMenu(event(target({ kind: "image", sourceUrl: "https://cdn.example/p.png" }), items), ctx);
-    expect(all(web).map((e) => e.label)).toEqual(["Open image in new tab", "Save image as…", "Copy image", "Copy image address", "Search image with Google Lens"]);
+    expect(all(web).map((e) => e.label)).toEqual(["Open image in new tab", "Save image as…", "Copy image", "Copy text from image", "Copy image address", "Search image with Google Lens"]);
     const data = buildMenu(event(target({ kind: "image", sourceUrl: "data:image/png;base64,AA" }), []), ctx);
-    expect(all(data).map((e) => e.label)).toEqual([]);
+    expect(all(data).map((e) => e.label)).toEqual(["Copy text from image"]);
   });
 
   it("video: WebView2's picture-in-picture and loop (with its checked state), and the tab's mute", () => {

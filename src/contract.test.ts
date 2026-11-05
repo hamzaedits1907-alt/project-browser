@@ -322,6 +322,7 @@ describe("settings defaults", () => {
       Full: "full",
       Off: "off",
       Bottom: "bottom",
+      LowBattery: "lowBattery",
     };
     // `strings(CONST)` names a `pub const CONST: &[&str] = &[...]` list in settings.rs.
     const constList = (name: string): string[] => {

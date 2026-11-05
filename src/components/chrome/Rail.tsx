@@ -43,6 +43,8 @@ export const RAIL_ENTRIES: RailEntry[] = [
   { id: "notes", label: "Notes", icon: "note", panel: "notes" },
   { id: "media", label: "Media hub", icon: "headphones", panel: "media" },
   { id: "focus", label: "Focus & Screen Time", icon: "target", panel: "focus" },
+  { id: "highlights", label: "Highlights", icon: "edit", panel: "highlights" },
+  { id: "pagemedia", label: "Media on this page", icon: "image", panel: "pagemedia" },
 ];
 
 /** Switches to the tab showing a browser page, reuses an empty New Tab for it, or opens it in a new tab. */

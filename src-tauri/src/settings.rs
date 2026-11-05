@@ -146,6 +146,8 @@ pub const SIDEBAR_ITEMS: &[&str] = &[
     "notes",
     "media",
     "focus",
+    "highlights",
+    "pagemedia",
 ];
 pub const DEFAULT_SIDEBAR_ITEMS: &[&str] = &["bookmarks", "reading", "history", "downloads", "ai", "gaming", "shield", "passwords"];
 /// Optional toolbar buttons (back, forward, reload, the address bar and the menu are always there).
@@ -294,6 +296,51 @@ pub struct Settings {
     pub devtools_dock: DevtoolsDock,
     /// Share of the page area docked DevTools takes, in percent.
     pub devtools_size: u32,
+    /// Fingerprinting protection: canvas, audio and WebGL read-backs vary per site and session (like Brave).
+    pub fingerprint_protection: bool,
+    /// Cookie-banner blocker: answers consent banners with "reject all" / "only necessary".
+    pub cookie_banner_blocker: bool,
+    /// Send Do Not Track (`DNT: 1`).
+    pub do_not_track: bool,
+    /// HTTPS-Only Mode: load every site over HTTPS, with a warning before an insecure one.
+    pub https_only: bool,
+    /// Delete cookies and site data when the browser closes.
+    pub clear_cookies_on_exit: bool,
+    /// Mouse gestures: drag with the right mouse button held (left = back, right = forward, …).
+    pub mouse_gestures: bool,
+    /// Video speed keys on every video (S slower, D faster, R normal, Z/X jump 10 s).
+    pub video_keys: bool,
+    /// A playing video goes to picture-in-picture when its tab is left, and back when the tab is shown again.
+    pub auto_pip: bool,
+    /// Keep the text of visited pages (on this computer) so history can be searched by what pages said.
+    pub index_page_text: bool,
+    /// Energy Saver: when it is on, background tabs sleep sooner and the browser's own animations stop.
+    pub energy_saver: EnergySaver,
+    /// The user's own keyboard shortcuts: command name to key ("Ctrl+Shift+K").
+    pub shortcut_overrides: Vec<ShortcutOverride>,
+}
+
+/// When Energy Saver is on (like Chrome's).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum EnergySaver {
+    Off,
+    /// On battery power with 20 % or less left.
+    #[default]
+    LowBattery,
+    /// Whenever the computer runs on battery.
+    Battery,
+    Always,
+}
+
+/// One user-chosen keyboard shortcut.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ShortcutOverride {
+    /// The command's name (see `shortcuts::command_by_name`).
+    pub command: String,
+    /// Keys like "Ctrl+Shift+K"; empty means the command has no shortcut.
+    pub keys: String,
 }
 
 impl Default for Settings {
@@ -352,6 +399,17 @@ impl Default for Settings {
             global_privacy_control: true,
             devtools_dock: DevtoolsDock::Bottom,
             devtools_size: 40,
+            fingerprint_protection: true,
+            cookie_banner_blocker: true,
+            do_not_track: false,
+            https_only: false,
+            clear_cookies_on_exit: false,
+            mouse_gestures: true,
+            video_keys: true,
+            auto_pip: true,
+            index_page_text: true,
+            energy_saver: EnergySaver::LowBattery,
+            shortcut_overrides: Vec::new(),
         }
     }
 }

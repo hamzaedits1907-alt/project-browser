@@ -26,6 +26,9 @@ export type CustomAction =
   | { kind: "fillLogin" }
   | { kind: "strongPassword" }
   | { kind: "readLater"; url: string; title: string }
+  | { kind: "highlight"; text: string }
+  | { kind: "linkToHighlight"; text: string }
+  | { kind: "imageText"; src: string }
   | { kind: "muteTab"; muted: boolean }
   | { kind: "nav"; action: "back" | "forward" | "reload" };
 
@@ -174,6 +177,7 @@ export function buildMenu(e: ContextMenuEvent, ctx: MenuContext): MenuModel {
         isWebAddress(src) && { key: "img-open", label: "Open image in new tab", icon: "image", custom: { kind: "openTab", url: src } },
         native("saveImageAs"),
         native("copyImage"),
+        e.tabId !== null && !!src && { key: "img-text", label: "Copy text from image", icon: "copy", custom: { kind: "imageText", src } },
         native("copyImageLocation") ?? (isWebAddress(src) ? { key: "img-copy-addr", label: "Copy image address", icon: "link", custom: { kind: "copyText", text: src, what: "Image address" } } : null),
         isWebAddress(src) && !e.private && { key: "img-lens", label: "Search image with Google Lens", icon: "lens", custom: { kind: "openTab", url: `https://lens.google.com/uploadbyurl?url=${encodeURIComponent(src)}` } },
       ),
@@ -214,7 +218,8 @@ export function buildMenu(e: ContextMenuEvent, ctx: MenuContext): MenuModel {
       list(
         native("copy"),
         { key: "sel-search", label: `Search ${ctx.engine} for “${snippet(selection, 24)}”`, icon: "search", custom: { kind: "search", text: selection } },
-        native("copyLinkToHighlight"),
+        e.tabId !== null && { key: "sel-highlight", label: "Highlight", icon: "edit", custom: { kind: "highlight", text: selection } },
+        native("copyLinkToHighlight") ?? (e.tabId !== null ? { key: "sel-link", label: "Copy link to highlight", icon: "link", custom: { kind: "linkToHighlight", text: selection } } : null),
       ),
     );
     if (ai) {

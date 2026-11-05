@@ -10,6 +10,8 @@ pub mod dialog;
 pub mod drag_ghost;
 pub mod extensions;
 pub mod metrics;
+pub mod ocr;
+pub mod page_features;
 pub mod site_data;
 
 use std::cell::RefCell;
@@ -280,6 +282,11 @@ fn any_shell() -> Option<TabCom> {
     })
 }
 
+/// The WebView2 of tab `id`, if it is running. UI thread only.
+pub(crate) fn tab_webview(id: TabId) -> Option<ICoreWebView2> {
+    tab_com(id).map(|t| t.webview)
+}
+
 fn tab_com(id: TabId) -> Option<TabCom> {
     TABS.with(|t| t.borrow().get(&id).cloned())
 }
@@ -389,6 +396,13 @@ unsafe fn install_tab_inner(id: TabId, pw: &PlatformWebview, ctl: &ControllerHan
         &NavigationStartingEventHandler::create(Box::new(move |sender, args| {
             let Some(args) = args else { return Ok(()) };
             let uri = pwstr(|p| args.Uri(p));
+            if let Some(secure) = page_features::https_upgrade(&uri) {
+                // HTTPS-Only Mode: cancelled here and loaded again over HTTPS (the controller navigates).
+                args.SetCancel(true)?;
+                page_features::note_upgrade(id, &secure, &uri);
+                c.post_tab(id, move |ctl| ctl.on_https_upgrade(id, secure));
+                return Ok(());
+            }
             if let Some(clean) = link_clean_target(id, &uri) {
                 // Cancelled here, loaded again without the tracking parameters (the controller navigates).
                 args.SetCancel(true)?;
@@ -627,6 +641,7 @@ unsafe fn install_tab_inner(id: TabId, pw: &PlatformWebview, ctl: &ControllerHan
             &AddScriptToExecuteOnDocumentCreatedCompletedHandler::create(Box::new(|_, _| Ok(()))),
         );
     }
+    page_features::install(&webview, id, ctl);
     if let Err(e) = hook_shield(&webview, &env, id, init.private, ctl) {
         log::warn!("tab {id}: request blocking is unavailable for this tab: {e}");
     }
@@ -741,10 +756,11 @@ unsafe fn hook_shield(
     webview.add_WebResourceRequested(
         &WebResourceRequestedEventHandler::create(Box::new(move |_, args| {
             let Some(args) = args else { return Ok(()) };
-            if GPC.load(Ordering::Relaxed) {
-                if let Ok(headers) = args.Request().and_then(|r| r.Headers()) {
+            if let Ok(headers) = args.Request().and_then(|r| r.Headers()) {
+                if GPC.load(Ordering::Relaxed) {
                     let _ = headers.SetHeader(windows::core::w!("Sec-GPC"), windows::core::w!("1"));
                 }
+                page_features::add_request_headers(&headers);
             }
             let Some(shield) = crate::shield::global() else { return Ok(()) };
             if !shield.is_active() {
@@ -1086,6 +1102,11 @@ pub fn rehost(id: TabId) {
         }
         log::info!("tab {id}: webview re-hosted in its new window (visible={visible})");
     }
+}
+
+/// Where files the browser saves itself go: the download folder from Settings, else Windows' Downloads folder.
+pub fn save_folder() -> Option<PathBuf> {
+    DOWNLOAD_DIR.lock().ok().and_then(|d| d.clone()).filter(|d| d.is_dir()).or_else(downloads_folder)
 }
 
 /// The user's Downloads folder (wherever Windows has it), for files the browser saves itself (screenshots).

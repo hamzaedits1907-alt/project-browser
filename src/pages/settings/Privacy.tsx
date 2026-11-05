@@ -18,6 +18,24 @@ export function Privacy() {
         </SettingRow>
       </Card>
 
+      <Card title="Tracking and fingerprinting" subtitle="Protections like Brave's. They apply to tabs opened after a change; HTTPS-Only Mode and Do Not Track apply at once.">
+        <SettingRow title="Fingerprinting protection" description="Sites can recognise a browser from tiny differences in how it draws pictures, plays sound and reports its graphics card. These now vary a little per site and per session, so they no longer identify you. Pages look and sound the same.">
+          <Toggle label="Fingerprinting protection" checked={settings.fingerprintProtection} onChange={(fingerprintProtection) => void update({ fingerprintProtection })} />
+        </SettingRow>
+        <SettingRow title="Reject cookie banners automatically" description="Consent banners are answered with “Reject all” or “Only necessary” for you, when the banner offers it. Known consent tools first, then buttons with those words in a cookie banner.">
+          <Toggle label="Reject cookie banners automatically" checked={settings.cookieBannerBlocker} onChange={(cookieBannerBlocker) => void update({ cookieBannerBlocker })} />
+        </SettingRow>
+        <SettingRow title="HTTPS-Only Mode" description="Every site is loaded over a secure connection. If a site has none, a warning page asks before the insecure version opens. Sites on your own network are left alone.">
+          <Toggle label="HTTPS-Only Mode" checked={settings.httpsOnly} onChange={(httpsOnly) => void update({ httpsOnly })} />
+        </SettingRow>
+        <SettingRow title="Send Do Not Track" description="Adds DNT: 1 to requests. Few sites honour it; Global Privacy Control below is the signal laws back.">
+          <Toggle label="Send Do Not Track" checked={settings.doNotTrack} onChange={(doNotTrack) => void update({ doNotTrack })} />
+        </SettingRow>
+        <SettingRow title="Delete cookies and site data when the browser closes" description="You are signed out of sites each time. The data is removed before any page loads on the next start.">
+          <Toggle label="Delete cookies and site data when the browser closes" checked={settings.clearCookiesOnExit} onChange={(clearCookiesOnExit) => void update({ clearCookiesOnExit })} />
+        </SettingRow>
+      </Card>
+
       <Card title="Global Privacy Control" subtitle="A signal, like Brave's, that tells every site you do not want your personal data sold or shared. In California and several other places sites must honour it.">
         <SettingRow title="Send Global Privacy Control" description="Adds Sec-GPC: 1 to every request and lets pages read navigator.globalPrivacyControl. Tabs opened before a change pick it up when reopened.">
           <Toggle label="Send Global Privacy Control" checked={settings.globalPrivacyControl} onChange={(globalPrivacyControl) => void update({ globalPrivacyControl })} />

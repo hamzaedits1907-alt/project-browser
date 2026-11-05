@@ -20,6 +20,11 @@ fn random_bytes(_buf: &mut [u8]) -> bool {
     false
 }
 
+/// Fills `buf` from Windows' system random generator; false if it failed.
+pub fn random_fill(buf: &mut [u8]) -> bool {
+    random_bytes(buf)
+}
+
 /// A uniformly random index below `n` (rejection sampling, so no bias).
 fn pick(n: usize, next: &mut impl FnMut() -> Option<u8>) -> Option<usize> {
     let limit = 256 - (256 % n);

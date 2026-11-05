@@ -461,6 +461,7 @@ impl Controller {
         crate::native::set_clean_links(init.settings.clean_links);
         crate::native::devtools::set_docking(init.settings.devtools_dock != crate::settings::DevtoolsDock::Window);
         crate::native::set_global_privacy_control(init.settings.global_privacy_control);
+        crate::native::page_features::set(page_switches(&init.settings));
         crate::native::set_clean_exceptions(init.settings.clean_links_exceptions.clone());
         crate::native::set_popup_policy(
             init.settings.popup_allowed_hosts.clone(),
@@ -857,6 +858,8 @@ impl Controller {
     pub fn on_shell_ready(&mut self) -> Bootstrap {
         if !self.shell_ready {
             self.shell_ready = true;
+            // Before any page's webview exists (they are created once the shell reports its layout).
+            self.clear_cookies_if_pending();
             if let (Some(start), None) = (self.startup.process_start, self.startup.shell_ready_ms) {
                 self.startup.shell_ready_ms = Some(now_ms() - start);
                 log::info!("startup: shell UI ready {} ms after process start", now_ms() - start);
@@ -910,6 +913,10 @@ impl Controller {
 
     /// Persists everything that must survive an exit. Called on window close.
     pub fn prepare_exit(&mut self) {
+        if self.settings.clear_cookies_on_exit {
+            // Deleted before any page loads on the next start (WebView2 cannot finish it while the browser closes).
+            let _ = self.db.kv_set(CLEAR_COOKIES_PENDING, &true);
+        }
         self.save_session();
         self.save_shield_counter();
         // Older versions (and the very first window of this one) read the main window's size from "window".
@@ -922,6 +929,32 @@ impl Controller {
             }
         }
         self.select_window(&keep);
+    }
+
+    /// "Clear cookies and site data when you close the browser": done now, before the restored pages load.
+    fn clear_cookies_if_pending(&mut self) {
+        if !self.db.kv_get::<bool>(CLEAR_COOKIES_PENDING).ok().flatten().unwrap_or(false) {
+            return;
+        }
+        let _ = self.db.kv_set(CLEAR_COOKIES_PENDING, &false);
+        let (tx, mut rx) = tokio::sync::oneshot::channel();
+        let kinds = crate::native::ClearKinds { cookies: true, cache: false, passwords: false, autofill: false };
+        if self.app.run_on_main_thread(move || crate::native::clear_browsing_data(kinds, tx)).is_err() {
+            return;
+        }
+        // Bounded wait: the pages must not load before the cookies are gone, but startup never hangs on it.
+        let start = std::time::Instant::now();
+        while start.elapsed() < Duration::from_secs(3) {
+            match rx.try_recv() {
+                Ok(ok) => {
+                    log::info!("cookies and site data deleted from the last session (ok: {ok})");
+                    return;
+                }
+                Err(tokio::sync::oneshot::error::TryRecvError::Closed) => return,
+                Err(_) => std::thread::sleep(Duration::from_millis(20)),
+            }
+        }
+        log::warn!("deleting cookies from the last session took too long; continuing");
     }
 
     pub fn complete_first_run(&mut self, profile_name: Option<String>, search: Option<crate::navigation::SearchEngine>) -> Result<()> {
@@ -969,6 +1002,11 @@ impl Controller {
         }
         crate::native::set_download_ask(next.download_ask);
         crate::native::set_global_privacy_control(next.global_privacy_control);
+        crate::native::page_features::set(page_switches(&next));
+        if prev.index_page_text && !next.index_page_text {
+            // Switched off: the kept page text goes too.
+            let _ = self.db.clear_page_text();
+        }
         if prev.clean_links != next.clean_links {
             crate::native::set_clean_links(next.clean_links);
         }
@@ -1015,6 +1053,20 @@ pub struct Bootstrap {
     pub downloads: Vec<Download>,
     pub prompts: Vec<PermissionPrompt>,
     pub version: String,
+}
+
+const CLEAR_COOKIES_PENDING: &str = "clear_cookies_pending";
+
+/// The page features (native/page_features.rs) the settings switch on.
+fn page_switches(s: &crate::settings::Settings) -> crate::native::page_features::Switches {
+    crate::native::page_features::Switches {
+        fingerprint: s.fingerprint_protection,
+        cookie_banners: s.cookie_banner_blocker,
+        dnt: s.do_not_track,
+        https_only: s.https_only,
+        gestures: s.mouse_gestures,
+        video_keys: s.video_keys,
+    }
 }
 
 #[cfg(test)]

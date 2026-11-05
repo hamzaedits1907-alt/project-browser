@@ -36,6 +36,10 @@ tauri = { version = "2.12", features = ["test"] }
 webview2-com = "0.39"
 windows-core = "0.62"
 windows = { version = "0.62", features = [
+  "Foundation",
+  "Graphics_Imaging",
+  "Media_Ocr",
+  "Storage_Streams",
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
   "Win32_Security",

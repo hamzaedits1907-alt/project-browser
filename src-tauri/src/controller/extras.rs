@@ -52,6 +52,12 @@ impl Controller {
     }
 
     /// The page asked for an address with tracking parameters; it was cancelled and the clean address is loaded.
+    /// HTTPS-Only Mode upgraded a plain-HTTP address of tab `id`: load the secure one.
+    pub fn on_https_upgrade(&mut self, id: TabId, secure: String) {
+        log::info!("https-only: tab {id} loads the secure version of an address");
+        let _ = self.app.run_on_main_thread(move || native::navigate(id, &secure));
+    }
+
     pub fn on_link_cleaned(&mut self, id: TabId, clean: String, original: String) {
         self.links_cleaned += 1;
         log::info!("link cleaner: removed tracking parameters in tab {id} ({} this session)", self.links_cleaned);

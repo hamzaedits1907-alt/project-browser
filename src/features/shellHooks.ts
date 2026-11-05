@@ -10,6 +10,7 @@ import { openDialog } from "../lib/ui";
 import { isInternalUrl } from "../lib/urls";
 import { startScreenshot } from "./dialogs/screenshotState";
 import { addUsage, blockReason, loadConfig, loadUsage, saveUsage, siteOf } from "./focus/focus";
+import { applyHighlights, highlightsFor } from "./highlights/highlights";
 import { DARK_CSS, darkFor, prefsFor, siteKey, updatePrefs } from "./sitetools/siteprefs";
 
 const TICK_S = 5;
@@ -99,5 +100,21 @@ export function useShellShortcuts(): void {
       onBus("screenshot", () => void startScreenshot(false)),
     ];
     return () => offs.forEach((off) => off());
+  }, []);
+}
+
+/** Marks a page's saved highlights each time it finishes loading (any tab of this window). */
+export function useHighlights(): void {
+  useEffect(() => {
+    const seen = new Map<number, string>();
+    return subscribe(() => {
+      for (const tab of getState().browser.tabs) {
+        if (tab.loading || tab.lifecycle !== "live" || isInternalUrl(tab.url)) continue;
+        const key = `${tab.url}|${tab.title}`;
+        if (seen.get(tab.id) === key) continue;
+        seen.set(tab.id, key);
+        if (highlightsFor(tab.url).length > 0) void applyHighlights(tab.id, tab.url);
+      }
+    });
   }, []);
 }

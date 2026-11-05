@@ -188,6 +188,7 @@ export const COMMANDS = [
   "menu_surface_ready",
   "menu_present",
   "menu_anchor",
+  "page_holes",
   "menu_dismiss",
   "window_active",
   "shield_state",
@@ -388,6 +389,7 @@ export const api = {
   menuSurfaceReady: () => call("menu_surface_ready"),
   /** The menu window (only): place the rendered menu of this CSS size at the click and show it. */
   menuPresent: (width: number, height: number) => call("menu_present", { width, height }),
+  pageHoles: (holes: ContentRect[]) => call("page_holes", { holes }),
   menuAnchor: (x: number, y: number, alignEnd: boolean, keyboard: boolean) => call<boolean>("menu_anchor", { x, y, alignEnd, keyboard }),
   /** The menu window (only): hide. */
   menuDismiss: () => call("menu_dismiss"),

@@ -120,6 +120,7 @@ const COMMANDS: &[&str] = &[
     "menu_surface_ready",
     "menu_present",
     "menu_anchor",
+    "page_holes",
     "menu_dismiss",
     "window_active",
     "shield_state",

@@ -1031,6 +1031,41 @@ pub fn set_owner(hwnd: isize, owner: isize) {
 /// occlusion and the page can stay unpainted (the black page area seen in the 0.6.0 UI probe). Re-assigning the
 /// parent window makes WebView2 re-evaluate its top-level window; the container is raised above the new window's
 /// shell webview, told that its position changed, and the controller's visibility is cycled so a new frame is drawn.
+/// Cuts holes into tab `id`'s page where the shell draws popups (`holes`: physical pixels relative to the page's top
+/// left corner), or removes them (`holes` empty). The page stays visible and running around a popup instead of being
+/// replaced by a still capture. The holes are a window region on the page's host window, which also clips WebView2's
+/// own child windows. UI thread only.
+pub fn set_page_holes(id: TabId, holes: Vec<(i32, i32, i32, i32)>) {
+    use windows::Win32::Foundation::{HWND, RECT};
+    use windows::Win32::Graphics::Gdi::{CombineRgn, CreateRectRgn, DeleteObject, SetWindowRgn, HGDIOBJ, HRGN, RGN_DIFF};
+    use windows::Win32::UI::WindowsAndMessaging::GetClientRect;
+    let Some(t) = tab_com(id) else { return };
+    unsafe {
+        let mut host = HWND::default();
+        if t.controller.ParentWindow(&mut host).is_err() || host.0.is_null() {
+            return;
+        }
+        if holes.is_empty() {
+            let _ = SetWindowRgn(host, None, true);
+            return;
+        }
+        let mut rc = RECT::default();
+        if GetClientRect(host, &mut rc).is_err() {
+            return;
+        }
+        let region = CreateRectRgn(0, 0, rc.right.max(1), rc.bottom.max(1));
+        for (x, y, w, h) in holes {
+            let hole: HRGN = CreateRectRgn(x, y, x + w, y + h);
+            CombineRgn(Some(region), Some(region), Some(hole), RGN_DIFF);
+            let _ = DeleteObject(HGDIOBJ(hole.0));
+        }
+        // The system owns the region from here on.
+        if SetWindowRgn(host, Some(region), true) == 0 {
+            let _ = DeleteObject(HGDIOBJ(region.0));
+        }
+    }
+}
+
 pub fn rehost(id: TabId) {
     use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE};
     let Some(t) = tab_com(id) else { return };

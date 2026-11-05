@@ -6,6 +6,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 
 import { api } from "./ipc";
+import type { ContentRect } from "./types";
 import { activeTab, getState } from "./store";
 import { isInternalUrl } from "./urls";
 
@@ -128,4 +129,36 @@ export function useOverlayState(): OverlayState {
     },
     () => overlay,
   );
+}
+
+// ---- Holes: popups drawn over a live page ----------------------------------------------------------------------
+// Popovers no longer hide the page behind a still capture. Each open popover reports where it is drawn; the core cuts
+// a hole into the page there (a window region), so the popover shows and the page keeps running everywhere else.
+
+const holes = new Map<number, ContentRect>();
+let holeIds = 0;
+let holeSend = 0;
+
+function sendHoles(): void {
+  holeSend = 0;
+  void api.pageHoles([...holes.values()]).catch(() => {});
+}
+
+/** A new id for `setHole`. */
+export function newHoleId(): number {
+  return ++holeIds;
+}
+
+/** Sets (or with null removes) the rectangle, in this window's CSS pixels, a popover covers. */
+export function setHole(id: number, rect: ContentRect | null): void {
+  const old = holes.get(id);
+  if (rect === null) {
+    if (!old) return;
+    holes.delete(id);
+  } else {
+    if (old && old.x === rect.x && old.y === rect.y && old.width === rect.width && old.height === rect.height) return;
+    holes.set(id, rect);
+  }
+  // One message per frame at most, however many popovers move at once.
+  if (!holeSend) holeSend = requestAnimationFrame(sendHoles);
 }

@@ -577,6 +577,9 @@ impl Controller {
                 view.visible = false;
             }
         }
+        if !self.layout.page_holes.is_empty() || !self.layout.holed.is_empty() {
+            self.apply_page_holes();
+        }
     }
 
     /// Hides (`open`) or restores the page under shell popups. When restoring,
@@ -608,6 +611,54 @@ impl Controller {
                 }
             }
         }
+    }
+
+    /// Shell popups are drawn at `holes` (CSS pixels of this window): the visible pages get holes cut there, so the
+    /// popups show while the pages keep running around them. An empty list closes the holes again.
+    pub fn set_page_holes(&mut self, holes: Vec<super::ContentRect>) {
+        self.layout.page_holes = holes;
+        self.apply_page_holes();
+    }
+
+    /// Re-applies the current holes to every visible page (also after the pages moved or another tab came forward).
+    pub(crate) fn apply_page_holes(&mut self) {
+        let scale = self.app.get_window(&self.current).and_then(|w| w.scale_factor().ok()).filter(|s| *s > 0.0).unwrap_or(1.0);
+        let mut want: Vec<(TabId, Vec<super::devtools::PhysicalRect>)> = Vec::new();
+        for (id, view) in &self.views {
+            let Some(b) = view.bounds.filter(|_| view.visible) else { continue };
+            let holes: Vec<super::devtools::PhysicalRect> = self
+                .layout
+                .page_holes
+                .iter()
+                .filter(|h| h.x < b.x + b.width && h.x + h.width > b.x && h.y < b.y + b.height && h.y + h.height > b.y)
+                .map(|h| {
+                    (
+                        ((h.x - b.x) * scale).floor() as i32,
+                        ((h.y - b.y) * scale).floor() as i32,
+                        (h.width * scale).ceil() as i32 + 1,
+                        (h.height * scale).ceil() as i32 + 1,
+                    )
+                })
+                .collect();
+            want.push((*id, holes));
+        }
+        let mut next = std::collections::HashSet::new();
+        for (id, holes) in want {
+            if holes.is_empty() && !self.layout.holed.contains(&id) {
+                continue;
+            }
+            if !holes.is_empty() {
+                next.insert(id);
+            }
+            let _ = self.app.run_on_main_thread(move || crate::native::set_page_holes(id, holes));
+        }
+        // Pages that had holes and are no longer visible: close them, so they are whole when shown again.
+        for id in self.layout.holed.difference(&next).copied().collect::<Vec<_>>() {
+            if !self.views.get(&id).is_some_and(|v| v.visible) {
+                let _ = self.app.run_on_main_thread(move || crate::native::set_page_holes(id, Vec::new()));
+            }
+        }
+        self.layout.holed = next;
     }
 
     /// Active tab id if it currently has a live, visible webview.

@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useEffectEvent, useLayoutEffect, 
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from "react";
 
 import { usePresence } from "../../lib/motion";
-import { useOverlay } from "../../lib/overlay";
+import { newHoleId, setHole } from "../../lib/overlay";
 import { cue } from "../../lib/sounds";
 import { trace } from "../../lib/trace";
 import { windowIsActive } from "../../lib/window";
@@ -39,13 +39,16 @@ function focusables(root: HTMLElement): HTMLElement[] {
 }
 
 /**
- * Floating panel drawn by the shell. Native pages are drawn above the shell, so while a popover is open the page is
- * hidden and a snapshot of it shown instead (see lib/overlay.ts); the popover therefore never ends up under the page.
- * It animates in from its anchor and out again; the page comes back once the exit animation has finished.
+ * Floating panel drawn by the shell. Native pages are drawn above the shell, so while a popover is open a hole is cut
+ * into the page exactly where the popover is (lib/overlay.ts, `setHole`): the popover shows, and the page stays visible
+ * and running everywhere else. It animates in from its anchor and out again.
  */
-export function Popover({ open, onClose, anchor, point, align = "start", width, className, label, focusFirst, clearBackdrop, onExited, children }: PopoverProps) {
+export function Popover({ open, onClose, anchor, point, align = "start", width, className, label, focusFirst, onExited, children }: PopoverProps) {
   const { mounted, leaving } = usePresence(open, 110);
-  const ready = useOverlay(mounted, clearBackdrop ? "clear" : "dim");
+  // Drawn over the live page: a hole is cut into the page where the popover is (see `setHole` below), so the page is
+  // never frozen or hidden while a popover is open.
+  const ready = mounted;
+  const [holeId] = useState(newHoleId);
   const wasMounted = useRef(false);
   const fireExited = useEffectEvent(() => onExited?.());
 
@@ -110,18 +113,16 @@ export function Popover({ open, onClose, anchor, point, align = "start", width, 
         onClose();
       }
     };
-    // Opening over a web page hides the page, and focus moves between the webviews inside the window: the shell sees a
-    // blur although the browser window is still in front (that made popups on web pages close at once). Only when
-    // Windows says another window is in front does the popover close.
+    // Focus leaving the shell closes the popover: either the page under it was clicked or another window came forward.
     let frame = 0;
     const onBlur = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         void windowIsActive().then((active) => {
-          if (!active) {
-            trace(`popover "${label}" closed: another window came to the front`);
-            onClose();
-          }
+          // The page stays where it is under a popover, so the shell losing focus inside the window means the page
+          // was clicked: that is a click outside the popover too.
+          trace(`popover "${label}" closed: ${active ? "the page was clicked" : "another window came to the front"}`);
+          onClose();
         });
       });
     };
@@ -160,6 +161,21 @@ export function Popover({ open, onClose, anchor, point, align = "start", width, 
   useEffect(() => {
     if (ready && open) trace(`popover "${label}" shown`);
   }, [ready, open, label]);
+
+  // The hole in the page follows the popover's box (its content may grow, for example when data arrives).
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!mounted || !pos || !el) return;
+    const report = () => setHole(holeId, { x: pos.left, y: pos.top, width: el.offsetWidth, height: el.offsetHeight });
+    report();
+    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(report);
+    ro?.observe(el);
+    return () => ro?.disconnect();
+  }, [mounted, pos, holeId]);
+  useEffect(() => {
+    if (!mounted) setHole(holeId, null);
+  }, [mounted, holeId]);
+  useEffect(() => () => setHole(holeId, null), [holeId]);
 
   if (!ready) return null;
   return (

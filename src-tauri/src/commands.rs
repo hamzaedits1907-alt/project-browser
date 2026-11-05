@@ -1747,6 +1747,13 @@ pub async fn menu_surface_ready(window: tauri::Window) -> Result<()> {
     Ok(())
 }
 
+/// Shell popups are drawn at these rectangles (CSS pixels of this window); the pages get holes there and keep running.
+#[tauri::command]
+pub async fn page_holes(window: tauri::Window, s: State<'_, AppState>, holes: Vec<ContentRect>) -> Result<()> {
+    let holes: Vec<ContentRect> = holes.into_iter().filter(|h| h.width > 0.0 && h.height > 0.0).take(16).collect();
+    s.ctl.call_in(window.label().to_string(), move |c| c.set_page_holes(holes)).await
+}
+
 /// A shell popup (the main menu, the address bar's suggestions) is about to be drawn by the menu window, at point
 /// `(x, y)` of this browser window (CSS pixels). False when the menu window is not ready: the shell then draws the
 /// popup itself over a still capture of the page.
@@ -2184,6 +2191,7 @@ macro_rules! all_commands {
             $crate::commands::link_clean_undo,
             $crate::commands::menu_surface_ready,
             $crate::commands::menu_anchor,
+            $crate::commands::page_holes,
             $crate::commands::menu_present,
             $crate::commands::menu_dismiss,
             $crate::commands::window_active,

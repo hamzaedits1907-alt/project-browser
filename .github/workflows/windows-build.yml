@@ -14,7 +14,7 @@ name: Windows build
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, "sprint-*"]
   pull_request:
   workflow_dispatch:
 
@@ -163,6 +163,21 @@ jobs:
         with:
           name: native-ui-probe
           path: ui-probe
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # Popups over live pages: typing in the address bar, the main menu, a popover and a page's full screen.
+      - name: Popup probe (informational)
+        shell: pwsh
+        continue-on-error: true
+        run: ./scripts/popup-probe.ps1 -Exe src-tauri/target/release/project-browser.exe -ReportDir popup-probe
+
+      - name: Upload popup probe evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: popup-probe
+          path: popup-probe
           if-no-files-found: ignore
           retention-days: 14
 

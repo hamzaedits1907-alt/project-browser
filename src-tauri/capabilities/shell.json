@@ -20,6 +20,7 @@
     "allow-set-layout",
     "allow-overlay-open",
     "allow-menu-anchor",
+    "allow-page-holes",
     "allow-overlay-close",
     "allow-run-command",
     "allow-tab-new",

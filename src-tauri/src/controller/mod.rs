@@ -160,6 +160,10 @@ pub(crate) struct Layout {
     /// Full screen as last applied to the window. Tauri cannot be asked: a maximized frameless window covers the whole
     /// monitor, and Tauri reports it as full screen already.
     pub fullscreen_applied: bool,
+    /// Where shell popups are drawn over the page (CSS pixels of the window): holes are cut into the page there.
+    pub page_holes: Vec<ContentRect>,
+    /// Tabs whose page currently has holes cut into it.
+    pub holed: std::collections::HashSet<TabId>,
     /// The right-click menu this window's shell is showing (its WebView2 request id).
     pub context_menu: Option<u64>,
     /// Two tabs shown side by side (see `split.rs`).

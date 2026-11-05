@@ -204,7 +204,8 @@ try {
   # ---- 1. typing in the address bar, the suggestion list, the main menu and a popover, over a running page ----
   $main = MainWindow
   if ($main -eq [IntPtr]::Zero) { Write-Host "no browser window appeared"; exit 2 }
-  [void][Probe]::MoveWindow($main, 40, 40, 1280, 800, $true)
+  # Fits any runner screen (GitHub's is 1024x768): the menu button must be on screen to be clicked.
+  [void][Probe]::MoveWindow($main, 0, 0, 1000, 700, $true)
   [void][Probe]::SetForegroundWindow($main)
   Start-Sleep -Seconds 6
   $cr = New-Object Probe+RECT; [void][Probe]::GetClientRect($main, [ref]$cr)
